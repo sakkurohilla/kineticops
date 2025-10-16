@@ -1,0 +1,39 @@
+# Go
+*.o
+*.a
+*.so
+.DS_Store
+/bin/
+/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+
+# Docker
+.docker/
+
+# Logs
+*.log
+
+# Temp
+tmp/
+temp/
