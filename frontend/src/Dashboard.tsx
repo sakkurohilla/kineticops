@@ -1,6 +1,7 @@
-import React, { useContext, useEffect, useState } from "react";
-import { AuthContext } from "./App";
+import { useContext, useEffect, useState } from "react";
+import { AuthContext } from "./context/AuthContext";
 import { FiLogOut } from "react-icons/fi";
+import { Link } from "react-router-dom";
 
 export default function Dashboard() {
   const { token, setToken } = useContext(AuthContext);
@@ -52,10 +53,15 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        <Link to="/workspaces" className="w-full">
+  <button className="w-full mb-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-6 py-3 rounded-lg text-white font-bold text-base shadow-lg transition-all">
+    Manage Workspaces
+  </button>
+</Link>
         <button
           onClick={handleLogout}
-          className="flex items-center px-5 py-2 text-sm font-bold rounded bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:from-blue-600 hover:to-purple-700 gap-2"
-        >
+          className="flex items-center px-5 py-2 text-sm font-bold rounded bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow hover:from-blue-600 hover:to-purple-700 gap-2">
           <FiLogOut /> Logout
         </button>
       </div>

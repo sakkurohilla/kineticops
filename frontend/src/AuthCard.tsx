@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Zap } from 'lucide-react';
-import { AuthContext } from "./App";
+import { AuthContext } from "./context/AuthContext";
 
 export default function AuthPages() {
   const { setToken } = useContext(AuthContext);

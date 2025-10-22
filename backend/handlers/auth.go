@@ -16,14 +16,15 @@ type User struct {
 	ID       int64  `db:"id"`
 	Email    string `db:"email"`
 	Password string `db:"password"`
+	Role     string `db:"role"`
 }
 
 type Claims struct {
-	UserID int64 `json:"user_id"`
+	UserID int64  `json:"user_id"`
+	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-// RegisterUser handler
 func RegisterUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		type request struct {
@@ -38,7 +39,6 @@ func RegisterUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "email and password required"})
 		}
 
-		// Check user exists
 		var exists int
 		err := db.Get(&exists, "SELECT count(*) FROM users WHERE email=$1", body.Email)
 		if err != nil {
@@ -48,13 +48,11 @@ func RegisterUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "email already registered"})
 		}
 
-		// Hash password
 		hashed, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error processing password"})
 		}
 
-		// Insert user
 		_, err = db.Exec("INSERT INTO users (email, password) VALUES ($1, $2)", body.Email, string(hashed))
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error creating user"})
@@ -64,7 +62,6 @@ func RegisterUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 	}
 }
 
-// LoginUser handler
 func LoginUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		type request struct {
@@ -81,7 +78,7 @@ func LoginUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 		}
 
 		var user User
-		err := db.Get(&user, "SELECT id, email, password FROM users WHERE email=$1", body.Email)
+		err := db.Get(&user, "SELECT id, email, password, role FROM users WHERE email=$1", body.Email)
 		if err == sql.ErrNoRows {
 			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "invalid credentials"})
 		} else if err != nil {
@@ -95,6 +92,7 @@ func LoginUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 
 		claims := Claims{
 			UserID: user.ID,
+			Role:   user.Role,
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -111,7 +109,6 @@ func LoginUser(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 	}
 }
 
-// ProtectedRoute handler
 func ProtectedRoute(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		auth := c.Get("Authorization")
@@ -140,11 +137,11 @@ func ProtectedRoute(db *sqlx.DB, cfg *config.Config) fiber.Handler {
 		}
 
 		var user User
-		err = db.Get(&user, "SELECT id, email FROM users WHERE id=$1", claims.UserID)
+		err = db.Get(&user, "SELECT id, email, role FROM users WHERE id=$1", claims.UserID)
 		if err != nil {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "user not found"})
 		}
 
-		return c.JSON(fiber.Map{"id": user.ID, "email": user.Email})
+		return c.JSON(fiber.Map{"id": user.ID, "email": user.Email, "role": user.Role})
 	}
 }

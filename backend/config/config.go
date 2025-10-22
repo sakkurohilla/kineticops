@@ -16,15 +16,15 @@ type Config struct {
 	RefreshSecret string
 	FrontendURL   string
 	BackendURL    string
+	ListenAddress string
 }
 
-// get project root by walking up directories from file location
+// getProjectRoot finds the base directory for environment
 func getProjectRoot() string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		log.Fatal("cannot get current filepath")
 	}
-	// Assuming project root is 2 levels above this file (adjust if needed)
 	dir := filepath.Dir(filename)
 	root := filepath.Join(dir, "../../")
 	absRoot, err := filepath.Abs(root)
@@ -50,6 +50,10 @@ func Load() *Config {
 	refresh := os.Getenv("REFRESH_SECRET")
 	frontend := os.Getenv("FRONTEND_URL")
 	backend := os.Getenv("BACKEND_URL")
+	listen := os.Getenv("LISTEN_ADDRESS")
+	if listen == "" {
+		listen = ":5000"
+	}
 
 	if dsn == "" || redis == "" || jwt == "" || refresh == "" {
 		log.Fatal("Required environment variables missing")
@@ -62,5 +66,6 @@ func Load() *Config {
 		RefreshSecret: refresh,
 		FrontendURL:   frontend,
 		BackendURL:    backend,
+		ListenAddress: listen,
 	}
 }
