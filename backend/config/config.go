@@ -2,70 +2,49 @@ package config
 
 import (
 	"log"
-	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/joho/godotenv"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	PostgresDSN   string
-	RedisAddr     string
-	JwtSecret     string
-	RefreshSecret string
-	FrontendURL   string
-	BackendURL    string
-	ListenAddress string
-}
-
-// getProjectRoot finds the base directory for environment
-func getProjectRoot() string {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatal("cannot get current filepath")
-	}
-	dir := filepath.Dir(filename)
-	root := filepath.Join(dir, "../../")
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return absRoot
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
+	MongoURI         string
+	RedisAddr        string
+	RedpandaBroker   string
+	AppEnv           string
+	AppPort          string
+	JWTSecret        string
 }
 
 func Load() *Config {
-	root := getProjectRoot()
-	envPath := filepath.Join(root, ".env.local")
-
-	if err := godotenv.Load(envPath); err != nil {
-		log.Printf("No .env.local file found at %s\n", envPath)
-	} else {
-		log.Printf("Loaded .env.local from %s\n", envPath)
+	// Load .env file (optional)
+	if err := godotenv.Load(".env"); err != nil {
+		log.Println("No .env file found, relying on environment variables")
 	}
 
-	dsn := os.Getenv("POSTGRES_DSN")
-	redis := os.Getenv("REDIS_ADDR")
-	jwt := os.Getenv("JWT_SECRET")
-	refresh := os.Getenv("REFRESH_SECRET")
-	frontend := os.Getenv("FRONTEND_URL")
-	backend := os.Getenv("BACKEND_URL")
-	listen := os.Getenv("LISTEN_ADDRESS")
-	if listen == "" {
-		listen = ":5000"
-	}
+	// Enable Viper to read environment variables
+	viper.AutomaticEnv()
 
-	if dsn == "" || redis == "" || jwt == "" || refresh == "" {
-		log.Fatal("Required environment variables missing")
-	}
+	// Optionally, set default values
+	viper.SetDefault("APP_PORT", "8080")
+	// Add more viper defaults if needed
 
 	return &Config{
-		PostgresDSN:   dsn,
-		RedisAddr:     redis,
-		JwtSecret:     jwt,
-		RefreshSecret: refresh,
-		FrontendURL:   frontend,
-		BackendURL:    backend,
-		ListenAddress: listen,
+		PostgresHost:     viper.GetString("POSTGRES_HOST"),
+		PostgresPort:     viper.GetString("POSTGRES_PORT"),
+		PostgresUser:     viper.GetString("POSTGRES_USER"),
+		PostgresPassword: viper.GetString("POSTGRES_PASSWORD"),
+		PostgresDB:       viper.GetString("POSTGRES_DB"),
+		MongoURI:         viper.GetString("MONGO_URI"),
+		RedisAddr:        viper.GetString("REDIS_ADDR"),
+		RedpandaBroker:   viper.GetString("REDPANDA_BROKER"),
+		AppEnv:           viper.GetString("APP_ENV"),
+		AppPort:          viper.GetString("APP_PORT"),
+		JWTSecret:        viper.GetString("JWT_SECRET"),
 	}
 }
