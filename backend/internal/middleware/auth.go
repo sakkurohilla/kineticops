@@ -18,9 +18,10 @@ func AuthRequired() fiber.Handler {
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid or expired token"})
 		}
-		// store user info in context
+		// Store user info AND tenant info in context
 		c.Locals("user_id", claims.UserID)
 		c.Locals("username", claims.Username)
+		c.Locals("tenant_id", claims.UserID) // Use user_id as tenant_id for isolation
 		return c.Next()
 	}
 }

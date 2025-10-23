@@ -46,6 +46,9 @@ func main() {
 	// Auth routes (login, register, hashing, etc.)
 	routes.RegisterAuthRoutes(app)
 
+	// Host routes ( CRUD )
+	routes.RegisterHostRoutes(app)
+
 	// A sample protected route (requires valid JWT)
 	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
