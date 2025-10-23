@@ -13,6 +13,6 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql \
     -h "$POSTGRES_HOST" \
     -U "$POSTGRES_USER" \
     -d "$POSTGRES_DB" \
-    -f "$SCRIPT_DIR/../backend/migrations/postgres/002_users_up.sql"
+    -f "$SCRIPT_DIR/../backend/migrations/postgres/003_audit_logs_up.sql"
 
 echo "Migration completed."
