@@ -23,17 +23,17 @@ func Init() error {
 	)
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), // Structured logging
+		Logger: logger.Default.LogMode(logger.Warn), // minimize log noise
 	})
 	if err != nil {
-		log.Printf("PostgreSQL connection error: %v", err)
+		log.Printf("Postgres connection failed: %v", err)
 		return err
 	}
+
 	sqlDB, err := DB.DB()
 	if err == nil {
 		sqlDB.SetMaxOpenConns(20)
 		sqlDB.SetMaxIdleConns(10)
-		sqlDB.SetConnMaxLifetime(0)
 	}
 	return err
 }

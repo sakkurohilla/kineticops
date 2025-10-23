@@ -18,16 +18,15 @@ func Init() error {
 
 	clientOpts := options.Client().
 		ApplyURI(viper.GetString("MONGO_URI")).
-		SetMaxPoolSize(20) // Pooling
+		SetMaxPoolSize(20)
 
 	var err error
 	Client, err = mongo.Connect(ctx, clientOpts)
 	if err != nil {
-		log.Printf("MongoDB connection error: %v", err)
+		log.Printf("MongoDB connection failed: %v", err)
 		return err
 	}
-	err = Client.Ping(ctx, nil)
-	if err != nil {
+	if err = Client.Ping(ctx, nil); err != nil {
 		log.Printf("MongoDB ping error: %v", err)
 		return err
 	}

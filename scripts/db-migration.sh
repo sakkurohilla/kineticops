@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -e
 
+# Get the directory of the script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the .env file in backend
+source "$SCRIPT_DIR/../backend/.env"
+
 echo "Running PostgreSQL migrations..."
 
-# Example using psql. Adjust DB variables as needed
-psql -h "${POSTGRES_HOST:-localhost}" -U "${POSTGRES_USER:-kinetic}" -d "${POSTGRES_DB:-kineticdb}" -f migrations/postgres/001_init.up.sql
+PGPASSWORD="$POSTGRES_PASSWORD" psql \
+    -h "$POSTGRES_HOST" \
+    -U "$POSTGRES_USER" \
+    -d "$POSTGRES_DB" \
+    -f "$SCRIPT_DIR/../backend/migrations/postgres/001_init_up.sql"
 
 echo "Migration completed."
