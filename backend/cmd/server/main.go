@@ -1,17 +1,21 @@
 package main
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 
-	// DB imports
-	"github.com/sakkurohilla/kineticops/backend/internal/repository/mongodb"
+	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	redisrepo "github.com/sakkurohilla/kineticops/backend/internal/repository/redis"
+
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
@@ -22,12 +26,24 @@ func main() {
 	if err := postgres.Init(); err != nil {
 		log.Fatalf("PostgreSQL connection error: %v", err)
 	}
-	if err := mongodb.Init(); err != nil {
-		log.Fatalf("MongoDB connection error: %v", err)
-	}
 	if err := redisrepo.Init(); err != nil {
 		log.Fatalf("Redis connection error: %v", err)
 	}
+
+	// MongoDB client setup (for logs)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
+	// e.g. "mongodb://localhost:27017"
+	if err != nil {
+		log.Fatalf("MongoDB connection error: %v", err)
+	}
+	err = mongoClient.Ping(ctx, nil)
+	if err != nil {
+		log.Fatalf("MongoDB ping error: %v", err)
+	}
+	models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
+	log.Println("MongoDB (logs) connected.")
 
 	log.Println("All DBs initialized.")
 
@@ -46,13 +62,16 @@ func main() {
 	// Auth routes (login, register, hashing, etc.)
 	routes.RegisterAuthRoutes(app)
 
-	// Host routes ( CRUD )
+	// Host routes
 	routes.RegisterHostRoutes(app)
 
 	// Metric routes
 	routes.RegisterMetricRoutes(app)
 
-	// A sample protected route (requires valid JWT)
+	// Log routes (NEW for Day 8)
+	routes.RegisterLogRoutes(app)
+
+	// A sample protected route
 	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"msg":      "Access granted",
