@@ -40,8 +40,20 @@ func main() {
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-	// Health route (now checks DBs too)
+	// Health check route
 	routes.RegisterHealthRoutes(app)
+
+	// Auth routes (login, register, hashing, etc.)
+	routes.RegisterAuthRoutes(app)
+
+	// A sample protected route (requires valid JWT)
+	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"msg":      "Access granted",
+			"user_id":  c.Locals("user_id"),
+			"username": c.Locals("username"),
+		})
+	})
 
 	log.Printf("Starting server on port %s...", cfg.AppPort)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {

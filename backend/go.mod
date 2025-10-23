@@ -5,15 +5,19 @@ go 1.25.3
 require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofiber/fiber/v2 v2.52.9
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/viper v1.21.0
 	go.mongodb.org/mongo-driver v1.17.4
 	go.uber.org/zap v1.27.0
+	golang.org/x/crypto v0.31.0
+	golang.org/x/oauth2 v0.32.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -51,7 +55,6 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
