@@ -26,3 +26,6 @@ func Init() error {
 	}
 	return nil
 }
+func GetRedisClient() *redis.Client {
+	return Client
+}
