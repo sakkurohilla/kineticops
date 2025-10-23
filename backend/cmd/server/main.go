@@ -71,6 +71,9 @@ func main() {
 	// Log routes (NEW for Day 8)
 	routes.RegisterLogRoutes(app)
 
+	// Alert routes
+	routes.RegisterAlertRoutes(app)
+
 	// A sample protected route
 	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
