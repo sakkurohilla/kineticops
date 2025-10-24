@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-import apiClient from '../services/api/client';
+import authService from '../services/auth/authService';
+import apiClient from '../services/api/client'; // ADD THIS IMPORT
 
 interface AppContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<string>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -23,7 +24,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check if user is already logged in
-    const token = localStorage.getItem('token');
+    const token = authService.getToken();
     if (token) {
       fetchUser();
     } else {
@@ -35,42 +36,41 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     try {
       const userData = await apiClient.get<User>('/auth/me');
       setUser(userData);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user:', error);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
+      
+      // Only logout if it's an auth error (401)
+      // Don't logout for network errors or 429 rate limits
+      if (error.message?.includes('401') || error.message?.includes('Invalid')) {
+        authService.logout();
+        setUser(null);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     try {
-      const response = await apiClient.post<any>('/auth/login', { email, password });
-      const { token, refreshToken, user } = response;
+      await authService.login(username, password);
       
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      setUser(user);
+      // After login, fetch user details
+      await fetchUser();
     } catch (error) {
       throw error;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
+    authService.logout();
     setUser(null);
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (username: string, email: string, password: string): Promise<string> => {
     try {
-      const response = await apiClient.post<any>('/auth/register', { email, password, name });
-      const { token, refreshToken, user } = response;
-      
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      setUser(user);
+      const response = await authService.register(username, email, password);
+      // Backend returns { msg: "User registered..." }
+      return response.msg || 'Registration successful';
     } catch (error) {
       throw error;
     }

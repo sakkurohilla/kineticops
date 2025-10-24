@@ -68,6 +68,19 @@ func ForgotPassword(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"msg": "If your email exists in our system, a reset link was sent. (mock)"})
 }
 
+// GetCurrentUser returns the current authenticated user
+func GetCurrentUser(c *fiber.Ctx) error {
+	// Get user ID from JWT claims (set by middleware)
+	userID := c.Locals("user_id").(int64)
+
+	user, err := services.GetUserByID(userID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
+	}
+
+	return c.JSON(user)
+}
+
 // REFRESH TOKEN endpoint
 func RefreshToken(c *fiber.Ctx) error {
 	var req struct {

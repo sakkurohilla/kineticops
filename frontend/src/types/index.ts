@@ -1,28 +1,30 @@
 // Auth Types
 export interface User {
-  id: string;
+  id: number;
+  username: string;
   email: string;
-  name: string;
-  role: string;
-  createdAt: string;
+  created_at?: string;
 }
 
 export interface AuthResponse {
   token: string;
-  refreshToken: string;
-  user: User;
+  refresh_token: string;
+  user?: User;
+  msg?: string;
 }
 
 export interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 
 export interface RegisterRequest {
+  username: string;
   email: string;
   password: string;
-  name: string;
 }
+
+// Rest of your types remain the same...
 
 // Host Types
 export interface Host {

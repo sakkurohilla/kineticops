@@ -13,7 +13,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Generate JWT access token (ALWAYS loads secret from config)
+// Generate JWT access token
 func GenerateJWT(userID int64, username string, duration time.Duration) (string, error) {
 	claims := Claims{
 		UserID:   userID,
@@ -23,12 +23,12 @@ func GenerateJWT(userID int64, username string, duration time.Duration) (string,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
-	cfg := config.Load() // always get latest config/secret
+	cfg := config.Load()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
 
-// Validate JWT and parse claims (loads secret from config)
+// Validate JWT and parse claims
 func ValidateJWT(tokenStr string) (*Claims, error) {
 	claims := &Claims{}
 	cfg := config.Load()

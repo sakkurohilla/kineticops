@@ -42,8 +42,24 @@ func LoginUser(username, password string) (string, int64, error) {
 	if !auth.CheckPasswordHash(password, user.PasswordHash) {
 		return "", 0, errors.New("invalid credentials")
 	}
-	token, err := auth.GenerateJWT(user.ID, user.Username, 15*time.Minute)
+
+	// Increase token duration to 1 hour instead of 15 minutes
+	token, err := auth.GenerateJWT(user.ID, user.Username, 1*time.Hour)
 	return token, user.ID, err
+}
+
+// GetUserByID retrieves a user by their ID
+func GetUserByID(userID int64) (*models.User, error) {
+	var user models.User
+	result := postgres.DB.First(&user, userID)
+
+	if result.Error == gorm.ErrRecordNotFound {
+		return nil, errors.New("user not found")
+	} else if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &user, nil
 }
 
 // Password reset (mock)

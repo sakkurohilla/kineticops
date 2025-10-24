@@ -2,76 +2,18 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import Layout from './components/layout/Layout';
 
-// Login Page
-const LoginPage = () => (
-  <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center p-8">
-    <div className="card max-w-md w-full">
-      <h1 className="text-3xl font-bold text-primary-700 mb-2">KineticOps</h1>
-      <p className="text-gray-600 mb-6">Infrastructure Monitoring Platform</p>
-      
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-          <input 
-            type="email" 
-            placeholder="you@example.com" 
-            className="input" 
-          />
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <input 
-            type="password" 
-            placeholder="••••••••" 
-            className="input" 
-          />
-        </div>
-        
-        <button className="btn btn-primary w-full">
-          Sign In
-        </button>
-        
-        <button className="btn btn-secondary w-full">
-          Sign In with OAuth
-        </button>
-      </div>
-      
-      <div className="mt-6 pt-6 border-t border-gray-200">
-        <p className="text-sm text-center text-gray-600">
-          Don't have an account? <a href="/register" className="text-primary-600 hover:text-primary-700 font-medium">Sign up</a>
-        </p>
-      </div>
-    </div>
-  </div>
-);
+// Import pages
+import Login from './pages/Login/Login';
+import Register from './pages/Register/Register';
+import ForgotPassword from './pages/Auth/ForgotPassword';
+import MFASetup from './pages/Auth/MFASetup';
 
-// Register Page
-const RegisterPage = () => (
-  <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-primary-50 flex items-center justify-center p-8">
-    <div className="card max-w-md w-full">
-      <h1 className="text-3xl font-bold text-secondary-700 mb-2">Create Account</h1>
-      <p className="text-gray-600 mb-6">Join KineticOps today</p>
-      
-      <div className="space-y-4">
-        <input type="text" placeholder="Full Name" className="input" />
-        <input type="email" placeholder="Email" className="input" />
-        <input type="password" placeholder="Password" className="input" />
-        <button className="btn btn-secondary w-full">Create Account</button>
-      </div>
-      
-      <p className="text-sm text-center text-gray-600 mt-4">
-        Already have an account? <a href="/login" className="text-secondary-600 hover:text-secondary-700 font-medium">Sign in</a>
-      </p>
-    </div>
-  </div>
-);
-
-// Dashboard Page
+// Dashboard Page with Layout
 const DashboardPage = () => (
-  <div className="min-h-screen bg-light p-8">
-    <div className="max-w-7xl mx-auto">
+  <Layout>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-4xl font-bold text-dark mb-8">Dashboard</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -101,7 +43,7 @@ const DashboardPage = () => (
         <p className="text-gray-600">No recent activity</p>
       </div>
     </div>
-  </div>
+  </Layout>
 );
 
 const App: React.FC = () => {
@@ -111,8 +53,12 @@ const App: React.FC = () => {
         <div className="min-h-screen">
           <Routes>
             {/* Public Routes */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            
+            {/* Semi-Protected Routes */}
+            <Route path="/mfa-setup" element={<MFASetup />} />
 
             {/* Protected Routes */}
             <Route
