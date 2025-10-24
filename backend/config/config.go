@@ -1,8 +1,6 @@
 package config
 
 import (
-	"log"
-
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -22,18 +20,9 @@ type Config struct {
 }
 
 func Load() *Config {
-	// Load .env file (optional)
-	if err := godotenv.Load(".env"); err != nil {
-		log.Println("No .env file found, relying on environment variables")
-	}
-
-	// Enable Viper to read environment variables
+	_ = godotenv.Load(".env")
 	viper.AutomaticEnv()
-
-	// Optionally, set default values
 	viper.SetDefault("APP_PORT", "8080")
-	// Add more viper defaults if needed
-
 	return &Config{
 		PostgresHost:     viper.GetString("POSTGRES_HOST"),
 		PostgresPort:     viper.GetString("POSTGRES_PORT"),

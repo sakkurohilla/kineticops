@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
-	"github.com/sakkurohilla/kineticops/backend/internal/auth"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
-// REGISTER user
 func Register(c *fiber.Ctx) error {
 	var req struct {
 		Username string `json:"username"`
@@ -26,7 +28,7 @@ func Register(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"msg": "User registered. Please verify your email (mock)."})
 }
 
-// LOGIN user and get tokens
+// LOGIN user
 func Login(c *fiber.Ctx) error {
 	var req struct {
 		Username string `json:"username"`
@@ -40,13 +42,18 @@ func Login(c *fiber.Ctx) error {
 		services.LogEvent(0, "failed_login", req.Username)
 		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
 	}
-	// Generate refresh token
-	refreshToken, _ := auth.GenerateJWT(userID, req.Username, 24*60*60) // 24 hr expiry
+	cfg := config.Load()
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":  userID,
+		"username": req.Username,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"iat":      time.Now().Unix(),
+	})
+	refreshTokenStr, _ := refreshToken.SignedString([]byte(cfg.JWTSecret))
 	services.LogEvent(userID, "login", req.Username)
-	return c.JSON(fiber.Map{"token": token, "refresh_token": refreshToken})
+	return c.JSON(fiber.Map{"token": token, "refresh_token": refreshTokenStr})
 }
 
-// PASSWORD RESET (mock)
 func ForgotPassword(c *fiber.Ctx) error {
 	var req struct {
 		Email string `json:"email"`
@@ -61,7 +68,7 @@ func ForgotPassword(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"msg": "If your email exists in our system, a reset link was sent. (mock)"})
 }
 
-// REFRESH TOKEN endpoint (real implementation)
+// REFRESH TOKEN endpoint
 func RefreshToken(c *fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
@@ -69,11 +76,23 @@ func RefreshToken(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
-	claims, err := auth.ValidateJWT(req.RefreshToken)
-	if err != nil {
+	cfg := config.Load()
+	token, err := jwt.Parse(req.RefreshToken, func(token *jwt.Token) (interface{}, error) {
+		return []byte(cfg.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
 		return c.Status(401).JSON(fiber.Map{"error": "Invalid refresh token"})
 	}
-	token, _ := auth.GenerateJWT(claims.UserID, claims.Username, 15*60) // 15 min expiry
-	services.LogEvent(claims.UserID, "token_refresh", claims.Username)
-	return c.JSON(fiber.Map{"token": token})
+	claims := token.Claims.(jwt.MapClaims)
+	userID, _ := claims["user_id"].(float64)
+	username, _ := claims["username"].(string)
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":  int64(userID),
+		"username": username,
+		"exp":      time.Now().Add(15 * time.Minute).Unix(),
+		"iat":      time.Now().Unix(),
+	})
+	tokenStr, _ := newToken.SignedString([]byte(cfg.JWTSecret))
+	services.LogEvent(int64(userID), "token_refresh", username)
+	return c.JSON(fiber.Map{"token": tokenStr})
 }

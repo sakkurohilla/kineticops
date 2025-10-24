@@ -4,10 +4,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/spf13/viper"
+	"github.com/sakkurohilla/kineticops/backend/config"
 )
-
-var jwtSecret = []byte(viper.GetString("JWT_SECRET"))
 
 type Claims struct {
 	UserID   int64  `json:"user_id"`
@@ -15,7 +13,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Generate JWT access token
+// Generate JWT access token (ALWAYS loads secret from config)
 func GenerateJWT(userID int64, username string, duration time.Duration) (string, error) {
 	claims := Claims{
 		UserID:   userID,
@@ -25,16 +23,18 @@ func GenerateJWT(userID int64, username string, duration time.Duration) (string,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
+	cfg := config.Load() // always get latest config/secret
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString([]byte(cfg.JWTSecret))
 }
 
-// Validate JWT and parse claims
+// Validate JWT and parse claims (loads secret from config)
 func ValidateJWT(tokenStr string) (*Claims, error) {
 	claims := &Claims{}
+	cfg := config.Load()
 	_, err := jwt.ParseWithClaims(tokenStr, claims,
 		func(token *jwt.Token) (interface{}, error) {
-			return jwtSecret, nil
+			return []byte(cfg.JWTSecret), nil
 		})
 	if err != nil {
 		return nil, err

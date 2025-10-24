@@ -2,51 +2,80 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
+	kafkaevents "github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
-
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	redisrepo "github.com/sakkurohilla/kineticops/backend/internal/repository/redis"
-
+	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func main() {
-	// Load Config
-	cfg := config.Load()
+var mongoClient *mongo.Client
 
-	// Initialize Databases
+func initDBs(cfg *config.Config) {
+	// PostgreSQL
 	if err := postgres.Init(); err != nil {
 		log.Fatalf("PostgreSQL connection error: %v", err)
 	}
+
+	// Redis
 	if err := redisrepo.Init(); err != nil {
 		log.Fatalf("Redis connection error: %v", err)
 	}
 
-	// MongoDB client setup (for logs)
+	// MongoDB (optional, for logs)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
-	// e.g. "mongodb://localhost:27017"
+	var err error
+	mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
 	if err != nil {
-		log.Fatalf("MongoDB connection error: %v", err)
+		log.Printf("[WARN] MongoDB connection error: %v", err)
+		return // Don't fatal if nonessential!
 	}
-	err = mongoClient.Ping(ctx, nil)
-	if err != nil {
-		log.Fatalf("MongoDB ping error: %v", err)
+	if pingErr := mongoClient.Ping(ctx, nil); pingErr != nil {
+		log.Printf("[WARN] MongoDB ping error: %v", pingErr)
+		return // Don't fatal!
 	}
 	models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
 	log.Println("MongoDB (logs) connected.")
 
 	log.Println("All DBs initialized.")
+}
 
+func main() {
+	cfg := config.Load()
+	fmt.Println("[DEBUG] JWTSecret from config (main.go):", cfg.JWTSecret)
+
+	initDBs(cfg)
+
+	// Set up Redpanda/Kafka
+	brokers := []string{"localhost:9092"}
+	topic := "metrics-events"
+
+	kafkaevents.InitProducer(brokers, topic)
+
+	// WebSocket hub
+	wsHub := ws.NewHub()
+	go wsHub.Run()
+
+	// Kafka consumer broadcast to WebSocket clients
+	kafkaevents.StartConsumer(brokers, topic, func(msg []byte) {
+		fmt.Println("[DEBUG] Broadcasting to WebSocket clients:", string(msg))
+		wsHub.Broadcast(msg)
+	})
+
+	// Fiber app with error handler
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
 	})
@@ -56,25 +85,33 @@ func main() {
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-	// Health check route
-	routes.RegisterHealthRoutes(app)
+	// Health route (robust, production-safe)
+	app.Get("/health", func(c *fiber.Ctx) error {
+		status := fiber.Map{"status": "ok"}
+		// Optionally test DB connections
+		if mongoClient != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			if err := mongoClient.Ping(ctx, nil); err != nil {
+				status["mongo"] = "unreachable"
+			} else {
+				status["mongo"] = "connected"
+			}
+		} else {
+			status["mongo"] = "not_initialized"
+		}
+		// Other DB checks (add as needed)
+		return c.JSON(status)
+	})
 
-	// Auth routes (login, register, hashing, etc.)
+	// Register all API routes (previous days)
 	routes.RegisterAuthRoutes(app)
-
-	// Host routes
 	routes.RegisterHostRoutes(app)
-
-	// Metric routes
 	routes.RegisterMetricRoutes(app)
-
-	// Log routes (NEW for Day 8)
 	routes.RegisterLogRoutes(app)
-
-	// Alert routes
 	routes.RegisterAlertRoutes(app)
 
-	// A sample protected route
+	// Protected route
 	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"msg":      "Access granted",
@@ -82,6 +119,9 @@ func main() {
 			"username": c.Locals("username"),
 		})
 	})
+
+	// WebSocket JWT-enabled endpoint
+	app.Get("/ws", websocket.New(ws.WsHandler(wsHub, cfg.JWTSecret)))
 
 	log.Printf("Starting server on port %s...", cfg.AppPort)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {

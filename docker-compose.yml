@@ -24,11 +24,18 @@ services:
       - "6379:6379"
 
   redpanda:
-    image: redpandadata/redpanda:latest
-    command: redpanda start --overprovisioned --smp 1 --memory 1G --reserve-memory 0M --node-id 0 --pandaproxy-addr 0.0.0.0:8082
+    image: redpandadata/redpanda:v25.2.9
+    command: >
+      redpanda start
+      --overprovisioned
+      --smp 1
+      --memory 1G
+      --reserve-memory 0M
+      --node-id 0
     ports:
       - "9092:9092"
       - "8082:8082"
+      - "9644:9644"
 
 volumes:
   pgdata:

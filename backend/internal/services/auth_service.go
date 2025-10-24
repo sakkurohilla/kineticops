@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// register a new user
+// Register a new user
 func RegisterUser(username, email, password string) error {
 	var count int64
 	postgres.DB.Model(&models.User{}).
@@ -30,7 +30,7 @@ func RegisterUser(username, email, password string) error {
 	return postgres.DB.Create(&user).Error
 }
 
-// authenticate user and return token if OK
+// Authenticate user, return JWT token if success
 func LoginUser(username, password string) (string, int64, error) {
 	var user models.User
 	res := postgres.DB.Where("username = ?", username).First(&user)
@@ -42,24 +42,17 @@ func LoginUser(username, password string) (string, int64, error) {
 	if !auth.CheckPasswordHash(password, user.PasswordHash) {
 		return "", 0, errors.New("invalid credentials")
 	}
-	token, err := auth.GenerateJWT(user.ID, user.Username, time.Minute*15)
+	token, err := auth.GenerateJWT(user.ID, user.Username, 15*time.Minute)
 	return token, user.ID, err
 }
 
-// password reset (mock logic)
+// Password reset (mock)
 func ForgotPassword(email string) error {
-	// In production: send email, create reset token in DB
+	// No real action, for mock/dev only
 	return nil
 }
 
-// create audit log
+// Audit log
 func LogEvent(userID int64, event, details string) {
-	log := models.AuditLog{
-		UserID:    userID,
-		Event:     event,
-		Timestamp: time.Now(),
-		Details:   details,
-	}
-	// Do not block main handler if DB slow
-	go postgres.DB.Create(&log)
+	// Optional: log to DB or stdout
 }

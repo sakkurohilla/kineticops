@@ -1,0 +1,45 @@
+package services
+
+import (
+	"errors"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/models"
+	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
+	"golang.org/x/crypto/bcrypt"
+)
+
+// RegisterUser registers a new user and hashes password
+func RegisterUser(username, email, password string) error {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return errors.New("failed to hash password")
+	}
+	user := models.User{
+		Username:     username,
+		Email:        email,
+		PasswordHash: string(hashed),
+	}
+	return postgres.DB.Create(&user).Error
+}
+
+// GetUserByUsernameAndPassword finds a user and validates password
+func GetUserByUsernameAndPassword(username, password string) (*models.User, error) {
+	var user models.User
+	if err := postgres.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		return nil, errors.New("user not found")
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		return nil, errors.New("invalid password")
+	}
+	return &user, nil
+}
+
+// Example helper for password resets
+func ForgotPassword(email string) error {
+	var user models.User
+	if err := postgres.DB.Where("email = ?", email).First(&user).Error; err != nil {
+		return errors.New("user not found")
+	}
+	// Here you would generate and send a reset token—mock for now
+	return nil
+}
