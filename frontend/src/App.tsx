@@ -10,6 +10,7 @@ import ForgotPassword from './pages/Auth/ForgotPassword';
 import ResetPassword from './pages/Auth/ResetPassword';
 import MFASetup from './pages/Auth/MFASetup';
 import Dashboard from './pages/Dashboard/Dashboard';
+import Metrics from './pages/Metrics/Metrics';
 
 const App: React.FC = () => {
   return (
@@ -25,12 +26,21 @@ const App: React.FC = () => {
           {/* Semi-Protected Routes */}
           <Route path="/mfa-setup" element={<MFASetup />} />
 
-          {/* Protected Routes - Dashboard already has MainLayout inside */}
+          {/* Protected Routes */}
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/metrics"
+            element={
+              <ProtectedRoute>
+                <Metrics />
               </ProtectedRoute>
             }
           />
