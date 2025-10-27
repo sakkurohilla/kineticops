@@ -41,11 +41,11 @@ func initDBs(cfg *config.Config) {
 	mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
 	if err != nil {
 		log.Printf("[WARN] MongoDB connection error: %v", err)
-		return // Don't fatal if nonessential!
+		return
 	}
 	if pingErr := mongoClient.Ping(ctx, nil); pingErr != nil {
 		log.Printf("[WARN] MongoDB ping error: %v", pingErr)
-		return // Don't fatal!
+		return
 	}
 	models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
 	log.Println("MongoDB (logs) connected.")
@@ -55,7 +55,8 @@ func initDBs(cfg *config.Config) {
 
 func main() {
 	cfg := config.Load()
-	fmt.Println("[DEBUG] JWTSecret from config (main.go):", cfg.JWTSecret)
+	fmt.Println("[INFO] Starting KineticOps Server...")
+	fmt.Println("[DEBUG] JWTSecret loaded:", cfg.JWTSecret != "")
 
 	initDBs(cfg)
 
@@ -80,38 +81,15 @@ func main() {
 		ErrorHandler: middleware.ErrorHandler,
 	})
 
-	// Middlewares
+	// Global middlewares
 	app.Use(middleware.Logger())
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-	// Health route (robust, production-safe)
-	app.Get("/health", func(c *fiber.Ctx) error {
-		status := fiber.Map{"status": "ok"}
-		// Optionally test DB connections
-		if mongoClient != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			if err := mongoClient.Ping(ctx, nil); err != nil {
-				status["mongo"] = "unreachable"
-			} else {
-				status["mongo"] = "connected"
-			}
-		} else {
-			status["mongo"] = "not_initialized"
-		}
-		// Other DB checks (add as needed)
-		return c.JSON(status)
-	})
+	// ✅ Register ALL routes through unified router
+	routes.RegisterAllRoutes(app)
 
-	// Register all API routes (previous days)
-	routes.RegisterAuthRoutes(app)
-	routes.RegisterHostRoutes(app)
-	routes.RegisterMetricRoutes(app)
-	routes.RegisterLogRoutes(app)
-	routes.RegisterAlertRoutes(app)
-
-	// Protected route
+	// Protected demo route
 	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"msg":      "Access granted",
@@ -123,7 +101,10 @@ func main() {
 	// WebSocket JWT-enabled endpoint
 	app.Get("/ws", websocket.New(ws.WsHandler(wsHub, cfg.JWTSecret)))
 
-	log.Printf("Starting server on port %s...", cfg.AppPort)
+	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
+	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
+	log.Printf("🔐 API Base: http://localhost:%s/api/v1", cfg.AppPort)
+
 	if err := app.Listen(":" + cfg.AppPort); err != nil {
 		log.Fatal(err)
 	}

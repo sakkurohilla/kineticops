@@ -7,10 +7,12 @@ import (
 )
 
 func RegisterMetricRoutes(app *fiber.App) {
-	api := app.Group("/api/v1/metrics", middleware.AuthRequired())
+	api := app.Group("/api/v1/metrics", middleware.AuthMiddleware)
 	api.Post("/collect", handlers.CollectMetric)
 	api.Get("/", handlers.ListMetrics)
 	api.Get("/latest", handlers.LatestMetric)
 	api.Get("/prometheus", handlers.PrometheusExport)
-	// For Prometheus export (plain text), see below
+
+	// ✅ COMMENT THIS OUT IF AggregateMetrics handler doesn't exist yet
+	api.Get("/aggregate", handlers.AggregateMetrics)
 }

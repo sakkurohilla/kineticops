@@ -7,8 +7,8 @@ import (
 )
 
 func RegisterHostRoutes(app *fiber.App) {
-	api := app.Group("/api/v1/hosts", middleware.AuthRequired())
-	api.Post("", handlers.CreateHost) // No slash for POST
+	api := app.Group("/api/v1/hosts", middleware.AuthMiddleware)
+	api.Post("", handlers.CreateHost)
 	api.Get("", handlers.ListHosts)
 	api.Get("/:id", handlers.GetHost)
 	api.Put("/:id", handlers.UpdateHost)

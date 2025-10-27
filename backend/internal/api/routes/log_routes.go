@@ -6,8 +6,9 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 )
 
-func RegisterLogRoutes(app *fiber.App) {
-	api := app.Group("/api/v1/logs", middleware.AuthRequired())
+// ✅ CHANGE THIS FUNCTION NAME
+func RegisterLogRoutes(app *fiber.App) { // ← Was RegisterAlertRoutes
+	api := app.Group("/api/v1/logs", middleware.AuthMiddleware)
 	api.Post("/", handlers.CollectLog)
 	api.Get("/", handlers.SearchLogs)
 }

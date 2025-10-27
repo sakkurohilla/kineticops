@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Register a new user
+// RegisterUser creates a new user account
 func RegisterUser(username, email, password string) error {
 	var count int64
 	postgres.DB.Model(&models.User{}).
@@ -18,10 +18,12 @@ func RegisterUser(username, email, password string) error {
 	if count > 0 {
 		return errors.New("username or email already exists")
 	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
 	}
+
 	user := models.User{
 		Username:     username,
 		Email:        email,
@@ -30,40 +32,28 @@ func RegisterUser(username, email, password string) error {
 	return postgres.DB.Create(&user).Error
 }
 
-// Authenticate user, return JWT token if success
+// LoginUser authenticates user and returns JWT token
 func LoginUser(username, password string) (string, int64, error) {
 	var user models.User
 	res := postgres.DB.Where("username = ?", username).First(&user)
+
 	if res.Error == gorm.ErrRecordNotFound {
 		return "", 0, errors.New("invalid credentials")
 	} else if res.Error != nil {
 		return "", 0, errors.New("db error")
 	}
+
 	if !auth.CheckPasswordHash(password, user.PasswordHash) {
 		return "", 0, errors.New("invalid credentials")
 	}
 
-	// Increase token duration to 1 hour instead of 15 minutes
+	// Token duration: 1 hour
 	token, err := auth.GenerateJWT(user.ID, user.Username, 1*time.Hour)
 	return token, user.ID, err
 }
 
-// GetUserByID retrieves a user by their ID
-func GetUserByID(userID int64) (*models.User, error) {
-	var user models.User
-	result := postgres.DB.First(&user, userID)
-
-	if result.Error == gorm.ErrRecordNotFound {
-		return nil, errors.New("user not found")
-	} else if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &user, nil
-}
-
-// Audit log
+// Audit log helper
 func LogEvent(userID int64, event, details string) {
 	// Optional: log to DB or stdout
-	// You can implement proper logging here
+	// You can implement proper audit logging here
 }
