@@ -24,26 +24,34 @@ export interface RegisterRequest {
   password: string;
 }
 
-// Rest of your types remain the same...
-
-// Host Types
+// Host Types - Matching backend structure
 export interface Host {
-  id: string;
-  name: string;
+  id: number;
+  hostname?: string;
+  name?: string;
   ip: string;
-  status: 'online' | 'offline' | 'maintenance';
-  createdAt: string;
-  updatedAt: string;
+  os?: string;
+  group?: string;
+  tags?: string;
+  status: string;
+  agent_status?: string;
+  tenant_id?: number;
+  reg_token?: string;
+  last_seen?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Metrics Types
 export interface Metric {
-  id: string;
-  hostId: string;
-  type: string;
-  value: number;
+  id: number;
+  host_id: number;
+  metric_name: string;
+  metric_value: number;
+  unit?: string;
+  labels?: string;
   timestamp: string;
-  labels?: Record<string, string>;
+  tenant_id?: number;
 }
 
 export interface MetricAggregate {
@@ -58,22 +66,29 @@ export interface MetricAggregate {
 // Logs Types
 export interface Log {
   id: string;
-  hostId: string;
+  host_id: number;
   level: 'info' | 'warn' | 'error' | 'debug';
   message: string;
+  source?: string;
   timestamp: string;
   metadata?: Record<string, any>;
 }
 
-// Alerts Types
+// Alerts Types - Matching backend structure
 export interface Alert {
-  id: string;
-  hostId: string;
-  type: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  id: number;
+  host_id: number;
+  host_name?: string;
+  rule_id?: number;
+  alert_type?: string;
+  type?: string;
+  severity: string;
   message: string;
-  status: 'active' | 'acknowledged' | 'resolved';
-  createdAt: string;
+  status: string;
+  triggered_at?: string;
+  resolved_at?: string;
+  created_at: string;
+  tenant_id?: number;
 }
 
 // API Response Types
@@ -82,6 +97,7 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   message?: string;
+  msg?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -89,4 +105,20 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+// Dashboard specific types
+export interface DashboardStats {
+  totalHosts: number;
+  onlineHosts: number;
+  warnings: number;
+  critical: number;
+}
+
+export interface ActivityItem {
+  id: number;
+  host: string;
+  message: string;
+  type: 'warning' | 'success' | 'info' | 'error';
+  time: string;
 }

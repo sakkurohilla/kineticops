@@ -105,7 +105,14 @@ func main() {
 	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
 	log.Printf("🔐 API Base: http://localhost:%s/api/v1", cfg.AppPort)
 
-	if err := app.Listen(":" + cfg.AppPort); err != nil {
+	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
+	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
+	log.Printf("🔐 API Base: http://localhost:%s/api/v1", cfg.AppPort)
+	log.Printf("🌐 Network: http://0.0.0.0:%s", cfg.AppPort)
+
+	// ✅ IMPORTANT: Listen on all interfaces (0.0.0.0)
+	if err := app.Listen("0.0.0.0:" + cfg.AppPort); err != nil {
 		log.Fatal(err)
 	}
+
 }

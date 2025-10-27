@@ -65,7 +65,7 @@ const Dashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
-      const fetchDashboardData = async () => {
+    const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
       setError('');
@@ -73,9 +73,10 @@ const Dashboard: React.FC = () => {
       // Fetch hosts data
       try {
         const hostsResponse: any = await apiClient.get('/hosts');
-        const hosts: Host[] = Array.isArray(hostsResponse) ? hostsResponse : (hostsResponse.data || []);
+        const hosts: Host[] = Array.isArray(hostsResponse) ? hostsResponse : (hostsResponse.data || hostsResponse || []);
 
-        // Calculate stats from real data
+        console.log('[Dashboard] Hosts loaded:', hosts.length);
+
         const totalHosts = hosts.length;
         const onlineHosts = hosts.filter((h: Host) => h.status === 'online').length;
         const warnings = hosts.filter((h: Host) => h.status === 'warning').length;
@@ -88,8 +89,8 @@ const Dashboard: React.FC = () => {
           critical,
         });
       } catch (hostError: any) {
-        console.log('No hosts available yet or endpoint not ready:', hostError.message);
-        // Don't show error, just keep stats at 0
+        console.log('[Dashboard] Hosts endpoint not available:', hostError.message);
+        // Don't show error - empty state is expected
         setStats({
           totalHosts: 0,
           onlineHosts: 0,
@@ -98,12 +99,11 @@ const Dashboard: React.FC = () => {
         });
       }
 
-      // Fetch recent alerts/activity (if endpoint exists)
+      // Fetch recent alerts
       try {
         const alertsResponse: any = await apiClient.get('/alerts?limit=5');
-        const alerts: Alert[] = Array.isArray(alertsResponse) ? alertsResponse : (alertsResponse.data || []);
+        const alerts: Alert[] = Array.isArray(alertsResponse) ? alertsResponse : (alertsResponse.data || alertsResponse || []);
         
-        // Transform alerts to activity format
         const activity: ActivityItem[] = alerts.map((alert: Alert, index: number) => ({
           id: index,
           host: alert.host_name || `Host #${alert.host_id}`,
@@ -116,13 +116,12 @@ const Dashboard: React.FC = () => {
         
         setRecentActivity(activity);
       } catch (alertError) {
-        console.log('No alerts available yet');
+        console.log('[Dashboard] No alerts available');
         setRecentActivity([]);
       }
 
     } catch (err: any) {
-      console.error('Error fetching dashboard data:', err);
-      // Don't show error for empty data - this is expected for new installations
+      console.error('[Dashboard] General error:', err);
       setStats({
         totalHosts: 0,
         onlineHosts: 0,
