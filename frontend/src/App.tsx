@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import Logs from './pages/Logs/Logs';
 
 // Import pages
 import Login from './pages/Login/Login';
@@ -44,6 +45,17 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+
+          //Logs Routes
+<Route
+  path="/logs"
+  element={
+    <ProtectedRoute>
+      <Logs />
+    </ProtectedRoute>
+  }
+/>
+
 
           {/* Default Redirects */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

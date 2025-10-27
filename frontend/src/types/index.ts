@@ -66,13 +66,14 @@ export interface MetricAggregate {
 // Logs Types
 export interface Log {
   id: string;
-  host_id: number;
-  level: 'info' | 'warn' | 'error' | 'debug';
-  message: string;
-  source?: string;
   timestamp: string;
+  level: string;
+  host_id: string;
+  source: string;
+  message: string;
   metadata?: Record<string, any>;
 }
+
 
 // Alerts Types - Matching backend structure
 export interface Alert {
