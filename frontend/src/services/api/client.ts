@@ -1,115 +1,108 @@
-import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import config from '../../config/config';
+import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import authService from '../auth/authService';
 
-class ApiClient {
-  private client: AxiosInstance;
-
-  constructor() {
-    this.client = axios.create({
-      baseURL: config.apiBaseUrl,
-      timeout: 30000,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    this.setupInterceptors();
+// Determine the API base URL based on environment
+const getBaseURL = (): string => {
+  // If VITE_API_URL is set in environment, use it
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
   }
 
-  private setupInterceptors(): void {
-    // Request interceptor
-    this.client.interceptors.request.use(
-      (config: InternalAxiosRequestConfig) => {
-        const token = localStorage.getItem('token');
-        if (token && config.headers) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error: AxiosError) => {
-        return Promise.reject(error);
-      }
-    );
-
-    // Response interceptor
-    this.client.interceptors.response.use(
-      (response: AxiosResponse) => {
-        return response;
-      },
-      async (error: AxiosError) => {
-        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-
-        // Handle 401 - Unauthorized
-        if (error.response?.status === 401 && !originalRequest._retry) {
-          originalRequest._retry = true;
-
-          try {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (refreshToken) {
-              const response = await axios.post(`${config.apiBaseUrl}/auth/refresh`, {
-                refresh_token: refreshToken,
-              });
-
-              const { token } = response.data;
-              localStorage.setItem('token', token);
-
-              if (originalRequest.headers) {
-                originalRequest.headers.Authorization = `Bearer ${token}`;
-              }
-
-              return this.client(originalRequest);
-            }
-          } catch (refreshError) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('refreshToken');
-            window.location.href = '/login';
-            return Promise.reject(refreshError);
-          }
-        }
-
-        // Handle other errors
-        const errorMessage = this.getErrorMessage(error);
-        return Promise.reject(new Error(errorMessage));
-      }
-    );
+  // For production build
+  if (import.meta.env.PROD) {
+    return '/api/v1';
   }
 
-  private getErrorMessage(error: AxiosError): string {
-    if (error.response) {
-      const data = error.response.data as any;
-      return data?.error || data?.message || 'An error occurred';
-    } else if (error.request) {
-      return 'No response from server. Please check your connection.';
-    } else {
-      return error.message || 'An unexpected error occurred';
+  // For development - detect if accessing from network
+  const hostname = window.location.hostname;
+  
+  // If accessing from network IP (not localhost/127.0.0.1)
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    // Use the same host but port 8080 for API
+    return `http://${hostname}:8080/api/v1`;
+  }
+
+  // Default to localhost for local development
+  return 'http://localhost:8080/api/v1';
+};
+
+const BASE_URL = getBaseURL();
+
+console.log('[API Client] Using base URL:', BASE_URL);
+
+const apiClient: AxiosInstance = axios.create({
+  baseURL: BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = authService.getToken();
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
+    return config;
+  },
+  (error: AxiosError) => {
+    return Promise.reject(error);
   }
+);
 
-  // HTTP Methods
-  public async get<T>(url: string, params?: any): Promise<T> {
-    const response = await this.client.get<T>(url, { params });
-    return response.data;
-  }
-
-  public async post<T>(url: string, data?: any): Promise<T> {
-    const response = await this.client.post<T>(url, data);
-    return response.data;
-  }
-
-  public async put<T>(url: string, data?: any): Promise<T> {
-    const response = await this.client.put<T>(url, data);
-    return response.data;
-  }
-
-  public async delete<T>(url: string): Promise<T> {
-    const response = await this.client.delete<T>(url);
-    return response.data;
-  }
-
-  public async patch<T>(url: string, data?: any): Promise<T> {
-    const response = await this.client.patch<T>(url, data);
-    return response.data;
-  }
+// Define error response type
+interface ApiErrorResponse {
+  error?: string;
+  message?: string;
 }
 
-export default new ApiClient();
+// Response interceptor
+apiClient.interceptors.response.use(
+  (response: AxiosResponse) => {
+    return response.data;
+  },
+  async (error: AxiosError<ApiErrorResponse>) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Handle 401 errors (unauthorized)
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        // Try to refresh the token
+        const newToken = await authService.refreshToken();
+        
+        // Update the failed request with new token
+        if (originalRequest.headers) {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        }
+        
+        // Retry the original request
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        // Refresh failed, logout user
+        authService.logout();
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+
+    // Handle network errors
+    if (error.message === 'Network Error' || !error.response) {
+      return Promise.reject({
+        message: 'No response from server. Please check your connection.',
+        status: 0,
+      });
+    }
+
+    // Return structured error
+    return Promise.reject({
+      message: error.response?.data?.error || error.response?.data?.message || error.message,
+      status: error.response?.status,
+    });
+  }
+);
+
+export default apiClient;
