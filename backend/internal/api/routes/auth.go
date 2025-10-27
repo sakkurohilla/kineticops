@@ -10,12 +10,12 @@ import (
 )
 
 func RegisterAuthRoutes(app *fiber.App) {
-	// More lenient rate limiter for development/testing
+	// Rate limiter for auth endpoints
 	rl := limiter.New(limiter.Config{
-		Max:        20, // 20 requests instead of 5
+		Max:        20, // 20 requests
 		Expiration: 60 * time.Second,
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP() // Rate limit per IP
+			return c.IP()
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(429).JSON(fiber.Map{
@@ -28,8 +28,12 @@ func RegisterAuthRoutes(app *fiber.App) {
 	auth := app.Group("/api/v1/auth", rl)
 	auth.Post("/register", handlers.Register)
 	auth.Post("/login", handlers.Login)
-	auth.Post("/forgot-password", handlers.ForgotPassword)
 	auth.Post("/refresh", handlers.RefreshToken)
+
+	// Password reset routes
+	auth.Post("/forgot-password", handlers.ForgotPassword)
+	auth.Post("/verify-reset-token", handlers.VerifyResetToken)
+	auth.Post("/reset-password", handlers.ResetPassword)
 
 	// Protected auth routes (NO rate limiter - already authenticated)
 	authProtected := app.Group("/api/v1/auth")

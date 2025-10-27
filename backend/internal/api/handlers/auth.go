@@ -9,6 +9,7 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
+// Register handles user registration
 func Register(c *fiber.Ctx) error {
 	var req struct {
 		Username string `json:"username"`
@@ -25,10 +26,10 @@ func Register(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 	services.LogEvent(0, "register", req.Username)
-	return c.JSON(fiber.Map{"msg": "User registered. Please verify your email (mock)."})
+	return c.JSON(fiber.Map{"msg": "User registered successfully. Please login."})
 }
 
-// LOGIN user
+// Login handles user authentication
 func Login(c *fiber.Ctx) error {
 	var req struct {
 		Username string `json:"username"`
@@ -54,6 +55,7 @@ func Login(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"token": token, "refresh_token": refreshTokenStr})
 }
 
+// ForgotPassword initiates password reset process
 func ForgotPassword(c *fiber.Ctx) error {
 	var req struct {
 		Email string `json:"email"`
@@ -61,16 +63,81 @@ func ForgotPassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
-	if err := services.ForgotPassword(req.Email); err != nil {
+
+	if req.Email == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Email is required"})
+	}
+
+	token, err := services.GeneratePasswordResetToken(req.Email)
+	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Could not process password reset"})
 	}
-	services.LogEvent(0, "password_reset", req.Email)
-	return c.JSON(fiber.Map{"msg": "If your email exists in our system, a reset link was sent. (mock)"})
+
+	// In development: return token directly
+	// In production: send email with reset link
+	// For now, we return the token for testing
+	if token != "" {
+		return c.JSON(fiber.Map{
+			"msg":   "Password reset token generated. Check your email.",
+			"token": token, // REMOVE THIS IN PRODUCTION - only for development
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"msg": "If your email exists in our system, a reset link was sent.",
+	})
+}
+
+// VerifyResetToken validates a password reset token
+func VerifyResetToken(c *fiber.Ctx) error {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+
+	resetToken, err := services.VerifyPasswordResetToken(req.Token)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"valid":      true,
+		"email":      resetToken.Email,
+		"expires_at": resetToken.ExpiresAt,
+	})
+}
+
+// ResetPassword handles password reset with token
+func ResetPassword(c *fiber.Ctx) error {
+	var req struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+
+	if req.Token == "" || req.NewPassword == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Token and new password are required"})
+	}
+
+	// Validate password strength (minimum 6 characters for now)
+	if len(req.NewPassword) < 6 {
+		return c.Status(400).JSON(fiber.Map{"error": "Password must be at least 6 characters"})
+	}
+
+	err := services.ResetPassword(req.Token, req.NewPassword)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"msg": "Password reset successful. You can now login with your new password."})
 }
 
 // GetCurrentUser returns the current authenticated user
 func GetCurrentUser(c *fiber.Ctx) error {
-	// Get user ID from JWT claims (set by middleware)
 	userID := c.Locals("user_id").(int64)
 
 	user, err := services.GetUserByID(userID)
@@ -81,7 +148,7 @@ func GetCurrentUser(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
-// REFRESH TOKEN endpoint
+// RefreshToken handles token refresh
 func RefreshToken(c *fiber.Ctx) error {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`

@@ -62,13 +62,8 @@ func GetUserByID(userID int64) (*models.User, error) {
 	return &user, nil
 }
 
-// Password reset (mock)
-func ForgotPassword(email string) error {
-	// No real action, for mock/dev only
-	return nil
-}
-
 // Audit log
 func LogEvent(userID int64, event, details string) {
 	// Optional: log to DB or stdout
+	// You can implement proper logging here
 }

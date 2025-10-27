@@ -46,7 +46,7 @@ class AuthService {
     return response.token;
   }
 
-  // Get current user (you'll need to add this endpoint to backend)
+  // Get current user
   async getCurrentUser(): Promise<User> {
     return await apiClient.get<User>('/auth/me');
   }
@@ -57,9 +57,22 @@ class AuthService {
     localStorage.removeItem('refreshToken');
   }
 
-  // Forgot password
-  async forgotPassword(email: string): Promise<{ msg: string }> {
+  // Forgot password - Request reset token
+  async forgotPassword(email: string): Promise<{ msg: string; token?: string }> {
     return await apiClient.post('/auth/forgot-password', { email });
+  }
+
+  // Verify reset token
+  async verifyResetToken(token: string): Promise<{ valid: boolean; email: string; expires_at: string }> {
+    return await apiClient.post('/auth/verify-reset-token', { token });
+  }
+
+  // Reset password with token
+  async resetPassword(token: string, newPassword: string): Promise<{ msg: string }> {
+    return await apiClient.post('/auth/reset-password', {
+      token,
+      new_password: newPassword,
+    });
   }
 
   // Token management

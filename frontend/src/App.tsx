@@ -8,6 +8,7 @@ import Layout from './components/layout/Layout';
 import Login from './pages/Login/Login';
 import Register from './pages/Register/Register';
 import ForgotPassword from './pages/Auth/ForgotPassword';
+import ResetPassword from './pages/Auth/ResetPassword';
 import MFASetup from './pages/Auth/MFASetup';
 
 // Dashboard Page with Layout
@@ -56,6 +57,7 @@ const App: React.FC = () => {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             
             {/* Semi-Protected Routes */}
             <Route path="/mfa-setup" element={<MFASetup />} />

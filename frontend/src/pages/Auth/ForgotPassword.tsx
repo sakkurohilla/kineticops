@@ -7,12 +7,14 @@ const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setResetToken('');
 
     const validation = validateEmail(email);
     if (!validation.isValid) {
@@ -25,6 +27,12 @@ const ForgotPassword: React.FC = () => {
     try {
       const response = await authService.forgotPassword(email);
       setSuccess(response.msg || 'Password reset link sent to your email');
+      
+      // In development, backend returns token - display it
+      if (response.token) {
+        setResetToken(response.token);
+      }
+      
       setEmail('');
     } catch (err: any) {
       setError(err.message || 'Failed to send reset link');
@@ -33,10 +41,23 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
+  const getResetLink = () => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/reset-password?token=${resetToken}`;
+  };
+
+  const copyResetLink = () => {
+    navigator.clipboard.writeText(getResetLink());
+    alert('Reset link copied to clipboard!');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center p-4">
       <div className="card max-w-md w-full">
         <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🔑</span>
+          </div>
           <h1 className="text-3xl font-bold text-primary-700 mb-2">Forgot Password?</h1>
           <p className="text-gray-600">Enter your email to reset your password</p>
         </div>
@@ -50,7 +71,31 @@ const ForgotPassword: React.FC = () => {
 
           {success && (
             <div className="p-3 bg-success/10 border border-success rounded-lg">
-              <p className="text-sm text-green-700">{success}</p>
+              <p className="text-sm text-green-700 font-medium">{success}</p>
+              
+              {/* Development Only: Show reset link */}
+              {resetToken && (
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-xs font-semibold text-yellow-800 mb-2">
+                    🚧 DEVELOPMENT MODE - Reset Link:
+  </p>
+                  <div className="bg-white p-2 rounded border border-yellow-300 mb-2">
+                    <p className="text-xs text-gray-700 break-all font-mono">
+                      {getResetLink()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyResetLink}
+                    className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded"
+                  >
+                    Copy Link
+                  </button>
+                  <p className="text-xs text-yellow-700 mt-2">
+                    Click the link above or copy it to reset your password.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -66,6 +111,7 @@ const ForgotPassword: React.FC = () => {
               className="input"
               placeholder="you@example.com"
               disabled={isLoading}
+              required
             />
           </div>
 
