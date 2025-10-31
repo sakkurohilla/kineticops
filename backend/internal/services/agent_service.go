@@ -38,22 +38,32 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 	}
 
 	// Generate unique token
-	token, err := s.generateToken()
+	token, err := s.GenerateAgentToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %v", err)
 	}
 
 	// Create agent record
 	agent := &models.Agent{
-		HostID: int(host.ID),
-		Token:  token,
-		Status: "pending",
+		HostID:      int(host.ID),
+		AgentToken:  token,
+		Status:      "pending",
+		SetupMethod: req.SetupMethod,
 	}
 	
 	err = s.agentRepo.Create(agent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %v", err)
 	}
+
+	// Create installation log
+	installLog := &models.AgentInstallationLog{
+		AgentID:     agent.ID,
+		SetupMethod: req.SetupMethod,
+		Status:      "started",
+		Logs:        "Installation initiated",
+	}
+	s.agentRepo.CreateInstallLog(installLog)
 
 	response := &models.AgentSetupResponse{
 		HostID:      int(host.ID),
@@ -64,10 +74,10 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 	}
 
 	if req.SetupMethod == "automatic" {
-		go s.performAutomaticSetup(agent, req)
+		go s.SetupAgentAutomatic(agent, req)
 		response.Message = "Automatic installation started"
 	} else {
-		script := s.generateInstallScript(token)
+		script := s.GenerateInstallScript(token)
 		response.InstallScript = script
 		response.Message = "Manual installation script generated"
 	}
@@ -75,14 +85,14 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 	return response, nil
 }
 
-func (s *AgentService) performAutomaticSetup(agent *models.Agent, req *models.AgentSetupRequest) {
+func (s *AgentService) SetupAgentAutomatic(agent *models.Agent, req *models.AgentSetupRequest) {
 	log.Printf("Starting automatic setup for agent %d", agent.ID)
 	
 	// Update status to installing
 	s.agentRepo.UpdateStatus(agent.ID, "installing", "Starting automatic installation...")
 
 	// Generate install script
-	script := s.generateInstallScript(agent.Token)
+	script := s.GenerateInstallScript(agent.AgentToken)
 	
 	// Connect via SSH and execute
 	var err error
@@ -98,11 +108,20 @@ func (s *AgentService) performAutomaticSetup(agent *models.Agent, req *models.Ag
 		return
 	}
 
+	s.agentRepo.MarkInstalled(agent.ID)
 	s.agentRepo.UpdateStatus(agent.ID, "installed", "Agent installed successfully via SSH")
 	log.Printf("Automatic setup completed for agent %d", agent.ID)
 }
 
-func (s *AgentService) generateInstallScript(token string) string {
+func (s *AgentService) GenerateAgentToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func (s *AgentService) GenerateInstallScript(token string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 
@@ -180,22 +199,42 @@ sudo systemctl status kineticops-agent --no-pager
 `, token)
 }
 
-func (s *AgentService) ProcessHeartbeat(heartbeat *models.AgentHeartbeat) error {
+func (s *AgentService) RegisterAgentHeartbeat(heartbeat *models.AgentHeartbeat) error {
 	return s.agentRepo.UpdateHeartbeat(heartbeat.Token, heartbeat)
+}
+
+func (s *AgentService) CheckAgentStatus(hostID int) (*models.Agent, error) {
+	return s.agentRepo.GetByHostID(hostID)
+}
+
+func (s *AgentService) FetchServices(agentID int) ([]models.AgentService, error) {
+	return s.agentRepo.GetServices(agentID)
+}
+
+func (s *AgentService) GetManualSetupInstructions(token string) string {
+	script := s.GenerateInstallScript(token)
+	return fmt.Sprintf(`Manual Installation Instructions:
+
+1. Copy the following script to your host:
+%s
+
+2. Save it as: ~/.kineticops-install.sh
+3. Make executable: chmod +x ~/.kineticops-install.sh
+4. Run: bash ~/.kineticops-install.sh
+5. Agent will start automatically and connect to server
+
+The agent will appear online in your dashboard within 30 seconds.`, script)
 }
 
 func (s *AgentService) GetAgentStatus(id int) (*models.Agent, error) {
 	return s.agentRepo.GetByHostID(id)
 }
 
-func (s *AgentService) GetHostServices(hostID int) ([]models.HostService, error) {
-	return s.agentRepo.GetServices(hostID)
+func (s *AgentService) GetHostServices(hostID int) ([]models.AgentService, error) {
+	agent, err := s.agentRepo.GetByHostID(hostID)
+	if err != nil {
+		return nil, err
+	}
+	return s.agentRepo.GetServices(agent.ID)
 }
 
-func (s *AgentService) generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
-}

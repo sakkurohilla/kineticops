@@ -18,18 +18,18 @@ func NewAgentRepository(db *sqlx.DB) *AgentRepository {
 
 func (r *AgentRepository) Create(agent *models.Agent) error {
 	query := `
-		INSERT INTO agents (host_id, token, status, version, os_info, system_info, installation_log)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO agents (host_id, agent_token, status, version, setup_method, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at`
 	
-	return r.db.QueryRow(query, agent.HostID, agent.Token, agent.Status, agent.Version,
-		agent.OSInfo, agent.SystemInfo, agent.InstallationLog).Scan(
+	return r.db.QueryRow(query, agent.HostID, agent.AgentToken, agent.Status, 
+		agent.Version, agent.SetupMethod, agent.Metadata).Scan(
 		&agent.ID, &agent.CreatedAt, &agent.UpdatedAt)
 }
 
 func (r *AgentRepository) GetByToken(token string) (*models.Agent, error) {
 	var agent models.Agent
-	query := `SELECT * FROM agents WHERE token = $1`
+	query := `SELECT * FROM agents WHERE agent_token = $1`
 	err := r.db.Get(&agent, query, token)
 	if err != nil {
 		return nil, err
@@ -55,19 +55,21 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 	defer tx.Rollback()
 
 	// Update agent heartbeat
-	systemInfoJSON, _ := json.Marshal(heartbeat.SystemInfo)
+	metadataJSON, _ := json.Marshal(heartbeat.Metadata)
 	_, err = tx.Exec(`
 		UPDATE agents 
-		SET last_heartbeat = $1, system_info = $2, status = 'online', updated_at = CURRENT_TIMESTAMP
-		WHERE token = $3`,
-		time.Now(), systemInfoJSON, token)
+		SET last_heartbeat = $1, cpu_usage = $2, memory_usage = $3, disk_usage = $4, 
+		    services_count = $5, metadata = $6, status = 'online', updated_at = CURRENT_TIMESTAMP
+		WHERE agent_token = $7`,
+		time.Now(), heartbeat.CPUUsage, heartbeat.MemoryUsage, heartbeat.DiskUsage,
+		len(heartbeat.Services), metadataJSON, token)
 	if err != nil {
 		return err
 	}
 
-	// Get agent to find host_id
-	var hostID int
-	err = tx.Get(&hostID, "SELECT host_id FROM agents WHERE token = $1", token)
+	// Get agent to find host_id and agent_id
+	var hostID, agentID int
+	err = tx.QueryRow("SELECT host_id, id FROM agents WHERE agent_token = $1", token).Scan(&hostID, &agentID)
 	if err != nil {
 		return err
 	}
@@ -91,14 +93,14 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		return err
 	}
 
-	// Update services
+	// Update agent services
 	for _, service := range heartbeat.Services {
 		_, err = tx.Exec(`
-			INSERT INTO host_services (host_id, name, status, pid, memory_usage, cpu_usage, updated_at)
+			INSERT INTO agent_services (agent_id, service_name, status, process_id, memory_usage, cpu_usage, last_check)
 			VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-			ON CONFLICT (host_id, name) 
-			DO UPDATE SET status = $3, pid = $4, memory_usage = $5, cpu_usage = $6, updated_at = CURRENT_TIMESTAMP`,
-			hostID, service.Name, service.Status, service.PID, service.MemoryUsage, service.CPUUsage)
+			ON CONFLICT (agent_id, service_name) 
+			DO UPDATE SET status = $3, process_id = $4, memory_usage = $5, cpu_usage = $6, last_check = CURRENT_TIMESTAMP`,
+			agentID, service.Name, service.Status, service.PID, service.MemoryUsage, service.CPUUsage)
 		if err != nil {
 			return err
 		}
@@ -116,9 +118,37 @@ func (r *AgentRepository) UpdateStatus(id int, status string, log string) error 
 	return err
 }
 
-func (r *AgentRepository) GetServices(hostID int) ([]models.HostService, error) {
-	var services []models.HostService
-	query := `SELECT * FROM host_services WHERE host_id = $1 ORDER BY name`
-	err := r.db.Select(&services, query, hostID)
+func (r *AgentRepository) GetServices(agentID int) ([]models.AgentService, error) {
+	var services []models.AgentService
+	query := `SELECT * FROM agent_services WHERE agent_id = $1 ORDER BY service_name`
+	err := r.db.Select(&services, query, agentID)
 	return services, err
+}
+
+func (r *AgentRepository) MarkInstalled(id int) error {
+	query := `
+		UPDATE agents 
+		SET status = 'installed', installed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1`
+	_, err := r.db.Exec(query, id)
+	return err
+}
+
+func (r *AgentRepository) CreateInstallLog(log *models.AgentInstallationLog) error {
+	query := `
+		INSERT INTO agent_installation_logs (agent_id, setup_method, status, logs, error_message)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, started_at`
+	
+	return r.db.QueryRow(query, log.AgentID, log.SetupMethod, log.Status, 
+		log.Logs, log.ErrorMessage).Scan(&log.ID, &log.StartedAt)
+}
+
+func (r *AgentRepository) UpdateInstallLog(id int, status, logs, errorMsg string) error {
+	query := `
+		UPDATE agent_installation_logs 
+		SET status = $1, logs = $2, error_message = $3, completed_at = CURRENT_TIMESTAMP
+		WHERE id = $1`
+	_, err := r.db.Exec(query, status, logs, errorMsg, id)
+	return err
 }

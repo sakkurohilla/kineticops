@@ -73,7 +73,8 @@ func main() {
 	agentService := services.NewAgentService(agentRepo, hostRepo, sshService)
 	
 	// Initialize handlers with services
-	handlers.InitAgentService(agentService)
+	handlers.InitAgentHandlers(agentService)
+	handlers.InitHostAgentService(agentService)
 
 	// Initialize telemetry (OpenTelemetry) - returns shutdown func
 	shutdownTelemetry := telemetry.InitTelemetry()

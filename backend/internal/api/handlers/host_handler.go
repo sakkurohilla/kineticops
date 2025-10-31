@@ -11,11 +11,13 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
-var agentService *services.AgentService
+var hostAgentService *services.AgentService
 
-func InitAgentService(as *services.AgentService) {
-	agentService = as
+func InitHostAgentService(as *services.AgentService) {
+	hostAgentService = as
 }
+
+
 
 // CreateHost creates a new host
 func CreateHost(c *fiber.Ctx) error {
@@ -376,11 +378,11 @@ func CreateHostWithAgent(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 
-	if agentService == nil {
+	if hostAgentService == nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
 	}
 
-	response, err := agentService.SetupAgent(&req)
+	response, err := hostAgentService.SetupAgent(&req)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -388,50 +390,15 @@ func CreateHostWithAgent(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
-// AgentHeartbeat processes agent heartbeat data
-func AgentHeartbeat(c *fiber.Ctx) error {
-	var heartbeat models.AgentHeartbeat
-	if err := c.BodyParser(&heartbeat); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
-	}
-
-	if agentService == nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
-	}
-
-	err := agentService.ProcessHeartbeat(&heartbeat)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return c.JSON(fiber.Map{"status": "ok"})
-}
-
-// GetAgentStatus returns agent installation status
-func GetAgentStatus(c *fiber.Ctx) error {
-	hostID, _ := strconv.Atoi(c.Params("id"))
-	
-	if agentService == nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
-	}
-
-	agent, err := agentService.GetAgentStatus(hostID)
-	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
-	}
-
-	return c.JSON(agent)
-}
-
 // GetHostServices returns discovered services for a host
 func GetHostServices(c *fiber.Ctx) error {
 	hostID, _ := strconv.Atoi(c.Params("id"))
 	
-	if agentService == nil {
+	if hostAgentService == nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
 	}
 
-	services, err := agentService.GetHostServices(hostID)
+	services, err := hostAgentService.GetHostServices(hostID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
