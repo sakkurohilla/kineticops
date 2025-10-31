@@ -70,4 +70,94 @@ func ListAlerts(c *fiber.Ctx) error {
 	return c.JSON(alerts)
 }
 
+// UpdateAlert updates an alert's fields (used for silencing/ack)
+func UpdateAlert(c *fiber.Ctx) error {
+	tid := c.Locals("tenant_id")
+	if tid == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
+	}
+
+	idParam := c.Params("id")
+	if idParam == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Missing id"})
+	}
+
+	var fields map[string]interface{}
+	if err := c.BodyParser(&fields); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+
+	// Ensure tenant+ownership: load alert first
+	var alert models.Alert
+	if err := postgres.DB.Where("id = ? AND tenant_id = ?", idParam, tid.(int64)).First(&alert).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Not found"})
+	}
+
+	if err := postgres.DB.Model(&models.Alert{}).Where("id = ?", alert.ID).Updates(fields).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Cannot update alert"})
+	}
+
+	return c.JSON(fiber.Map{"msg": "alert updated"})
+}
+
 // You can add other handlers: trigger alert manually, list alerts, ack/close alerts, etc.
+
+
+// GetAlertStats returns alert statistics for dashboard
+func GetAlertStats(c *fiber.Ctx) error {
+	tid := c.Locals("tenant_id")
+	if tid == nil {
+		// For now, return public stats when no auth
+		var stats = struct {
+			Total        int64 `json:"total"`
+			Open         int64 `json:"open"`
+			Acknowledged int64 `json:"acknowledged"`
+			Silenced     int64 `json:"silenced"`
+			Resolved     int64 `json:"resolved"`
+			Critical     int64 `json:"critical"`
+			High         int64 `json:"high"`
+			Medium       int64 `json:"medium"`
+			Low          int64 `json:"low"`
+		}{
+			Total: 0,
+			Open: 0,
+			Acknowledged: 0,
+			Silenced: 0,
+			Resolved: 0,
+			Critical: 0,
+			High: 0,
+			Medium: 0,
+			Low: 0,
+		}
+		return c.JSON(stats)
+	}
+
+	tenantID := tid.(int64)
+
+	var stats struct {
+		Total        int64 `json:"total"`
+		Open         int64 `json:"open"`
+		Acknowledged int64 `json:"acknowledged"`
+		Silenced     int64 `json:"silenced"`
+		Resolved     int64 `json:"resolved"`
+		Critical     int64 `json:"critical"`
+		High         int64 `json:"high"`
+		Medium       int64 `json:"medium"`
+		Low          int64 `json:"low"`
+	}
+
+	// Count from existing alerts table
+	postgres.DB.Model(&models.Alert{}).Where("tenant_id = ?", tenantID).Count(&stats.Total)
+	postgres.DB.Model(&models.Alert{}).Where("tenant_id = ? AND is_resolved = false", tenantID).Count(&stats.Open)
+	
+	// For now, return basic stats - enhance later when you have more alert data
+	stats.Resolved = stats.Total - stats.Open
+	stats.Acknowledged = 0
+	stats.Silenced = 0
+	stats.Critical = 0
+	stats.High = 0
+	stats.Medium = 0
+	stats.Low = 0
+
+	return c.JSON(stats)
+}

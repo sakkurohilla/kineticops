@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { validateEmail } from '../../utils/validation';
 
 const LoginForm: React.FC = () => {
   const navigate = useNavigate();
@@ -48,6 +47,8 @@ const LoginForm: React.FC = () => {
         </label>
         <input
           id="username"
+          name="username"
+          autoComplete="username"
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -63,6 +64,8 @@ const LoginForm: React.FC = () => {
         </label>
         <input
           id="password"
+          name="password"
+          autoComplete="current-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

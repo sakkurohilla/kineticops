@@ -4,9 +4,12 @@ import (
 	"fmt"
 
 	"github.com/gofiber/contrib/websocket"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/sakkurohilla/kineticops/backend/internal/auth"
 )
 
+// WsHandler upgrades HTTP connections to websockets and validates JWT tokens.
+// It uses the central auth package to validate tokens so we avoid version
+// mismatches between jwt libraries.
 func WsHandler(hub *Hub, jwtSecret string) func(*websocket.Conn) {
 	return func(c *websocket.Conn) {
 		tokenStr := c.Query("token")
@@ -16,35 +19,24 @@ func WsHandler(hub *Hub, jwtSecret string) func(*websocket.Conn) {
 			return
 		}
 
-		fmt.Println("[DEBUG] WebSocket received JWTSecret:", jwtSecret)
-
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(jwtSecret), nil
-		})
-		if err != nil {
-			fmt.Println("[DEBUG] JWT parse error:", err)
+		remote := "unknown"
+		if c.RemoteAddr() != nil {
+			remote = c.RemoteAddr().String()
 		}
-		if token == nil || !token.Valid {
+		fmt.Printf("[DEBUG] WebSocket incoming connection from %s\n", remote)
+
+		// Use auth.ValidateJWT to parse and validate the token using the
+		// same library and claim types used by the rest of the server.
+		claims, err := auth.ValidateJWT(tokenStr)
+		if err != nil {
+			fmt.Printf("[DEBUG] WebSocket token validation failed from %s: %v\n", remote, err)
 			c.WriteMessage(websocket.TextMessage, []byte("Invalid JWT"))
 			c.Close()
 			return
 		}
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.WriteMessage(websocket.TextMessage, []byte("Invalid token claims"))
-			c.Close()
-			return
-		}
-		userIDfloat, ok := claims["user_id"].(float64)
-		if !ok {
-			c.WriteMessage(websocket.TextMessage, []byte("Missing user_id in token"))
-			c.Close()
-			return
-		}
-		userID := int64(userIDfloat)
+
+		userID := claims.UserID
+		fmt.Printf("[DEBUG] WebSocket authenticated user=%d from %s\n", userID, remote)
 
 		client := &Client{hub: hub, conn: c, send: make(chan []byte, 256), userID: userID}
 		hub.register <- client

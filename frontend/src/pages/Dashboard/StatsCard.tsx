@@ -22,14 +22,14 @@ const StatsCard: React.FC<StatsCardProps> = ({
   isLoading = false,
 }) => {
   const colorClasses = {
-    primary: 'bg-primary-50 text-primary-600 border-primary-200',
+    primary: 'bg-blue-50 text-blue-600 border-blue-200',
     success: 'bg-green-50 text-green-600 border-green-200',
     warning: 'bg-orange-50 text-orange-600 border-orange-200',
     error: 'bg-red-50 text-red-600 border-red-200',
   };
 
   const iconBgClasses = {
-    primary: 'bg-gradient-to-br from-primary-500 to-primary-600',
+    primary: 'bg-gradient-to-br from-blue-500 to-blue-600',
     success: 'bg-gradient-to-br from-green-500 to-green-600',
     warning: 'bg-gradient-to-br from-orange-500 to-orange-600',
     error: 'bg-gradient-to-br from-red-500 to-red-600',

@@ -1,21 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import apiClient from '../services/api/client';
+import logsService, { LogFilters } from '../services/api/logsService';
+import { handleApiError } from '../utils/errorHandler';
 import { Log } from '../types';
 
-interface LogFilters {
-  level?: string;
-  source?: string;
-  startDate?: string;
-  endDate?: string;
-  search?: string;
-}
+
 
 interface UseLogsReturn {
   logs: Log[];
   isLoading: boolean;
   error: string | null;
-  filters: LogFilters;
-  setFilters: (filters: LogFilters) => void;
+  filters: LogFilters & { startDate?: string; endDate?: string };
+  setFilters: (filters: LogFilters & { startDate?: string; endDate?: string }) => void;
   isTailing: boolean;
   toggleTailing: () => void;
   refetch: () => void;
@@ -27,7 +22,7 @@ export const useLogs = (): UseLogsReturn => {
   const [logs, setLogs] = useState<Log[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<LogFilters>({});
+  const [filters, setFilters] = useState<LogFilters & { startDate?: string; endDate?: string }>({});
   const [isTailing, setIsTailing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
@@ -36,18 +31,19 @@ export const useLogs = (): UseLogsReturn => {
       setIsLoading(true);
       setError(null);
 
-      const params = new URLSearchParams();
-      if (filters.level) params.append('level', filters.level);
-      if (filters.source) params.append('source', filters.source);
-      if (filters.startDate) params.append('start_date', filters.startDate);
-      if (filters.endDate) params.append('end_date', filters.endDate);
-      if (filters.search) params.append('search', filters.search);
-
-      const response = await apiClient.get(`/logs?${params.toString()}`);
-      setLogs(response.data.logs || []);
-      setHasMore(response.data.has_more || false);
+      const logsData = await logsService.searchLogs({
+        level: filters.level,
+        search: filters.search,
+        start: filters.startDate,
+        end: filters.endDate,
+        limit: 100
+      }) as Log[];
+      
+      setLogs(logsData);
+      setHasMore(logsData.length >= 100);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch logs');
+      const apiError = handleApiError(err);
+      setError(apiError.message);
       setLogs([]);
     } finally {
       setIsLoading(false);
@@ -58,15 +54,24 @@ export const useLogs = (): UseLogsReturn => {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Auto-refresh when tailing is enabled
+  // Real-time log updates via WebSocket
   useEffect(() => {
     if (!isTailing) return;
 
-    const interval = setInterval(() => {
-      fetchLogs();
-    }, 5000); // Refresh every 5 seconds
+    const { subscribe } = require('../services/ws/manager');
+    const unsubscribe = subscribe((data: any) => {
+      if (data.type === 'log' && data.log) {
+        setLogs(prev => [data.log, ...prev.slice(0, 999)]); // Keep last 1000 logs
+      }
+    });
 
-    return () => clearInterval(interval);
+    // Also refresh periodically as fallback
+    const interval = setInterval(fetchLogs, 30000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [isTailing, fetchLogs]);
 
   const toggleTailing = useCallback(() => {

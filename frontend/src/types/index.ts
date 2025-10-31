@@ -1,4 +1,7 @@
-// Auth Types
+// =========================
+// ✅ Auth Types
+// =========================
+
 export interface User {
   id: number;
   username: string;
@@ -24,7 +27,10 @@ export interface RegisterRequest {
   password: string;
 }
 
-// Host Types - Matching backend structure
+// =========================
+// ✅ Host Types (Full + Updated)
+// =========================
+
 export interface Host {
   id: number;
   hostname?: string;
@@ -33,16 +39,27 @@ export interface Host {
   os?: string;
   group?: string;
   tags?: string;
+  description?: string;
   status: string;
   agent_status?: string;
   tenant_id?: number;
   reg_token?: string;
   last_seen?: string;
+  last_sync?: string;
   created_at?: string;
   updated_at?: string;
+
+  // SSH fields
+  ssh_user?: string;
+  ssh_port?: number;
+  ssh_password?: string;
+  ssh_key?: string;
 }
 
-// Metrics Types
+// =========================
+// ✅ Metrics Types
+// =========================
+
 export interface Metric {
   id: number;
   host_id: number;
@@ -63,19 +80,24 @@ export interface MetricAggregate {
   anomaly: boolean;
 }
 
-// Logs Types
+// =========================
+// ✅ Logs Types
+// =========================
+
 export interface Log {
   id: string;
   timestamp: string;
   level: string;
-  host_id: string;
-  source: string;
+  host_id: number;
+  source?: string;
   message: string;
   metadata?: Record<string, any>;
 }
 
+// =========================
+// ✅ Alerts Types
+// =========================
 
-// Alerts Types - Matching backend structure
 export interface Alert {
   id: number;
   host_id: number;
@@ -92,7 +114,10 @@ export interface Alert {
   tenant_id?: number;
 }
 
-// API Response Types
+// =========================
+// ✅ API Response Types
+// =========================
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -108,7 +133,10 @@ export interface PaginatedResponse<T> {
   pageSize: number;
 }
 
-// Dashboard specific types
+// =========================
+// ✅ Dashboard & Activity Types
+// =========================
+
 export interface DashboardStats {
   totalHosts: number;
   onlineHosts: number;

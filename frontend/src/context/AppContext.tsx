@@ -35,7 +35,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const fetchUser = async () => {
     try {
       const userData = await apiClient.get<User>('/auth/me');
-      setUser(userData);
+      // apiClient may return the raw user object or an AxiosResponse depending on interceptors
+      setUser(userData as any);
     } catch (error: any) {
       console.error('Failed to fetch user:', error);
       

@@ -8,7 +8,20 @@ import { RefreshCw, Download } from 'lucide-react';
 
 const Metrics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
-  const { data, isLoading, error, refetch } = useMetrics(timeRange);
+  const [customStart, setCustomStart] = useState<string>();
+  const [customEnd, setCustomEnd] = useState<string>();
+  const { data, isLoading, error, refetch } = useMetrics(timeRange, undefined, true, customStart, customEnd);
+  
+  const handleTimeRangeChange = (range: TimeRange, start?: string, end?: string) => {
+    setTimeRange(range);
+    if (range === 'custom' && start && end) {
+      setCustomStart(start);
+      setCustomEnd(end);
+    } else {
+      setCustomStart(undefined);
+      setCustomEnd(undefined);
+    }
+  };
 
   const exportToCSV = (metricType: string, metricData: any[]) => {
     if (metricData.length === 0) {
@@ -61,7 +74,7 @@ const Metrics: React.FC = () => {
           </div>
 
           {/* Time Range Selector */}
-          <TimeRangeSelector selected={timeRange} onChange={setTimeRange} />
+          <TimeRangeSelector selected={timeRange} onChange={handleTimeRangeChange} />
         </div>
 
         {/* Error Message */}

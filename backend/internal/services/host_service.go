@@ -1,7 +1,6 @@
 package services
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
@@ -27,17 +26,19 @@ func RegisterHost(hostname, ip, os, group, tags string, tenantID int64, token st
 }
 
 // ListHosts returns all hosts for a tenant
-func ListHosts(tenantID int64, limitStr, offsetStr string) ([]models.Host, error) {
-	limit, _ := strconv.Atoi(limitStr)
-	offset, _ := strconv.Atoi(offsetStr)
-
+func ListHosts(tenantID int64, limit, offset int) ([]models.Host, error) {
 	var hosts []models.Host
-	result := postgres.DB.Where("tenant_id = ?", tenantID).
-		Limit(limit).
-		Offset(offset).
-		Find(&hosts)
+	var result *gorm.DB
+	if tenantID == 0 {
+		// No tenant filter - return all hosts (public listing)
+		result = postgres.DB.Limit(limit).Offset(offset).Find(&hosts)
+	} else {
+		result = postgres.DB.Where("tenant_id = ?", tenantID).
+			Limit(limit).
+			Offset(offset).
+			Find(&hosts)
+	}
 
-	// Return empty array instead of error when no records found
 	if result.Error != nil && result.Error != gorm.ErrRecordNotFound {
 		return nil, result.Error
 	}

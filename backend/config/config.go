@@ -17,6 +17,7 @@ type Config struct {
 	AppEnv           string
 	AppPort          string
 	JWTSecret        string
+	AgentToken       string
 }
 
 func Load() *Config {
@@ -35,5 +36,6 @@ func Load() *Config {
 		AppEnv:           viper.GetString("APP_ENV"),
 		AppPort:          viper.GetString("APP_PORT"),
 		JWTSecret:        viper.GetString("JWT_SECRET"),
+		AgentToken:       viper.GetString("AGENT_TOKEN"),
 	}
 }

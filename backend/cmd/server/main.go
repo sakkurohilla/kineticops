@@ -9,14 +9,20 @@ import (
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 
+	"encoding/json"
+
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
+	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
 	kafkaevents "github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	redisrepo "github.com/sakkurohilla/kineticops/backend/internal/repository/redis"
+	"github.com/sakkurohilla/kineticops/backend/internal/services"
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
+	"github.com/sakkurohilla/kineticops/backend/internal/workers"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -60,6 +66,22 @@ func main() {
 
 	initDBs(cfg)
 
+	// Initialize repositories and services
+	agentRepo := postgres.NewAgentRepository(postgres.SqlxDB)
+	hostRepo := postgres.NewHostRepository(postgres.SqlxDB)
+	sshService := services.NewSSHService()
+	agentService := services.NewAgentService(agentRepo, hostRepo, sshService)
+	
+	// Initialize handlers with services
+	handlers.InitAgentService(agentService)
+
+	// Initialize telemetry (OpenTelemetry) - returns shutdown func
+	shutdownTelemetry := telemetry.InitTelemetry()
+	defer shutdownTelemetry()
+
+	// START METRIC COLLECTOR WORKER - ADD THIS
+	workers.StartMetricCollector()
+
 	// Set up Redpanda/Kafka
 	brokers := []string{"localhost:9092"}
 	topic := "metrics-events"
@@ -69,10 +91,40 @@ func main() {
 	// WebSocket hub
 	wsHub := ws.NewHub()
 	go wsHub.Run()
+	// make hub available globally for fallbacks (e.g. when Kafka is down)
+	ws.SetGlobalHub(wsHub)
+
+	// Warm-start hub with latest persisted host metrics from DB so clients get
+	// a snapshot immediately after server start. This uses the host_metrics
+	// table populated by the collector.
+	if hosts, err := services.ListHosts(0, 1000, 0); err == nil {
+		for _, h := range hosts {
+			if latest, err := postgres.GetLatestHostMetric(postgres.DB, h.ID); err == nil && latest != nil {
+				payload := map[string]interface{}{
+					"host_id":      latest.HostID,
+					"cpu_usage":    latest.CPUUsage,
+					"memory_usage": latest.MemoryUsage,
+					"disk_usage":   latest.DiskUsage,
+					"network_in":   latest.NetworkIn,
+					"network_out":  latest.NetworkOut,
+					"uptime":       latest.Uptime,
+					"load_average": latest.LoadAverage,
+					"timestamp":    latest.Timestamp.Format(time.RFC3339),
+					"seq":          telemetry.NextSeq(),
+				}
+				if b, err := json.Marshal(payload); err == nil {
+					wsHub.RememberMessage(b)
+					wsHub.Broadcast(b)
+				}
+			}
+		}
+	}
 
 	// Kafka consumer broadcast to WebSocket clients
 	kafkaevents.StartConsumer(brokers, topic, func(msg []byte) {
 		fmt.Println("[DEBUG] Broadcasting to WebSocket clients:", string(msg))
+		// remember last message for warm-up
+		wsHub.RememberMessage(msg)
 		wsHub.Broadcast(msg)
 	})
 
@@ -86,7 +138,17 @@ func main() {
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-	// ✅ Register ALL routes through unified router
+	// DEBUG: log handler errors with request context (temporary)
+	app.Use(func(c *fiber.Ctx) error {
+		err := c.Next()
+		if err != nil {
+			log.Printf("[HTTP ERROR] %s %s -> %v", c.Method(), c.OriginalURL(), err)
+			return middleware.ErrorHandler(c, err)
+		}
+		return nil
+	})
+
+	// Register ALL routes through unified router
 	routes.RegisterAllRoutes(app)
 
 	// Protected demo route
@@ -103,16 +165,12 @@ func main() {
 
 	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
 	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
-	log.Printf("🔐 API Base: http://localhost:%s/api/v1", cfg.AppPort)
+	log.Printf("🔌 API Base: http://localhost:%s/api/v1", cfg.AppPort)
+	log.Printf("🌍 Network: http://0.0.0.0:%s", cfg.AppPort)
+	log.Printf("⚙️  Metric Collector: Running every 60s")
 
-	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
-	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
-	log.Printf("🔐 API Base: http://localhost:%s/api/v1", cfg.AppPort)
-	log.Printf("🌐 Network: http://0.0.0.0:%s", cfg.AppPort)
-
-	// ✅ IMPORTANT: Listen on all interfaces (0.0.0.0)
+	// Listen on all interfaces (0.0.0.0)
 	if err := app.Listen("0.0.0.0:" + cfg.AppPort); err != nil {
 		log.Fatal(err)
 	}
-
 }

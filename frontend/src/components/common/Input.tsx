@@ -1,4 +1,4 @@
-import React, { InputHTMLAttributes, forwardRef } from 'react';
+import React, { InputHTMLAttributes, forwardRef, useId } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -9,10 +9,14 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, helperText, icon, className = '', ...props }, ref) => {
+    const rid = useId();
+    const inputId = (props as any).id || `input-${rid}`;
+    const inputName = (props as any).name || inputId;
+    const autoComplete = (props as any).autoComplete ?? 'off';
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1">
             {label}
           </label>
         )}
@@ -24,6 +28,9 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
+            id={inputId}
+            name={inputName}
+            autoComplete={autoComplete}
             className={`input ${icon ? 'pl-10' : ''} ${error ? 'border-error focus:ring-error' : ''} ${className}`}
             {...props}
           />

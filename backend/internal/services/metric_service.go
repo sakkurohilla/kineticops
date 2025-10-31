@@ -31,14 +31,14 @@ func CollectMetric(hostID, tenantID int64, name string, value float64, labels ma
 	return postgres.SaveMetric(postgres.DB, metric)
 }
 
-func ListMetrics(hostID int64, name string, start, end time.Time, limit int) ([]models.Metric, error) {
-	cacheKey := fmt.Sprintf("metrics:%d:%s:%s:%s:%d", hostID, name, start.Format(time.RFC3339), end.Format(time.RFC3339), limit)
+func ListMetrics(tenantID, hostID int64, name string, start, end time.Time, limit int) ([]models.Metric, error) {
+	cacheKey := fmt.Sprintf("metrics:%d:%d:%s:%s:%s:%d", tenantID, hostID, name, start.Format(time.RFC3339), end.Format(time.RFC3339), limit)
 	cached, err := redisrepo.GetMetricsCache(cacheKey)
 	if err == nil && cached != nil {
 		return cached, nil // Return cached result
 	}
 
-	data, err := postgres.ListMetrics(postgres.DB, hostID, name, start, end, limit)
+	data, err := postgres.ListMetrics(postgres.DB, tenantID, hostID, name, start, end, limit)
 	if err == nil && data != nil {
 		_ = redisrepo.SetMetricsCache(cacheKey, data)
 	}

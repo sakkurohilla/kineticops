@@ -54,11 +54,11 @@ const LogDetails: React.FC<LogDetailsProps> = ({ log, onClose }) => {
               </div>
               <div>
                 <span className="text-xs text-gray-500">Host</span>
-                <p className="text-sm text-gray-900">{log.host_id}</p>
+                <p className="text-sm text-gray-900">Host #{log.host_id}</p>
               </div>
               <div>
                 <span className="text-xs text-gray-500">Source</span>
-                <p className="text-sm text-gray-900 font-mono">{log.source}</p>
+                <p className="text-sm text-gray-900 font-mono">{log.source || 'System'}</p>
               </div>
             </div>
           </div>

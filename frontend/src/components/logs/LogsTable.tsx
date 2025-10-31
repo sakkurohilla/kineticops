@@ -96,13 +96,13 @@ const LogsTable: React.FC<LogsTableProps> = ({ logs, onLogClick, isLoading }) =>
               </div>
 
               {/* Host */}
-              <div className="col-span-2 text-sm text-gray-900 truncate" title={log.host_id}>
-                {log.host_id}
+              <div className="col-span-2 text-sm text-gray-900 truncate" title={log.host_id?.toString()}>
+                Host #{log.host_id}
               </div>
 
               {/* Source */}
-              <div className="col-span-2 text-sm text-gray-900 font-mono truncate" title={log.source}>
-                {log.source}
+              <div className="col-span-2 text-sm text-gray-900 font-mono truncate" title={log.source || 'System'}>
+                {log.source || 'System'}
               </div>
 
               {/* Message */}

@@ -2,11 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Bell, Settings, LogOut, User, ChevronDown } from 'lucide-react';
+import wsStatus from '../../utils/wsStatus';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [wsState, setWsState] = useState<'disconnected'|'connecting'|'connected'|'error'|'reconnecting'>('disconnected');
+  const [wsInfo, setWsInfo] = useState<string | undefined>(undefined);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
@@ -16,6 +19,15 @@ const Header: React.FC = () => {
 
   // Close dropdown when clicking outside
   useEffect(() => {
+    const unsub = wsStatus.subscribeWsStatus((s, info) => {
+      setWsState(s);
+      setWsInfo(info);
+    });
+    // initialize current state
+    const cur = wsStatus.getWsStatus();
+    setWsState(cur.state);
+    setWsInfo(cur.info);
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowDropdown(false);
@@ -23,8 +35,28 @@ const Header: React.FC = () => {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      unsub();
+    };
   }, []);
+
+  // helper for indicator color/title
+  const wsTitle = () => {
+    switch (wsState) {
+      case 'connected':
+        return 'Realtime: connected';
+      case 'connecting':
+        return 'Realtime: connecting';
+      case 'reconnecting':
+        return `Realtime: reconnecting (${wsInfo || ''})`;
+      case 'error':
+        return `Realtime: error (${wsInfo || ''})`;
+      default:
+        return 'Realtime: disconnected';
+    }
+  };
+  
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
@@ -37,6 +69,14 @@ const Header: React.FC = () => {
 
           {/* Right Side */}
           <div className="flex items-center space-x-4">
+            {/* Websocket status indicator */}
+            <div title={wsTitle()} className="flex items-center mr-2">
+              <span
+                className={`w-3 h-3 rounded-full mr-2 transition-colors 
+                  ${wsState === 'connected' ? 'bg-green-500' : wsState === 'connecting' || wsState === 'reconnecting' ? 'bg-yellow-400' : wsState === 'error' ? 'bg-red-500' : 'bg-gray-300'}`}
+              />
+              <span className="text-xs text-gray-500 hidden sm:inline">Realtime</span>
+            </div>
             {/* Notifications */}
             <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
               <Bell className="w-5 h-5" />

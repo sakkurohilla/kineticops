@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Server, BarChart3, FileText, Bell, Settings, LogOut, HelpCircle } from 'lucide-react';
+import { Home, Server, BarChart3, FileText, Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Sidebar: React.FC = () => {
@@ -15,8 +15,6 @@ const Sidebar: React.FC = () => {
     { id: 'metrics', icon: BarChart3, label: 'Metrics', path: '/metrics' },
     { id: 'logs', icon: FileText, label: 'Logs', path: '/logs' },
     { id: 'alerts', icon: Bell, label: 'Alerts', path: '/alerts' },
-    { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' },
-    { id: 'help', icon: HelpCircle, label: 'Help', path: '/help' },
   ];
 
   const handleLogout = () => {
@@ -26,34 +24,36 @@ const Sidebar: React.FC = () => {
 
   return (
     <div
-      className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-900 to-slate-800 shadow-2xl transition-all duration-300 ease-in-out z-50 ${
-        isExpanded ? 'w-64' : 'w-20'
+      className={`fixed left-0 top-0 h-full bg-white border-r border-gray-200 shadow-lg transition-all duration-300 ease-in-out z-50 ${
+        isExpanded ? 'w-64' : 'w-16'
       }`}
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
       {/* Logo Section */}
-      <div className="flex items-center h-20 px-6 border-b border-slate-700">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
-            <span className="text-white font-bold text-xl">K</span>
+      <div className="flex items-center h-16 px-4 border-b border-gray-100">
+        <button 
+          onClick={() => navigate('/dashboard')}
+          className="flex items-center gap-3 hover:bg-gray-50 rounded-lg p-2 transition-colors w-full"
+        >
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">K</span>
           </div>
           <div
             className={`transition-all duration-300 ${
               isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
             }`}
           >
-            <span className="text-white font-semibold text-xl whitespace-nowrap">
+            <span className="text-gray-900 font-semibold text-lg whitespace-nowrap">
               KineticOps
             </span>
-            <p className="text-xs text-gray-400 whitespace-nowrap">Infrastructure Monitoring</p>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Menu Items */}
-      <nav className="flex-1 py-6">
-        <ul className="space-y-2 px-3">
+      <nav className="flex-1 py-4">
+        <ul className="space-y-1 px-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -62,15 +62,15 @@ const Sidebar: React.FC = () => {
               <li key={item.id}>
                 <button
                   onClick={() => navigate(item.path)}
-                  className={`relative flex items-center w-full px-4 py-3 rounded-lg transition-all duration-200 group ${
+                  className={`relative flex items-center w-full px-3 py-2.5 rounded-lg transition-all duration-200 group ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+                      ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <Icon className="w-6 h-6 flex-shrink-0" />
+                  <Icon className="w-5 h-5 flex-shrink-0" />
                   <span
-                    className={`ml-4 font-medium transition-all duration-300 whitespace-nowrap ${
+                    className={`ml-3 font-medium transition-all duration-300 whitespace-nowrap ${
                       isExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
                     }`}
                   >
@@ -79,9 +79,8 @@ const Sidebar: React.FC = () => {
 
                   {/* Tooltip for collapsed state */}
                   {!isExpanded && (
-                    <div className="absolute left-full ml-6 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-xl z-50">
+                    <div className="absolute left-full ml-4 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
                       {item.label}
-                      <div className="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-gray-900"></div>
                     </div>
                   )}
                 </button>
@@ -92,14 +91,14 @@ const Sidebar: React.FC = () => {
       </nav>
 
       {/* Bottom Section - Logout */}
-      <div className="border-t border-slate-700 py-4 px-3">
+      <div className="border-t border-gray-100 py-4 px-2">
         <button
           onClick={handleLogout}
-          className="relative flex items-center w-full px-4 py-3 rounded-lg text-gray-300 hover:bg-red-600 hover:text-white transition-all duration-200 group"
+          className="relative flex items-center w-full px-3 py-2.5 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-700 transition-all duration-200 group"
         >
-          <LogOut className="w-6 h-6 flex-shrink-0" />
+          <LogOut className="w-5 h-5 flex-shrink-0" />
           <span
-            className={`ml-4 font-medium transition-all duration-300 whitespace-nowrap ${
+            className={`ml-3 font-medium transition-all duration-300 whitespace-nowrap ${
               isExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
             }`}
           >
@@ -108,22 +107,11 @@ const Sidebar: React.FC = () => {
 
           {/* Tooltip for collapsed state */}
           {!isExpanded && (
-            <div className="absolute left-full ml-6 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-xl z-50">
+            <div className="absolute left-full ml-4 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
               Logout
-              <div className="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-gray-900"></div>
             </div>
           )}
         </button>
-
-        {/* Version Info */}
-        <div
-          className={`mt-4 px-4 text-xs text-gray-500 transition-all duration-300 ${
-            isExpanded ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          <p>Version 1.0.0</p>
-          <p className="mt-1">© 2025 KineticOps</p>
-        </div>
       </div>
     </div>
   );

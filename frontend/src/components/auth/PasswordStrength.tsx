@@ -25,6 +25,8 @@ const PasswordStrength: React.FC<PasswordStrengthProps> = ({ password }) => {
     'very-strong': 'Very Strong',
   };
 
+  const colorKey = color as keyof typeof colorClasses;
+
   return (
     <div className="mt-2">
       <div className="flex items-center justify-between mb-1">
@@ -35,7 +37,7 @@ const PasswordStrength: React.FC<PasswordStrengthProps> = ({ password }) => {
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2">
         <div
-          className={`${colorClasses[color]} h-2 rounded-full transition-all duration-300`}
+          className={`${colorClasses[colorKey]} h-2 rounded-full transition-all duration-300`}
           style={{ width: `${percentage}%` }}
         />
       </div>

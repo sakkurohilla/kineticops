@@ -13,7 +13,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col ml-20 transition-all duration-300">
+      <div className="flex-1 flex flex-col ml-16 transition-all duration-300">
         {/* Header - Sticky */}
         <Header />
 

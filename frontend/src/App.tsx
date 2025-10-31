@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import Logs from './pages/Logs/Logs';
 
 // Import pages
@@ -11,12 +12,16 @@ import ForgotPassword from './pages/Auth/ForgotPassword';
 import ResetPassword from './pages/Auth/ResetPassword';
 import MFASetup from './pages/Auth/MFASetup';
 import Dashboard from './pages/Dashboard/Dashboard';
+import AlertsPage from './pages/Alerts/Alerts';
 import Metrics from './pages/Metrics/Metrics';
+import Hosts from './pages/Hosts/Hosts';
+import HostDetails from './components/hosts/HostDetails';
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
-      <Router>
+    <ErrorBoundary>
+      <AppProvider>
+        <Router>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
@@ -38,6 +43,24 @@ const App: React.FC = () => {
           />
 
           <Route
+            path="/hosts"
+            element={
+              <ProtectedRoute>
+                <Hosts />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/hosts/:id"
+            element={
+              <ProtectedRoute>
+                <HostDetails />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/metrics"
             element={
               <ProtectedRoute>
@@ -46,23 +69,31 @@ const App: React.FC = () => {
             }
           />
 
-          //Logs Routes
-<Route
-  path="/logs"
-  element={
-    <ProtectedRoute>
-      <Logs />
-    </ProtectedRoute>
-  }
-/>
+          <Route
+            path="/alerts"
+            element={
+              <ProtectedRoute>
+                <AlertsPage />
+              </ProtectedRoute>
+            }
+          />
 
+          <Route
+            path="/logs"
+            element={
+              <ProtectedRoute>
+                <Logs />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Default Redirects */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </Router>
-    </AppProvider>
+        </Router>
+      </AppProvider>
+    </ErrorBoundary>
   );
 };
 

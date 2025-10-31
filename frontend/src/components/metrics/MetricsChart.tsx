@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 import Card from '../common/Card';
-import { Download } from 'lucide-react';
+import { Download, Activity } from 'lucide-react';
 
 export type ChartType = 'line' | 'area' | 'bar';
 
@@ -42,7 +42,18 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
 }) => {
   const formatXAxis = (timestamp: string) => {
     try {
-      return format(new Date(timestamp), 'HH:mm');
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffHours = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60);
+      
+      // Format based on time range
+      if (diffHours > 168) { // > 7 days
+        return format(date, 'MM/dd');
+      } else if (diffHours > 24) { // > 1 day
+        return format(date, 'MM/dd HH:mm');
+      } else {
+        return format(date, 'HH:mm');
+      }
     } catch {
       return timestamp;
     }
@@ -80,9 +91,19 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" />
+            {/* Use category X axis so points are evenly spaced; compute interval to avoid crowded ticks */}
+            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" type="category" interval={data.length > 6 ? Math.floor(data.length / 6) : 0} />
             <YAxis stroke="#9ca3af" />
-            <Tooltip formatter={formatTooltip} />
+            <Tooltip 
+              formatter={formatTooltip}
+              labelFormatter={(label) => {
+                try {
+                  return format(new Date(label), 'MMM dd, yyyy HH:mm:ss');
+                } catch {
+                  return label;
+                }
+              }}
+            />
             <Area
               type="monotone"
               dataKey={dataKey}
@@ -97,9 +118,19 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
         return (
           <BarChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" />
+            {/* Use category X axis so points are evenly spaced; compute interval to avoid crowded ticks */}
+            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" type="category" interval={data.length > 6 ? Math.floor(data.length / 6) : 0} />
             <YAxis stroke="#9ca3af" />
-            <Tooltip formatter={formatTooltip} />
+            <Tooltip 
+              formatter={formatTooltip}
+              labelFormatter={(label) => {
+                try {
+                  return format(new Date(label), 'MMM dd, yyyy HH:mm:ss');
+                } catch {
+                  return label;
+                }
+              }}
+            />
             <Bar dataKey={dataKey} fill={color} radius={[8, 8, 0, 0]} />
           </BarChart>
         );
@@ -108,9 +139,19 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
         return (
           <LineChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" />
+            {/* Use category X axis so points are evenly spaced; compute interval to avoid crowded ticks */}
+            <XAxis dataKey="timestamp" tickFormatter={formatXAxis} stroke="#9ca3af" type="category" interval={data.length > 6 ? Math.floor(data.length / 6) : 0} />
             <YAxis stroke="#9ca3af" />
-            <Tooltip formatter={formatTooltip} />
+            <Tooltip 
+              formatter={formatTooltip}
+              labelFormatter={(label) => {
+                try {
+                  return format(new Date(label), 'MMM dd, yyyy HH:mm:ss');
+                } catch {
+                  return label;
+                }
+              }}
+            />
             <Legend />
             <Line
               type="monotone"
@@ -143,8 +184,11 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
       {data.length === 0 ? (
         <div className="h-64 flex items-center justify-center text-gray-500">
           <div className="text-center">
-            <p className="text-lg mb-2">No data available</p>
-            <p className="text-sm">Metrics will appear here once hosts start reporting</p>
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Activity className="w-8 h-8 text-gray-400" />
+            </div>
+            <p className="text-lg mb-2 font-medium">No {title.toLowerCase()} data</p>
+            <p className="text-sm text-gray-400">Data will appear when hosts start reporting metrics</p>
           </div>
         </div>
       ) : (

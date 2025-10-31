@@ -8,7 +8,7 @@ import (
 
 // ✅ CHANGE THIS FUNCTION NAME
 func RegisterLogRoutes(app *fiber.App) { // ← Was RegisterAlertRoutes
-	api := app.Group("/api/v1/logs", middleware.AuthMiddleware)
+	api := app.Group("/api/v1/logs", middleware.AuthRequired())
 	api.Post("/", handlers.CollectLog)
 	api.Get("/", handlers.SearchLogs)
 }
