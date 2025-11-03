@@ -201,237 +201,325 @@ const Dashboard: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="p-6 lg:p-8 space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Infrastructure Dashboard</h1>
-            <p className="text-gray-600 mt-1">Real-time monitoring and system overview</p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-green-700">Live</span>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        {/* Modern Header with Gradient */}
+        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white p-8 rounded-b-3xl shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
+                🚀 KineticOps Dashboard
+              </h1>
+              <p className="text-blue-100 text-lg">Real-time infrastructure monitoring • Enterprise scale</p>
             </div>
-            <Button variant="outline" onClick={fetchDashboardData}>
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </Button>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full border border-white/30">
+                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse shadow-lg"></div>
+                <span className="text-sm font-semibold text-white">LIVE</span>
+              </div>
+              <button 
+                onClick={fetchDashboardData}
+                className="px-6 py-3 bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-full border border-white/30 transition-all duration-300 hover:scale-105"
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Key Metrics Cards */}
+        <div className="p-8 space-y-8">
+
+        {/* Paytm-Style Colorful Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Total Hosts */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/hosts')}>
+          {/* Total Hosts - Blue Gradient */}
+          <div 
+            className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl p-6 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl"
+            onClick={() => navigate('/hosts')}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Hosts</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalHosts}</p>
-                <div className="flex items-center mt-2 space-x-2">
-                  <span className="text-sm text-green-600">{stats.onlineHosts} online</span>
-                  <span className="text-sm text-red-600">{stats.offlineHosts} offline</span>
+                <div className="flex items-center space-x-2 mb-2">
+                  <Server className="w-6 h-6" />
+                  <p className="text-blue-100 font-medium">Total Hosts</p>
+                </div>
+                <p className="text-4xl font-bold mb-3">{stats.totalHosts}</p>
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                    <span className="text-sm font-medium">{stats.onlineHosts} online</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                    <span className="text-sm font-medium">{stats.offlineHosts} offline</span>
+                  </div>
                 </div>
               </div>
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Server className="w-8 h-8 text-blue-600" />
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <Server className="w-8 h-8" />
               </div>
             </div>
           </div>
 
-          {/* System Health */}
-          <Card className="p-6 hover:shadow-lg transition-shadow">
+          {/* System Health - Green Gradient */}
+          <div className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-3xl p-6 text-white transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">System Health</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.systemHealth}%</p>
-                <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Shield className="w-6 h-6" />
+                  <p className="text-green-100 font-medium">System Health</p>
+                </div>
+                <p className="text-4xl font-bold mb-3">{stats.systemHealth}%</p>
+                <div className="w-full bg-white/20 rounded-full h-3 backdrop-blur-sm">
                   <div 
-                    className={`h-2 rounded-full transition-all duration-500 ${
-                      stats.systemHealth >= 90 ? 'bg-green-500' :
-                      stats.systemHealth >= 70 ? 'bg-yellow-500' : 'bg-red-500'
-                    }`}
+                    className="h-3 rounded-full bg-gradient-to-r from-white to-green-200 transition-all duration-500 shadow-sm"
                     style={{ width: `${stats.systemHealth}%` }}
                   ></div>
                 </div>
               </div>
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Shield className="w-8 h-8 text-green-600" />
-              </div>
-            </div>
-          </Card>
-
-          {/* Active Alerts */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/alerts')}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Active Alerts</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.criticalAlerts + stats.warningAlerts}</p>
-                <div className="flex items-center mt-2 space-x-2">
-                  <span className="text-sm text-red-600">{stats.criticalAlerts} critical</span>
-                  <span className="text-sm text-yellow-600">{stats.warningAlerts} warning</span>
-                </div>
-              </div>
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-8 h-8 text-red-600" />
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <Shield className="w-8 h-8" />
               </div>
             </div>
           </div>
 
-          {/* Average CPU */}
-          <Card className="p-6 hover:shadow-lg transition-shadow">
+          {/* Active Alerts - Orange Gradient */}
+          <div 
+            className="bg-gradient-to-br from-orange-500 to-red-600 rounded-3xl p-6 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl"
+            onClick={() => navigate('/alerts')}
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Avg CPU Usage</p>
-                <p className={`text-3xl font-bold mt-2 ${getMetricColor(stats.avgCpuUsage)}`}>
-                  {stats.avgCpuUsage.toFixed(1)}%
-                </p>
-                <div className="flex items-center mt-2">
-                  {getTrendIcon(stats.avgCpuUsage, 50)}
-                  <span className="text-sm text-gray-500 ml-1">vs last hour</span>
+                <div className="flex items-center space-x-2 mb-2">
+                  <AlertTriangle className="w-6 h-6" />
+                  <p className="text-orange-100 font-medium">Active Alerts</p>
+                </div>
+                <p className="text-4xl font-bold mb-3">{stats.criticalAlerts + stats.warningAlerts}</p>
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-red-300 rounded-full"></div>
+                    <span className="text-sm font-medium">{stats.criticalAlerts} critical</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-yellow-300 rounded-full"></div>
+                    <span className="text-sm font-medium">{stats.warningAlerts} warning</span>
+                  </div>
                 </div>
               </div>
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Cpu className="w-8 h-8 text-purple-600" />
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <AlertTriangle className="w-8 h-8" />
               </div>
             </div>
-          </Card>
+          </div>
+
+          {/* Average CPU - Purple Gradient */}
+          <div className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-3xl p-6 text-white transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center space-x-2 mb-2">
+                  <Cpu className="w-6 h-6" />
+                  <p className="text-purple-100 font-medium">Avg CPU Usage</p>
+                </div>
+                <p className="text-4xl font-bold mb-3">{stats.avgCpuUsage.toFixed(1)}%</p>
+                <div className="flex items-center space-x-2">
+                  {getTrendIcon(stats.avgCpuUsage, 50)}
+                  <span className="text-sm font-medium text-purple-100">vs last hour</span>
+                </div>
+              </div>
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <Cpu className="w-8 h-8" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Resource Usage Overview */}
           <div className="lg:col-span-2">
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Resource Usage</h2>
-                <Button variant="ghost" size="sm" onClick={() => navigate('/metrics')}>
-                  View Details <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
+            <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                    <Activity className="w-6 h-6 text-white" />
+                  </div>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Resource Usage</h2>
+                </div>
+                <button 
+                  onClick={() => navigate('/metrics')}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105"
+                >
+                  View Details <ChevronRight className="w-4 h-4 ml-1 inline" />
+                </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* CPU Usage */}
-                <div className="text-center">
-                  <div className="relative w-24 h-24 mx-auto mb-4">
-                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* CPU Usage - Animated Circle */}
+                <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200">
+                  <div className="relative w-28 h-28 mx-auto mb-4">
+                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#e5e7eb"
-                        strokeWidth="2"
+                        stroke="#dbeafe"
+                        strokeWidth="3"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#3b82f6"
-                        strokeWidth="2"
+                        stroke="url(#blueGradient)"
+                        strokeWidth="3"
                         strokeDasharray={`${stats.avgCpuUsage}, 100`}
+                        strokeLinecap="round"
+                        className="transition-all duration-1000 ease-out"
                       />
+                      <defs>
+                        <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#3b82f6" />
+                          <stop offset="100%" stopColor="#1d4ed8" />
+                        </linearGradient>
+                      </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-gray-900">{stats.avgCpuUsage.toFixed(0)}%</span>
+                      <div className="text-center">
+                        <span className="text-2xl font-bold text-blue-700">{stats.avgCpuUsage.toFixed(0)}%</span>
+                        <div className="w-1 h-1 bg-blue-500 rounded-full mx-auto mt-1 animate-pulse"></div>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-sm font-medium text-gray-600">CPU Usage</p>
+                  <p className="text-sm font-semibold text-blue-700 flex items-center justify-center space-x-2">
+                    <Cpu className="w-4 h-4" />
+                    <span>CPU Usage</span>
+                  </p>
                 </div>
 
-                {/* Memory Usage */}
-                <div className="text-center">
-                  <div className="relative w-24 h-24 mx-auto mb-4">
-                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+                {/* Memory Usage - Animated Circle */}
+                <div className="text-center p-6 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl border border-green-200">
+                  <div className="relative w-28 h-28 mx-auto mb-4">
+                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#e5e7eb"
-                        strokeWidth="2"
+                        stroke="#dcfce7"
+                        strokeWidth="3"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#10b981"
-                        strokeWidth="2"
+                        stroke="url(#greenGradient)"
+                        strokeWidth="3"
                         strokeDasharray={`${stats.avgMemoryUsage}, 100`}
+                        strokeLinecap="round"
+                        className="transition-all duration-1000 ease-out"
                       />
+                      <defs>
+                        <linearGradient id="greenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#10b981" />
+                          <stop offset="100%" stopColor="#059669" />
+                        </linearGradient>
+                      </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-gray-900">{stats.avgMemoryUsage.toFixed(0)}%</span>
+                      <div className="text-center">
+                        <span className="text-2xl font-bold text-green-700">{stats.avgMemoryUsage.toFixed(0)}%</span>
+                        <div className="w-1 h-1 bg-green-500 rounded-full mx-auto mt-1 animate-pulse"></div>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Memory Usage</p>
+                  <p className="text-sm font-semibold text-green-700 flex items-center justify-center space-x-2">
+                    <Activity className="w-4 h-4" />
+                    <span>Memory Usage</span>
+                  </p>
                 </div>
 
-                {/* Disk Usage */}
-                <div className="text-center">
-                  <div className="relative w-24 h-24 mx-auto mb-4">
-                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+                {/* Disk Usage - Animated Circle */}
+                <div className="text-center p-6 bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl border border-amber-200">
+                  <div className="relative w-28 h-28 mx-auto mb-4">
+                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#e5e7eb"
-                        strokeWidth="2"
+                        stroke="#fef3c7"
+                        strokeWidth="3"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth="2"
+                        stroke="url(#orangeGradient)"
+                        strokeWidth="3"
                         strokeDasharray={`${stats.avgDiskUsage}, 100`}
+                        strokeLinecap="round"
+                        className="transition-all duration-1000 ease-out"
                       />
+                      <defs>
+                        <linearGradient id="orangeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#f59e0b" />
+                          <stop offset="100%" stopColor="#d97706" />
+                        </linearGradient>
+                      </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-gray-900">{stats.avgDiskUsage.toFixed(0)}%</span>
+                      <div className="text-center">
+                        <span className="text-2xl font-bold text-amber-700">{stats.avgDiskUsage.toFixed(0)}%</span>
+                        <div className="w-1 h-1 bg-amber-500 rounded-full mx-auto mt-1 animate-pulse"></div>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-sm font-medium text-gray-600">Disk Usage</p>
+                  <p className="text-sm font-semibold text-amber-700 flex items-center justify-center space-x-2">
+                    <Database className="w-4 h-4" />
+                    <span>Disk Usage</span>
+                  </p>
                 </div>
               </div>
-            </Card>
+            </div>
           </div>
 
-          {/* Quick Actions */}
+          {/* Quick Actions - Paytm Style */}
           <div>
-            <Card className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Quick Actions</h2>
-              <div className="space-y-3">
-                <Button 
-                  variant="primary" 
-                  fullWidth 
-                  className="justify-start"
-                  onClick={() => navigate('/hosts')}
-                >
-                  <Server className="w-4 h-4 mr-3" />
-                  Add New Host
-                </Button>
-                <Button 
-                  variant="outline" 
-                  fullWidth 
-                  className="justify-start"
-                  onClick={() => navigate('/metrics')}
-                >
-                  <Activity className="w-4 h-4 mr-3" />
-                  View Metrics
-                </Button>
-                <Button 
-                  variant="outline" 
-                  fullWidth 
-                  className="justify-start"
-                  onClick={() => navigate('/alerts')}
-                >
-                  <AlertTriangle className="w-4 h-4 mr-3" />
-                  Manage Alerts
-                </Button>
-                <Button 
-                  variant="outline" 
-                  fullWidth 
-                  className="justify-start"
-                  onClick={() => navigate('/logs')}
-                >
-                  <Database className="w-4 h-4 mr-3" />
-                  View Logs
-                </Button>
+            <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
+              <div className="flex items-center space-x-3 mb-8">
+                <div className="w-10 h-10 bg-gradient-to-r from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center">
+                  <TrendingUp className="w-6 h-6 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Quick Actions</h2>
               </div>
-            </Card>
+              <div className="space-y-4">
+                <button 
+                  onClick={() => navigate('/hosts')}
+                  className="w-full p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                >
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Server className="w-5 h-5" />
+                  </div>
+                  <span className="font-semibold">Add New Host</span>
+                </button>
+                <button 
+                  onClick={() => navigate('/metrics')}
+                  className="w-full p-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                >
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <span className="font-semibold">View Metrics</span>
+                </button>
+                <button 
+                  onClick={() => navigate('/alerts')}
+                  className="w-full p-4 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                >
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <span className="font-semibold">Manage Alerts</span>
+                </button>
+                <button 
+                  onClick={() => navigate('/logs')}
+                  className="w-full p-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                >
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <span className="font-semibold">View Logs</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -577,6 +665,7 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         )}
+        </div>
       </div>
     </MainLayout>
   );
