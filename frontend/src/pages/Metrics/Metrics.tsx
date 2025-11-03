@@ -1,16 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
 import MetricsChart from '../../components/metrics/MetricsChart';
 import TimeRangeSelector, { TimeRange } from '../../components/metrics/TimeRangeSelector';
 import { useMetrics } from '../../hooks/useMetrics';
 import Button from '../../components/common/Button';
-import { RefreshCw, Download } from 'lucide-react';
+import { RefreshCw, Download, Server } from 'lucide-react';
+import hostService from '../../services/api/hostService';
+import { Host } from '../../types';
 
 const Metrics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [customStart, setCustomStart] = useState<string>();
   const [customEnd, setCustomEnd] = useState<string>();
-  const { data, isLoading, error, refetch } = useMetrics(timeRange, undefined, true, customStart, customEnd);
+  const [selectedHostId, setSelectedHostId] = useState<number | undefined>();
+  const [hosts, setHosts] = useState<Host[]>([]);
+  const { data, isLoading, error, refetch } = useMetrics(timeRange, selectedHostId, true, customStart, customEnd);
+
+  useEffect(() => {
+    fetchHosts();
+  }, []);
+
+  const fetchHosts = async () => {
+    try {
+      const hostData = await hostService.getHosts();
+      setHosts(hostData);
+      if (hostData.length > 0 && !selectedHostId) {
+        setSelectedHostId(hostData[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to fetch hosts:', err);
+    }
+  };
   
   const handleTimeRangeChange = (range: TimeRange, start?: string, end?: string) => {
     setTimeRange(range);
@@ -73,8 +93,28 @@ const Metrics: React.FC = () => {
             </Button>
           </div>
 
-          {/* Time Range Selector */}
-          <TimeRangeSelector selected={timeRange} onChange={handleTimeRangeChange} />
+          {/* Host and Time Range Selectors */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Host Selector */}
+            <div className="flex items-center gap-3">
+              <Server className="w-5 h-5 text-gray-600" />
+              <select
+                value={selectedHostId || ''}
+                onChange={(e) => setSelectedHostId(e.target.value ? parseInt(e.target.value) : undefined)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">All Hosts</option>
+                {hosts.map((host) => (
+                  <option key={host.id} value={host.id}>
+                    {host.hostname} ({host.ip})
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Time Range Selector */}
+            <TimeRangeSelector selected={timeRange} onChange={handleTimeRangeChange} />
+          </div>
         </div>
 
         {/* Error Message */}

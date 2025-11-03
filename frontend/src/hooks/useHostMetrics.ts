@@ -25,12 +25,23 @@ const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
 
-  const fetchLatest = async () => {
+  const fetchLatest = async (forceFresh = false) => {
     try {
       setError('');
+      
+      // Clear cache if forcing fresh data
+      if (forceFresh && hostId) {
+        localStorage.removeItem(`host_${hostId}_last_metric`);
+        localStorage.removeItem(`host_${hostId}_series`);
+      }
+      
       const res = await hostService.getLatestMetrics(hostId as number);
       if (res) {
         setMetrics(res);
+        // Update localStorage with fresh data
+        if (hostId) {
+          localStorage.setItem(`host_${hostId}_last_metric`, JSON.stringify(res));
+        }
       }
     } catch (e: any) {
       setError(e.message || 'Failed to fetch latest metrics');
@@ -53,23 +64,11 @@ const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
   useEffect(() => {
     if (!hostId) return;
 
-    // hydrate from localStorage to avoid UI flash
-    try {
-      const saved = localStorage.getItem(`host_${hostId}_last_metric`);
-      if (saved) setMetrics(JSON.parse(saved));
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.seq) setLastSeq(Number(parsed.seq));
-        } catch (e) {}
-      }
-      const savedSeries = localStorage.getItem(`host_${hostId}_series`);
-      if (savedSeries) setSeries(JSON.parse(savedSeries));
-    } catch (e) {
-      // ignore
-    }
-
-    fetchLatest();
+    // Clear old cache and fetch fresh data
+    localStorage.removeItem(`host_${hostId}_last_metric`);
+    localStorage.removeItem(`host_${hostId}_series`);
+    
+    fetchLatest(true);
     fetchHistory();
 
     let interval: any;
@@ -161,7 +160,7 @@ const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
     }
   });
 
-  return { metrics, series, loading, error, refetch: fetchLatest };
+  return { metrics, series, loading, error, refetch: () => fetchLatest(true) };
 };
 
 export default useHostMetrics;

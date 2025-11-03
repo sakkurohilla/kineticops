@@ -16,6 +16,9 @@ import AlertsPage from './pages/Alerts/Alerts';
 import Metrics from './pages/Metrics/Metrics';
 import Hosts from './pages/Hosts/Hosts';
 import HostDetails from './components/hosts/HostDetails';
+import Workflow from './pages/Workflow/Workflow';
+import APM from './pages/APM/APM';
+import Synthetics from './pages/Synthetics/Synthetics';
 
 const App: React.FC = () => {
   return (
@@ -83,6 +86,33 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <Logs />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/workflow"
+            element={
+              <ProtectedRoute>
+                <Workflow />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/apm"
+            element={
+              <ProtectedRoute>
+                <APM />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/synthetics"
+            element={
+              <ProtectedRoute>
+                <Synthetics />
               </ProtectedRoute>
             }
           />

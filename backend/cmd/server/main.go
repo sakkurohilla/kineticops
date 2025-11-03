@@ -69,12 +69,15 @@ func main() {
 	// Initialize repositories and services
 	agentRepo := postgres.NewAgentRepository(postgres.SqlxDB)
 	hostRepo := postgres.NewHostRepository(postgres.SqlxDB)
+	workflowRepo := postgres.NewWorkflowRepository(postgres.SqlxDB)
 	sshService := services.NewSSHService()
 	agentService := services.NewAgentService(agentRepo, hostRepo, sshService)
+	workflowService := services.NewWorkflowService(workflowRepo, agentRepo, hostRepo, sshService, cfg.JWTSecret)
 	
 	// Initialize handlers with services
 	handlers.InitAgentHandlers(agentService)
 	handlers.InitHostAgentService(agentService)
+	handlers.InitWorkflowHandlers(workflowService)
 
 	// Initialize telemetry (OpenTelemetry) - returns shutdown func
 	shutdownTelemetry := telemetry.InitTelemetry()
@@ -82,18 +85,26 @@ func main() {
 
 	// START METRIC COLLECTOR WORKER - ADD THIS
 	workers.StartMetricCollector()
+	
+	// Start enterprise retention service (30 days retention)
+	retentionService := services.NewRetentionService(30)
+	retentionService.StartRetentionWorker()
 
 	// Set up Redpanda/Kafka
 	brokers := []string{"localhost:9092"}
 	topic := "metrics-events"
 
-	kafkaevents.InitProducer(brokers, topic)
+	producer := kafkaevents.InitProducer(brokers, topic)
+	// Connect Kafka producer to agent data handler
+	handlers.SetKafkaProducer(producer)
 
 	// WebSocket hub
 	wsHub := ws.NewHub()
 	go wsHub.Run()
 	// make hub available globally for fallbacks (e.g. when Kafka is down)
 	ws.SetGlobalHub(wsHub)
+	// Connect WebSocket hub to agent data handler for real-time updates
+	handlers.SetWebSocketHub(wsHub)
 
 	// Warm-start hub with latest persisted host metrics from DB so clients get
 	// a snapshot immediately after server start. This uses the host_metrics
@@ -121,12 +132,20 @@ func main() {
 		}
 	}
 
-	// Kafka consumer broadcast to WebSocket clients
+	// Kafka consumer to process agent events and broadcast to WebSocket clients
 	kafkaevents.StartConsumer(brokers, topic, func(msg []byte) {
-		fmt.Println("[DEBUG] Broadcasting to WebSocket clients:", string(msg))
-		// remember last message for warm-up
-		wsHub.RememberMessage(msg)
-		wsHub.Broadcast(msg)
+		fmt.Println("[DEBUG] Processing Kafka message:", string(msg))
+		
+		// Try to process as agent event first
+		var agentEvent handlers.AgentDataEvent
+		if err := json.Unmarshal(msg, &agentEvent); err == nil {
+			// Process agent event from Kafka
+			handlers.ProcessKafkaEvent(&agentEvent)
+		} else {
+			// Fallback: broadcast as metric update
+			wsHub.RememberMessage(msg)
+			wsHub.Broadcast(msg)
+		}
 	})
 
 	// Fiber app with error handler

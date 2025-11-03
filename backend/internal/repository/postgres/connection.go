@@ -49,7 +49,7 @@ func Init() error {
 
 	// Auto-migrate core models including alerts/rules so API endpoints don't 500
 	// when those tables are missing in the target database.
-	if migrateErr := DB.AutoMigrate(&models.Host{}, &models.Metric{}, &models.HostMetric{}, &models.Alert{}, &models.AlertRule{}); migrateErr != nil {
+	if migrateErr := DB.AutoMigrate(&models.Host{}, &models.Metric{}, &models.HostMetric{}, &models.Alert{}, &models.AlertRule{}, &models.InstallationToken{}); migrateErr != nil {
 		log.Printf("Postgres auto-migrate warning: %v", migrateErr)
 		// do not fail startup on migrate error, but return the original err (nil or previous)
 	} else {

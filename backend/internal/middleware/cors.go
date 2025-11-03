@@ -13,7 +13,7 @@ func CORS() fiber.Handler {
 			return true
 		},
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With,X-Session-Token",
 		AllowCredentials: true,
 		ExposeHeaders:    "Content-Length,Authorization",
 		MaxAge:           3600,

@@ -1,163 +1,99 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
+	"flag"
 	"fmt"
-	"log"
-	"net/http"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/sakkurohilla/kineticops/agent/cmd"
+	"github.com/sakkurohilla/kineticops/agent/config"
+	"github.com/sakkurohilla/kineticops/agent/utils"
 )
 
-type AgentHeartbeat struct {
-	Token       string                 `json:"token"`
-	CPUUsage    float64               `json:"cpu_usage"`
-	MemoryUsage float64               `json:"memory_usage"`
-	DiskUsage   float64               `json:"disk_usage"`
-	Services    []ServiceInfo         `json:"services"`
-	SystemInfo  map[string]interface{} `json:"system_info"`
-}
-
-type ServiceInfo struct {
-	Name        string  `json:"name"`
-	Status      string  `json:"status"`
-	PID         int     `json:"pid"`
-	MemoryUsage int64   `json:"memory_usage"`
-	CPUUsage    float64 `json:"cpu_usage"`
-}
+var (
+	version   = "1.0.0"
+	buildTime = "unknown"
+	gitCommit = "unknown"
+)
 
 func main() {
-	token := os.Getenv("KINETICOPS_TOKEN")
-	if token == "" {
-		log.Fatal("KINETICOPS_TOKEN environment variable is required")
+	var (
+		configPath = flag.String("c", "/etc/kineticops-agent/config.yaml", "Configuration file path")
+		showVersion = flag.Bool("version", false, "Show version information")
+		testConfig = flag.Bool("test", false, "Test configuration and exit")
+		verbose    = flag.Bool("v", false, "Verbose logging")
+	)
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("KineticOps Agent %s\n", version)
+		fmt.Printf("Build time: %s\n", buildTime)
+		fmt.Printf("Git commit: %s\n", gitCommit)
+		os.Exit(0)
 	}
 
-	serverURL := os.Getenv("KINETICOPS_SERVER")
-	if serverURL == "" {
-		serverURL = "http://localhost:8080"
+	// Initialize logger
+	logger := utils.NewLogger(*verbose)
+	logger.Info("Starting KineticOps Agent", "version", version)
+
+	// Load configuration
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		logger.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("KineticOps Agent starting with token: %s...", token[:8])
-	log.Printf("Server URL: %s", serverURL)
+	if *testConfig {
+		logger.Info("Configuration test passed")
+		os.Exit(0)
+	}
 
-	for {
-		if err := sendHeartbeat(serverURL, token); err != nil {
-			log.Printf("Heartbeat failed: %v", err)
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle shutdown signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Create and start agent
+	agent, err := cmd.NewAgent(cfg, logger)
+	if err != nil {
+		logger.Error("Failed to create agent", "error", err)
+		os.Exit(1)
+	}
+
+	// Start agent in goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- agent.Run(ctx)
+	}()
+
+	// Wait for shutdown signal or error
+	select {
+	case sig := <-sigChan:
+		logger.Info("Received shutdown signal", "signal", sig)
+		cancel()
+		
+		// Wait for graceful shutdown with timeout
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		
+		if err := agent.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Error during shutdown", "error", err)
+			os.Exit(1)
 		}
-		time.Sleep(30 * time.Second)
-	}
-}
-
-func sendHeartbeat(serverURL, token string) error {
-	heartbeat := AgentHeartbeat{
-		Token:       token,
-		CPUUsage:    getCPUUsage(),
-		MemoryUsage: getMemoryUsage(),
-		DiskUsage:   getDiskUsage(),
-		Services:    getServices(),
-		SystemInfo:  getSystemInfo(),
-	}
-
-	data, err := json.Marshal(heartbeat)
-	if err != nil {
-		return fmt.Errorf("failed to marshal heartbeat: %v", err)
-	}
-
-	resp, err := http.Post(serverURL+"/api/v1/agents/heartbeat", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("failed to send heartbeat: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned status %d", resp.StatusCode)
-	}
-
-	log.Printf("Heartbeat sent successfully - CPU: %.1f%%, Memory: %.1f%%, Disk: %.1f%%", 
-		heartbeat.CPUUsage, heartbeat.MemoryUsage, heartbeat.DiskUsage)
-	return nil
-}
-
-func getCPUUsage() float64 {
-	cmd := exec.Command("sh", "-c", "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | sed 's/%us,//'")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-	
-	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	if err != nil {
-		return 0
-	}
-	return usage
-}
-
-func getMemoryUsage() float64 {
-	cmd := exec.Command("sh", "-c", "free | grep Mem | awk '{printf(\"%.1f\", $3/$2 * 100.0)}'")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-	
-	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	if err != nil {
-		return 0
-	}
-	return usage
-}
-
-func getDiskUsage() float64 {
-	cmd := exec.Command("sh", "-c", "df -h / | awk 'NR==2{printf(\"%.1f\", $5)}' | sed 's/%//'")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-	
-	usage, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
-	if err != nil {
-		return 0
-	}
-	return usage
-}
-
-func getServices() []ServiceInfo {
-	services := []ServiceInfo{}
-	
-	// Check common services
-	serviceNames := []string{"nginx", "apache2", "mysql", "postgresql", "redis-server", "docker"}
-	
-	for _, name := range serviceNames {
-		cmd := exec.Command("pgrep", "-f", name)
-		output, err := cmd.Output()
-		if err == nil && len(output) > 0 {
-			pids := strings.Fields(strings.TrimSpace(string(output)))
-			if len(pids) > 0 {
-				pid, _ := strconv.Atoi(pids[0])
-				services = append(services, ServiceInfo{
-					Name:   name,
-					Status: "running",
-					PID:    pid,
-				})
-			}
+		
+		logger.Info("Agent stopped gracefully")
+		
+	case err := <-errChan:
+		if err != nil {
+			logger.Error("Agent error", "error", err)
+			os.Exit(1)
 		}
-	}
-	
-	return services
-}
-
-func getSystemInfo() map[string]interface{} {
-	hostname, _ := os.Hostname()
-	
-	uptimeCmd := exec.Command("uptime", "-p")
-	uptimeOutput, _ := uptimeCmd.Output()
-	
-	return map[string]interface{}{
-		"hostname": hostname,
-		"os":       "linux",
-		"uptime":   strings.TrimSpace(string(uptimeOutput)),
 	}
 }

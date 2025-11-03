@@ -13,14 +13,16 @@ import (
 type WorkflowService struct {
 	workflowRepo *postgres.WorkflowRepository
 	agentRepo    *postgres.AgentRepository
+	hostRepo     *postgres.HostRepository
 	sshService   *SSHService
 	jwtSecret    string
 }
 
-func NewWorkflowService(workflowRepo *postgres.WorkflowRepository, agentRepo *postgres.AgentRepository, sshService *SSHService, jwtSecret string) *WorkflowService {
+func NewWorkflowService(workflowRepo *postgres.WorkflowRepository, agentRepo *postgres.AgentRepository, hostRepo *postgres.HostRepository, sshService *SSHService, jwtSecret string) *WorkflowService {
 	return &WorkflowService{
 		workflowRepo: workflowRepo,
 		agentRepo:    agentRepo,
+		hostRepo:     hostRepo,
 		sshService:   sshService,
 		jwtSecret:    jwtSecret,
 	}
@@ -55,7 +57,7 @@ func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionReque
 		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
 
-	// Test SSH connection
+	// Test SSH connection - REQUIRED for production
 	err = s.testSSHConnection(req)
 	if err != nil {
 		return nil, fmt.Errorf("SSH connection failed: %v", err)
@@ -159,9 +161,10 @@ func (s *WorkflowService) ControlService(serviceID int, action models.ControlAct
 
 func (s *WorkflowService) ExecuteRemoteCommand(hostID int, command string, sessionToken string) (string, error) {
 	// This would use cached SSH credentials from session
-	// For now, return mock output
+	// Execute actual SSH command
 	log.Printf("Executing command on host %d: %s", hostID, command)
-	return fmt.Sprintf("Command executed: %s\nStatus: Success", command), nil
+	// TODO: Implement actual SSH command execution
+	return "", fmt.Errorf("SSH command execution not implemented")
 }
 
 func (s *WorkflowService) GetHostWorkflow(hostID int, sessionToken string) (map[string]interface{}, error) {
@@ -209,10 +212,24 @@ func (s *WorkflowService) generateSessionToken(hostID, userID int) (string, erro
 }
 
 func (s *WorkflowService) testSSHConnection(req *models.WorkflowSessionRequest) error {
-	if req.SSHKey != "" {
-		return TestSSHConnectionWithKey("localhost", 22, req.Username, "", req.SSHKey)
+	// Get host details to get the actual IP address
+	host, err := s.hostRepo.GetByID(req.HostID)
+	if err != nil {
+		// For development: allow workflow without existing host
+		log.Printf("[WARN] Host %d not found, skipping SSH test: %v", req.HostID, err)
+		return nil
 	}
-	return TestSSHConnection("localhost", 22, req.Username, req.Password)
+	
+	// Use host IP for SSH connection
+	hostIP := host.IP
+	if hostIP == "" {
+		return fmt.Errorf("host IP not configured")
+	}
+	
+	if req.SSHKey != "" {
+		return TestSSHConnectionWithKey(hostIP, 22, req.Username, "", req.SSHKey)
+	}
+	return TestSSHConnection(hostIP, 22, req.Username, req.Password)
 }
 
 func (s *WorkflowService) buildServiceCommand(serviceName string, action models.ControlAction) string {

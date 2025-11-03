@@ -12,5 +12,10 @@ func RegisterAllRoutes(app *fiber.App) {
 	RegisterMetricRoutes(app)
 	RegisterLogRoutes(app)
 	RegisterAlertRoutes(app)
+	RegisterWorkflowRoutes(app)
+	RegisterAPMRoutes(app)
+	RegisterSyntheticsRoutes(app)
+	RegisterAgentRoutes(app)
+	RegisterInstallRoutes(app)
 	RegisterInternalRoutes(app)
 }

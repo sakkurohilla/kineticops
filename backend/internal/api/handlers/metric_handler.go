@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 
@@ -123,61 +122,31 @@ func GetMetricsRange(c *fiber.Ctx) error {
 		startTime = now.Add(-24 * time.Hour)
 	}
 
-	// Get metrics for all hosts of this tenant within time range
+	// Get host_id from query parameter
+	hostID, _ := strconv.ParseInt(c.Query("host_id"), 10, 64)
+	
+	// Get metrics for specific host or all hosts of this tenant within time range
 	var metrics []models.Metric
-	err := postgres.DB.
-		Where("tenant_id = ? AND timestamp >= ? AND timestamp <= ?", tid.(int64), startTime, now).
-		Order("timestamp ASC").
-		Limit(1000).
-		Find(&metrics).Error
+	query := postgres.DB.Where("tenant_id = ? AND timestamp >= ? AND timestamp <= ?", tid.(int64), startTime, now)
+	
+	// Filter by host_id if specified
+	if hostID > 0 {
+		query = query.Where("host_id = ?", hostID)
+	}
+	
+	err := query.Order("timestamp ASC").Limit(1000).Find(&metrics).Error
 
 	if err != nil {
 		return c.JSON([]models.Metric{}) // Return empty array on error
 	}
 
 	// Debug: log the query parameters and result count
-	fmt.Printf("[DEBUG] Range: %s, Start: %s, End: %s, Found: %d metrics\n", 
-		rangeParam, startTime.Format(time.RFC3339), now.Format(time.RFC3339), len(metrics))
+	fmt.Printf("[DEBUG] Range: %s, Host: %d, Start: %s, End: %s, Found: %d metrics\n", 
+		rangeParam, hostID, startTime.Format(time.RFC3339), now.Format(time.RFC3339), len(metrics))
 
-	// If no metrics found and this is a development/test environment, generate sample data
-	if len(metrics) == 0 && rangeParam != "1h" {
-		// Get all hosts for this tenant to generate sample data
-		var hosts []models.Host
-		postgres.DB.Where("tenant_id = ?", tid.(int64)).Find(&hosts)
-		
-		if len(hosts) > 0 {
-			metrics = generateSampleMetrics(hosts, startTime, now)
-		}
-	}
+
 
 	return c.JSON(metrics)
 }
 
-// generateSampleMetrics creates sample historical data for demonstration
-func generateSampleMetrics(hosts []models.Host, start, end time.Time) []models.Metric {
-	var metrics []models.Metric
-	duration := end.Sub(start)
-	interval := duration / 50 // Generate 50 data points
-	
-	for _, host := range hosts {
-		for i := 0; i < 50; i++ {
-			timestamp := start.Add(time.Duration(i) * interval)
-			
-			// Generate realistic sample data with some variation
-			baseTime := float64(timestamp.Unix())
-			cpuBase := 20.0 + 30.0*math.Sin(baseTime/3600.0) + 10.0*math.Sin(baseTime/900.0)
-			memBase := 40.0 + 20.0*math.Sin(baseTime/7200.0) + 15.0*math.Sin(baseTime/1800.0)
-			diskBase := 60.0 + 10.0*math.Sin(baseTime/86400.0)
-			netBase := 5.0 + 10.0*math.Sin(baseTime/1200.0)
-			
-			metrics = append(metrics, 
-				models.Metric{HostID: host.ID, TenantID: host.TenantID, Name: "cpu_usage", Value: math.Max(0, math.Min(100, cpuBase)), Timestamp: timestamp},
-				models.Metric{HostID: host.ID, TenantID: host.TenantID, Name: "memory_usage", Value: math.Max(0, math.Min(100, memBase)), Timestamp: timestamp},
-				models.Metric{HostID: host.ID, TenantID: host.TenantID, Name: "disk_usage", Value: math.Max(0, math.Min(100, diskBase)), Timestamp: timestamp},
-				models.Metric{HostID: host.ID, TenantID: host.TenantID, Name: "network", Value: math.Max(0, netBase), Timestamp: timestamp},
-			)
-		}
-	}
-	
-	return metrics
-}
+

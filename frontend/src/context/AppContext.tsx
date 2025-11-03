@@ -21,16 +21,38 @@ interface AppProviderProps {
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Check if user is already logged in
     const token = authService.getToken();
     if (token) {
       fetchUser();
+      startSessionTimeout();
     } else {
       setIsLoading(false);
     }
+
+    return () => {
+      clearSessionTimeout();
+    };
   }, []);
+
+  const startSessionTimeout = () => {
+    clearSessionTimeout();
+    const timeout = setTimeout(() => {
+      logout();
+      alert('Session expired. Please login again.');
+    }, 60 * 60 * 1000); // 1 hour
+    setSessionTimeout(timeout);
+  };
+
+  const clearSessionTimeout = () => {
+    if (sessionTimeout) {
+      clearTimeout(sessionTimeout);
+      setSessionTimeout(null);
+    }
+  };
 
   const fetchUser = async () => {
     try {
@@ -57,12 +79,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       
       // After login, fetch user details
       await fetchUser();
+      startSessionTimeout();
     } catch (error) {
       throw error;
     }
   };
 
   const logout = () => {
+    clearSessionTimeout();
     authService.logout();
     setUser(null);
   };

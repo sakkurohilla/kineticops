@@ -1,10 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
-
-import SystemOverview from '../../components/dashboard/SystemOverview';
-import ThreatIndicators from '../../components/dashboard/ThreatIndicators';
-import LiveMetrics from '../../components/dashboard/LiveMetrics';
-import RealTimeStatus from '../../components/dashboard/RealTimeStatus';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
@@ -12,30 +7,32 @@ import {
   Server, 
   Activity, 
   AlertTriangle, 
-
-  Clock,
-  Database,
-  Plus,
-  Shield
+  TrendingUp,
+  TrendingDown,
+  Cpu,
+  Shield,
+  Eye,
+  Settings,
+  RefreshCw,
+  ChevronRight,
+  Database
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import apiClient from '../../services/api/client';
 import hostService from '../../services/api/hostService';
+import apiClient from '../../services/api/client';
+// import { useMetrics } from '../../hooks/useMetrics';
 import useWebsocket from '../../hooks/useWebsocket';
 
 interface DashboardStats {
   totalHosts: number;
   onlineHosts: number;
-  warnings: number;
-  critical: number;
-}
-
-interface ActivityItem {
-  id: number;
-  host: string;
-  message: string;
-  type: 'warning' | 'success' | 'info' | 'error';
-  time: string;
+  offlineHosts: number;
+  criticalAlerts: number;
+  warningAlerts: number;
+  avgCpuUsage: number;
+  avgMemoryUsage: number;
+  avgDiskUsage: number;
+  systemHealth: number;
 }
 
 interface Host {
@@ -43,7 +40,8 @@ interface Host {
   hostname?: string;
   ip: string;
   agent_status?: string;
-  last_seen?: string | null;
+  last_seen?: string;
+  os?: string;
 }
 
 interface Alert {
@@ -51,7 +49,6 @@ interface Alert {
   host_id: number;
   host_name?: string;
   message?: string;
-  type?: string;
   severity?: string;
   created_at: string;
 }
@@ -62,475 +59,521 @@ const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalHosts: 0,
     onlineHosts: 0,
-    warnings: 0,
-    critical: 0,
+    offlineHosts: 0,
+    criticalAlerts: 0,
+    warningAlerts: 0,
+    avgCpuUsage: 0,
+    avgMemoryUsage: 0,
+    avgDiskUsage: 0,
+    systemHealth: 100,
   });
-  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
-  const [hostMetricsMap, setHostMetricsMap] = useState<Record<number, any>>({});
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [hostMetrics, setHostMetrics] = useState<Record<number, any>>({});
+  
+  // const { data: metricsData } = useMetrics('1h', undefined, true);
 
-  // Update host metrics in overview when realtime websocket payloads arrive
+  // Real-time updates via WebSocket
   useWebsocket((payload: any) => {
-    try {
-      if (!payload || !payload.host_id) return;
-      const hid = Number(payload.host_id);
-      setHostMetricsMap((prev) => {
-        // Only update if host exists in current list
-        if (!hosts.find((h) => Number(h.id) === hid)) return prev;
-        const next = { ...prev };
-        const existing = next[hid] || {};
-        // merge known fields
-        next[hid] = {
-          ...existing,
-          cpu_usage: payload.cpu_usage ?? payload.CPUUsage ?? existing.cpu_usage,
-          memory_usage: payload.memory_usage ?? payload.MemoryUsage ?? existing.memory_usage,
-          disk_usage: payload.disk_usage ?? payload.DiskUsage ?? existing.disk_usage,
-          network: (payload.network_in || 0) + (payload.network_out || 0) || existing.network,
-          timestamp: payload.timestamp || existing.timestamp,
-        };
-        return next;
-      });
-    } catch (e) {
-      // swallow
+    if (payload?.host_id) {
+      setHostMetrics(prev => ({
+        ...prev,
+        [payload.host_id]: {
+          cpu_usage: payload.cpu_usage || 0,
+          memory_usage: payload.memory_usage || 0,
+          disk_usage: payload.disk_usage || 0,
+          network_in: payload.network_in || 0,
+          network_out: payload.network_out || 0,
+          timestamp: payload.timestamp || new Date().toISOString(),
+        }
+      }));
     }
   });
-  const [error, setError] = useState<string>('');
 
-  // Fetch real data from backend
   useEffect(() => {
     fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
   }, []);
 
-    const fetchDashboardData = async () => {
+  const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      setError('');
 
-      // Fetch hosts data
+      // Fetch hosts
+      const hostsData = await hostService.getAllHosts();
+      setHosts(hostsData);
+
+      // Fetch alerts
       try {
-        const hostsResponse: any = await hostService.getAllHosts();
-        const hosts: Host[] = Array.isArray(hostsResponse) ? hostsResponse : (hostsResponse || []);
-
-        console.log('[Dashboard] Hosts loaded:', hosts.length);
-
-        const totalHosts = hosts.length;
-        const onlineHosts = hosts.filter((h: Host) => h.agent_status === 'online').length;
-        const warnings = hosts.filter((h: Host) => h.agent_status === 'warning').length;
-        const critical = hosts.filter((h: Host) => h.agent_status === 'offline' || h.agent_status === 'critical' || !h.agent_status).length;
-
-        setStats({
-          totalHosts,
-          onlineHosts,
-          warnings,
-          critical,
-        });
-
-        // store hosts for the overview section
-        setHosts(hosts);
-
-        // fetch latest metric for each host (non-blocking)
-        Promise.all(hosts.slice(0, 10).map(async (h) => {
-          try {
-            const metric: any = await hostService.getLatestMetrics(h.id as number);
-            return { hostId: h.id, metric };
-          } catch (e) {
-            return { hostId: h.id, metric: null };
-          }
-        })).then((rows) => {
-          const m: Record<number, any> = {};
-          rows.forEach((r) => { if (r && r.hostId) m[Number(r.hostId)] = r.metric; });
-          setHostMetricsMap(m);
-        }).catch(() => {});
-      } catch (hostError: any) {
-        console.log('[Dashboard] Hosts endpoint not available:', hostError.message);
-        // Don't show error - empty state is expected
-        setStats({
-          totalHosts: 0,
-          onlineHosts: 0,
-          warnings: 0,
-          critical: 0,
-        });
+        const alertsData = await apiClient.get('/alerts?limit=10');
+        setAlerts(Array.isArray(alertsData) ? alertsData : []);
+      } catch (err) {
+        setAlerts([]);
       }
 
-      // Fetch recent activity from multiple sources
-      const activities: ActivityItem[] = [];
+      // Calculate stats
+      const totalHosts = hostsData.length;
+      const onlineHosts = hostsData.filter(h => h.agent_status === 'online').length;
+      const offlineHosts = totalHosts - onlineHosts;
       
-      // 1. Recent alerts
-      try {
-        const alertsResponse: any = await apiClient.get('/alerts?limit=3');
-        const alerts: Alert[] = Array.isArray(alertsResponse) ? alertsResponse : (alertsResponse.data || alertsResponse || []);
-        
-        alerts.forEach((alert: Alert, index: number) => {
-          activities.push({
-            id: 1000 + index,
-            host: alert.host_name || `Host #${alert.host_id}`,
-            message: alert.message || alert.type || 'Alert triggered',
-            type: (alert.severity === 'critical' ? 'error' : 
-                  alert.severity === 'high' ? 'warning' : 
-                  alert.severity === 'medium' ? 'info' : 'success') as 'warning' | 'success' | 'info' | 'error',
-            time: getRelativeTime(alert.created_at),
-          });
-        });
-      } catch (alertError) {
-        console.log('[Dashboard] No alerts available');
-      }
-      
-      // 2. Host status changes
-      hosts.forEach((host, index) => {
-        if (host.last_seen) {
-          const lastSeenTime = new Date(host.last_seen);
-          const timeDiff = Date.now() - lastSeenTime.getTime();
-          
-          if (timeDiff < 24 * 60 * 60 * 1000) { // Last 24 hours
-            activities.push({
-              id: 2000 + index,
-              host: host.hostname || host.ip,
-              message: host.agent_status === 'online' ? 'Host came online' : 'Host status updated',
-              type: host.agent_status === 'online' ? 'success' : 'info',
-              time: getRelativeTime(host.last_seen),
-            });
-          }
+      // Fetch latest metrics for each host
+      const metricsPromises = hostsData.map(async (host) => {
+        try {
+          const metrics = await hostService.getLatestMetrics(host.id);
+          return { hostId: host.id, metrics };
+        } catch (err) {
+          return { hostId: host.id, metrics: null };
         }
       });
-      
-      // 3. Add system events
-      if (hosts.length > 0) {
-        activities.push({
-          id: 3000,
-          host: 'System',
-          message: `Monitoring ${hosts.length} host${hosts.length > 1 ? 's' : ''}`,
-          type: 'info',
-          time: 'ongoing',
-        });
-      }
-      
-      // Sort by most recent and limit to 5
-      activities.sort((a, b) => {
-        if (a.time === 'ongoing') return 1;
-        if (b.time === 'ongoing') return -1;
-        return 0; // Keep original order for now
-      });
-      
-      setRecentActivity(activities.slice(0, 5));
 
-    } catch (err: any) {
-      console.error('[Dashboard] General error:', err);
-      setStats({
-        totalHosts: 0,
-        onlineHosts: 0,
-        warnings: 0,
-        critical: 0,
+      const metricsResults = await Promise.all(metricsPromises);
+      const metricsMap: Record<number, any> = {};
+      let totalCpu = 0, totalMemory = 0, totalDisk = 0, validMetrics = 0;
+
+      metricsResults.forEach(({ hostId, metrics }) => {
+        if (metrics) {
+          metricsMap[hostId] = metrics;
+          totalCpu += metrics.cpu_usage || 0;
+          totalMemory += metrics.memory_usage || 0;
+          totalDisk += metrics.disk_usage || 0;
+          validMetrics++;
+        }
       });
+
+      setHostMetrics(metricsMap);
+
+      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : 0;
+      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
+      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : 0;
+      
+      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 100;
+
+      setStats({
+        totalHosts,
+        onlineHosts,
+        offlineHosts,
+        criticalAlerts: alerts.filter(a => a.severity === 'critical').length,
+        warningAlerts: alerts.filter(a => a.severity === 'warning' || a.severity === 'high').length,
+        avgCpuUsage,
+        avgMemoryUsage,
+        avgDiskUsage,
+        systemHealth,
+      });
+
+    } catch (err) {
+      console.error('Failed to fetch dashboard data:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
 
-  // Helper function to convert timestamp to relative time
-  const getRelativeTime = (timestamp: string): string => {
-    const now = new Date();
-    const date = new Date(timestamp);
-    const diff = Math.floor((now.getTime() - date.getTime()) / 1000); // seconds
 
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hour${Math.floor(diff / 3600) > 1 ? 's' : ''} ago`;
-    return `${Math.floor(diff / 86400)} day${Math.floor(diff / 86400) > 1 ? 's' : ''} ago`;
+  const getMetricColor = (value: number) => {
+    if (value >= 90) return 'text-red-600';
+    if (value >= 70) return 'text-yellow-600';
+    return 'text-green-600';
   };
 
-  const healthPercentage = stats.totalHosts > 0 
-    ? Math.round((stats.onlineHosts / stats.totalHosts) * 100) 
-    : 0;
+  const getTrendIcon = (current: number, previous: number) => {
+    if (current > previous) return <TrendingUp className="w-4 h-4 text-red-500" />;
+    if (current < previous) return <TrendingDown className="w-4 h-4 text-green-500" />;
+    return <Activity className="w-4 h-4 text-gray-500" />;
+  };
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="p-6 lg:p-8">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
-      <div className="p-6 lg:p-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Security Dashboard</h1>
-              <p className="text-gray-600">Real-time infrastructure monitoring and threat detection</p>
+      <div className="p-6 lg:p-8 space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Infrastructure Dashboard</h1>
+            <p className="text-gray-600 mt-1">Real-time monitoring and system overview</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium text-green-700">Live</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 px-3 py-2 bg-green-100 rounded-lg">
-                <Shield className="w-5 h-5 text-green-600" />
-                <span className="text-sm font-medium text-green-700">Protected</span>
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500">Last updated</div>
-                <div className="text-sm font-medium text-gray-900">{new Date().toLocaleTimeString()}</div>
-              </div>
-            </div>
+            <Button variant="outline" onClick={fetchDashboardData}>
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </Button>
           </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-600">{error}</p>
+        {/* Key Metrics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Total Hosts */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/hosts')}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Hosts</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalHosts}</p>
+                <div className="flex items-center mt-2 space-x-2">
+                  <span className="text-sm text-green-600">{stats.onlineHosts} online</span>
+                  <span className="text-sm text-red-600">{stats.offlineHosts} offline</span>
+                </div>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Server className="w-8 h-8 text-blue-600" />
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* System Overview */}
-        <div className="mb-8">
-          <SystemOverview stats={stats} isLoading={isLoading} />
+          {/* System Health */}
+          <Card className="p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">System Health</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.systemHealth}%</p>
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
+                  <div 
+                    className={`h-2 rounded-full transition-all duration-500 ${
+                      stats.systemHealth >= 90 ? 'bg-green-500' :
+                      stats.systemHealth >= 70 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${stats.systemHealth}%` }}
+                  ></div>
+                </div>
+              </div>
+              <div className="p-3 bg-green-100 rounded-lg">
+                <Shield className="w-8 h-8 text-green-600" />
+              </div>
+            </div>
+          </Card>
+
+          {/* Active Alerts */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigate('/alerts')}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Active Alerts</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.criticalAlerts + stats.warningAlerts}</p>
+                <div className="flex items-center mt-2 space-x-2">
+                  <span className="text-sm text-red-600">{stats.criticalAlerts} critical</span>
+                  <span className="text-sm text-yellow-600">{stats.warningAlerts} warning</span>
+                </div>
+              </div>
+              <div className="p-3 bg-red-100 rounded-lg">
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+            </div>
+          </div>
+
+          {/* Average CPU */}
+          <Card className="p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Avg CPU Usage</p>
+                <p className={`text-3xl font-bold mt-2 ${getMetricColor(stats.avgCpuUsage)}`}>
+                  {stats.avgCpuUsage.toFixed(1)}%
+                </p>
+                <div className="flex items-center mt-2">
+                  {getTrendIcon(stats.avgCpuUsage, 50)}
+                  <span className="text-sm text-gray-500 ml-1">vs last hour</span>
+                </div>
+              </div>
+              <div className="p-3 bg-purple-100 rounded-lg">
+                <Cpu className="w-8 h-8 text-purple-600" />
+              </div>
+            </div>
+          </Card>
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Live Metrics - Only show if we have hosts */}
-          {stats.totalHosts > 0 && (
-            <div className="lg:col-span-2">
-              <LiveMetrics />
-            </div>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Resource Usage Overview */}
+          <div className="lg:col-span-2">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Resource Usage</h2>
+                <Button variant="ghost" size="sm" onClick={() => navigate('/metrics')}>
+                  View Details <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* CPU Usage */}
+                <div className="text-center">
+                  <div className="relative w-24 h-24 mx-auto mb-4">
+                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#e5e7eb"
+                        strokeWidth="2"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeWidth="2"
+                        strokeDasharray={`${stats.avgCpuUsage}, 100`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-lg font-bold text-gray-900">{stats.avgCpuUsage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">CPU Usage</p>
+                </div>
 
-          {/* Threat Indicators - Only show real alerts */}
-          <div className={stats.totalHosts > 0 ? '' : 'lg:col-span-3'}>
-            <ThreatIndicators indicators={recentActivity.map(activity => ({
-              id: activity.id.toString(),
-              type: activity.type === 'error' ? 'security' : 'performance',
-              severity: activity.type === 'error' ? 'critical' : activity.type === 'warning' ? 'high' : 'low',
-              title: activity.message,
-              description: `Host: ${activity.host}`,
-              count: 1,
-              timestamp: activity.time
-            }))} isLoading={isLoading} />
+                {/* Memory Usage */}
+                <div className="text-center">
+                  <div className="relative w-24 h-24 mx-auto mb-4">
+                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#e5e7eb"
+                        strokeWidth="2"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#10b981"
+                        strokeWidth="2"
+                        strokeDasharray={`${stats.avgMemoryUsage}, 100`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-lg font-bold text-gray-900">{stats.avgMemoryUsage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">Memory Usage</p>
+                </div>
+
+                {/* Disk Usage */}
+                <div className="text-center">
+                  <div className="relative w-24 h-24 mx-auto mb-4">
+                    <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#e5e7eb"
+                        strokeWidth="2"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="2"
+                        strokeDasharray={`${stats.avgDiskUsage}, 100`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-lg font-bold text-gray-900">{stats.avgDiskUsage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600">Disk Usage</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Quick Actions */}
+          <div>
+            <Card className="p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+              <div className="space-y-3">
+                <Button 
+                  variant="primary" 
+                  fullWidth 
+                  className="justify-start"
+                  onClick={() => navigate('/hosts')}
+                >
+                  <Server className="w-4 h-4 mr-3" />
+                  Add New Host
+                </Button>
+                <Button 
+                  variant="outline" 
+                  fullWidth 
+                  className="justify-start"
+                  onClick={() => navigate('/metrics')}
+                >
+                  <Activity className="w-4 h-4 mr-3" />
+                  View Metrics
+                </Button>
+                <Button 
+                  variant="outline" 
+                  fullWidth 
+                  className="justify-start"
+                  onClick={() => navigate('/alerts')}
+                >
+                  <AlertTriangle className="w-4 h-4 mr-3" />
+                  Manage Alerts
+                </Button>
+                <Button 
+                  variant="outline" 
+                  fullWidth 
+                  className="justify-start"
+                  onClick={() => navigate('/logs')}
+                >
+                  <Database className="w-4 h-4 mr-3" />
+                  View Logs
+                </Button>
+              </div>
+            </Card>
           </div>
         </div>
 
-        {/* Secondary Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Recent Activity */}
-          <Card className="lg:col-span-2" padding="none">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Recent Activity</h2>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => navigate('/alerts')}
-                >
-                  View All
-                </Button>
-              </div>
-            </div>
-            
-            {/* Show loading, empty state, or activity list */}
-            {isLoading ? (
-              <div className="p-8 text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="text-sm text-gray-500 mt-2">Loading activity...</p>
-              </div>
-            ) : recentActivity.length === 0 ? (
-              <div className="p-8 text-center">
-                <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No recent activity</p>
-                <p className="text-sm text-gray-400 mt-1">Activity will appear here once you add hosts</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-200">
-                {recentActivity.map((activity) => (
-                  <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start gap-4">
-                      <div className={`mt-1 ${
-                        activity.type === 'error' ? 'text-red-500' :
-                        activity.type === 'warning' ? 'text-orange-500' :
-                        activity.type === 'success' ? 'text-green-500' :
-                        'text-blue-600'
-                      }`}>
-                        <Activity className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">{activity.host}</p>
-                        <p className="text-sm text-gray-600 mt-1">{activity.message}</p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Badge
-                          variant={
-                            activity.type === 'error' ? 'error' :
-                            activity.type === 'warning' ? 'warning' :
-                            activity.type === 'success' ? 'success' :
-                            'info'
-                          }
-                          size="sm"
-                        >
-                          {activity.type}
-                        </Badge>
-                        <span className="text-xs text-gray-500 flex items-center gap-1 whitespace-nowrap">
-                          <Clock className="w-3 h-3" />
-                          {activity.time}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+        {/* Hosts Overview */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900">Hosts Overview</h2>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/hosts')}>
+              View All <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
 
-          {/* Security Actions */}
-          <Card>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Security Actions</h2>
-            <div className="space-y-3">
-              <Button 
-                variant="primary" 
-                fullWidth 
-                className="justify-start bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                onClick={() => navigate('/hosts')}
-              >
-                <Plus className="w-4 h-4" />
-                Add New Host
-              </Button>
-              <Button 
-                variant="outline" 
-                fullWidth 
-                className="justify-start border-blue-200 hover:bg-blue-50"
-                onClick={() => navigate('/metrics')}
-              >
-                <Activity className="w-4 h-4" />
-                View Metrics
-              </Button>
-              <Button 
-                variant="outline" 
-                fullWidth 
-                className="justify-start border-green-200 hover:bg-green-50"
-                onClick={() => navigate('/logs')}
-              >
-                <Database className="w-4 h-4" />
-                Security Logs
-              </Button>
-              <Button 
-                variant="outline" 
-                fullWidth 
-                className="justify-start border-red-200 hover:bg-red-50"
-                onClick={() => navigate('/alerts')}
-              >
-                <AlertTriangle className="w-4 h-4" />
-                Threat Alerts
+          {hosts.length === 0 ? (
+            <div className="text-center py-12">
+              <Server className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Hosts Yet</h3>
+              <p className="text-gray-500 mb-6">Add your first host to start monitoring</p>
+              <Button variant="primary" onClick={() => navigate('/hosts')}>
+                Add Host
               </Button>
             </div>
-
-            {/* Security Status */}
-            {!isLoading && stats.totalHosts > 0 && (
-              <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
-                <div className="flex items-start gap-3">
-                  <Shield className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-green-900">Security Status</h3>
-                    <p className="text-xs text-green-700 mt-1">
-                      {healthPercentage}% of endpoints are secure and monitored
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Real-time Status */}
-            <div className="mt-4">
-              <RealTimeStatus isConnected={!isLoading} />
-            </div>
-
-            {/* Threat Level Indicator */}
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Threat Level</span>
-                <Badge variant="success" size="sm">Low</Badge>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-green-500 h-2 rounded-full" style={{ width: '25%' }}></div>
-              </div>
-              <p className="text-xs text-gray-600 mt-2">No active threats detected</p>
-            </div>
-
-            {/* Empty State - No Hosts */}
-            {!isLoading && stats.totalHosts === 0 && (
-              <div className="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div className="flex items-start gap-3">
-                  <Server className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-yellow-900">Get Started</h3>
-                    <p className="text-xs text-yellow-700 mt-1">
-                      Add your first host to start monitoring your infrastructure
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Top Hosts by Resource Usage - Only show if hosts exist */}
-        {!isLoading && stats.totalHosts > 0 && (
-          <Card padding="none">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Hosts Overview</h2>
-            </div>
-            <div className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {hosts.length === 0 ? (
-                  <div className="text-center text-gray-500 col-span-full">
-                    <Server className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p>Host metrics will be displayed here</p>
-                    <p className="text-sm text-gray-400 mt-1">Real-time resource usage coming soon</p>
-                  </div>
-                ) : (
-                  hosts.slice(0, 6).map((h) => {
-                    const metric = hostMetricsMap[h.id];
-                    const cpuVal = metric ? Number(metric.cpu_usage ?? metric.CPUUsage ?? metric.cpu ?? 0) : 0;
-                    const memVal = metric ? Number(metric.memory_usage ?? metric.MemoryUsage ?? metric.memory ?? 0) : 0;
-                    const diskVal = metric ? Number(metric.disk_usage ?? metric.DiskUsage ?? metric.disk ?? 0) : 0;
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Host</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">CPU</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Memory</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Disk</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Last Seen</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hosts.slice(0, 5).map((host) => {
+                    const metrics = hostMetrics[host.id];
                     return (
-                      <div key={h.id} className="p-4 bg-white rounded-lg border shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/hosts/${h.id}`)}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{h.hostname || h.ip}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className={`w-2 h-2 rounded-full ${
-                                h.agent_status === 'online' ? 'bg-green-500' : 'bg-red-500'
-                              }`}></div>
-                              <p className="text-xs text-gray-500">{h.agent_status || 'offline'}</p>
+                      <tr key={host.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-4 px-4">
+                          <div className="flex items-center">
+                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                              <Server className="w-5 h-5 text-blue-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{host.hostname || host.ip}</p>
+                              <p className="text-sm text-gray-500">{host.ip}</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-lg font-bold text-gray-900">{cpuVal.toFixed(1)}%</p>
-                            <p className="text-xs text-gray-500">CPU</p>
+                        </td>
+                        <td className="py-4 px-4">
+                          <Badge 
+                            variant={host.agent_status === 'online' ? 'success' : 'error'}
+                            size="sm"
+                          >
+                            {host.agent_status || 'offline'}
+                          </Badge>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`font-medium ${getMetricColor(metrics?.cpu_usage || 0)}`}>
+                            {(metrics?.cpu_usage || 0).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`font-medium ${getMetricColor(metrics?.memory_usage || 0)}`}>
+                            {(metrics?.memory_usage || 0).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`font-medium ${getMetricColor(metrics?.disk_usage || 0)}`}>
+                            {(metrics?.disk_usage || 0).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="text-sm text-gray-500">
+                            {host.last_seen ? new Date(host.last_seen).toLocaleString() : 'Never'}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center space-x-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => navigate(`/hosts/${host.id}`)}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => navigate(`/hosts/${host.id}`)}
+                            >
+                              <Settings className="w-4 h-4" />
+                            </Button>
                           </div>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          <div>Memory: {memVal.toFixed(1)}%</div>
-                          <div>Disk: {diskVal.toFixed(1)}%</div>
-                        </div>
-                      </div>
+                        </td>
+                      </tr>
                     );
-                  })
-                )}
-              </div>
+                  })}
+                </tbody>
+              </table>
             </div>
-          </Card>
-        )}
+          )}
+        </Card>
 
-        {/* Empty State - No Hosts at All */}
-        {!isLoading && stats.totalHosts === 0 && (
-          <Card>
-            <div className="text-center py-12">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Server className="w-10 h-10 text-blue-600" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">No Hosts Yet</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                Start monitoring your infrastructure by adding your first host. You'll be able to track metrics, logs, and alerts in real-time.
-              </p>
-              <Button 
-                variant="primary" 
-                size="lg"
-                onClick={() => navigate('/hosts')}
-              >
-                <Plus className="w-5 h-5" />
-                Add Your First Host
+        {/* Recent Alerts */}
+        {alerts.length > 0 && (
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Recent Alerts</h2>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/alerts')}>
+                View All <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
+            </div>
+            
+            <div className="space-y-4">
+              {alerts.slice(0, 5).map((alert) => (
+                <div key={alert.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center">
+                    <div className={`w-3 h-3 rounded-full mr-3 ${
+                      alert.severity === 'critical' ? 'bg-red-500' :
+                      alert.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+                    }`}></div>
+                    <div>
+                      <p className="font-medium text-gray-900">{alert.message || 'Alert triggered'}</p>
+                      <p className="text-sm text-gray-500">{alert.host_name || `Host #${alert.host_id}`}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <Badge 
+                      variant={alert.severity === 'critical' ? 'error' : 'warning'}
+                      size="sm"
+                    >
+                      {alert.severity}
+                    </Badge>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(alert.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </Card>
         )}

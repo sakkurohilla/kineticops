@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
 import { Plus, Server, Search, RefreshCw } from 'lucide-react';
 import Button from '../../components/common/Button';
-import AddHostForm from '../../components/hosts/AddHostForm';
+import SimpleAddHostForm from '../../components/hosts/SimpleAddHostForm';
 import HostCard from '../../components/hosts/HostCard';
 import { useHosts } from '../../hooks/useHosts';
 import hostService from '../../services/api/hostService';
@@ -194,11 +194,10 @@ const Hosts: React.FC = () => {
 
       {/* Add Host Modal */}
       {showAddForm && (
-        <AddHostForm
+        <SimpleAddHostForm
           onClose={() => setShowAddForm(false)}
           onSuccess={() => {
             refetch();
-            setShowAddForm(false);
           }}
         />
       )}

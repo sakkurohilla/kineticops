@@ -30,7 +30,8 @@ func CreateWorkflowSession(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Workflow service not initialized"})
 	}
 
-	response, err := workflowService.CreateWorkflowSession(&req, userID.(int))
+	userIDInt := int(userID.(int64))
+	response, err := workflowService.CreateWorkflowSession(&req, userIDInt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -91,7 +92,8 @@ func ControlService(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Workflow service not initialized"})
 	}
 
-	response, err := workflowService.ControlService(serviceID, req.Action, sessionToken, userID.(int))
+	userIDInt := int(userID.(int64))
+	response, err := workflowService.ControlService(serviceID, req.Action, sessionToken, userIDInt)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -101,7 +103,7 @@ func ControlService(c *fiber.Ctx) error {
 
 // GetServiceStatus - GET /api/v1/services/{serviceId}/status
 func GetServiceStatus(c *fiber.Ctx) error {
-	serviceID, err := strconv.Atoi(c.Params("serviceId"))
+	_, err := strconv.Atoi(c.Params("serviceId"))
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid service ID"})
 	}
@@ -111,15 +113,8 @@ func GetServiceStatus(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": "Session token required"})
 	}
 
-	// This would get real-time service status
-	// For now, return mock data
-	return c.JSON(fiber.Map{
-		"service_id": serviceID,
-		"status": "running",
-		"uptime": "2h 30m",
-		"cpu_usage": 15.2,
-		"memory_usage": 128.5,
-	})
+	// Get real-time service status
+	return c.Status(501).JSON(fiber.Map{"error": "Service status not implemented"})
 }
 
 // GetWorkflowData - GET /api/v1/hosts/{hostId}/workflow

@@ -1,0 +1,83 @@
+# KineticOps Agent Configuration
+
+# Agent configuration
+agent:
+  name: kineticops-agent
+  hostname: ${HOSTNAME}
+  period: 30s
+  tags:
+    - production
+    - web-server
+
+# Output configuration
+output:
+  kineticops:
+    hosts:
+      - "http://localhost:8080"
+      - "http://backup.kineticops.local:8080"
+    token: "${KINETICOPS_TOKEN}"
+    timeout: 30s
+    max_retry: 3
+    tls:
+      enabled: false
+      verification_mode: full
+
+# Data collection modules
+modules:
+  # System metrics
+  system:
+    enabled: true
+    period: 30s
+    processes: false
+    cpu:
+      enabled: true
+      percpu: false
+      totalcpu: true
+    memory:
+      enabled: true
+    network:
+      enabled: true
+    filesystem:
+      enabled: true
+
+  # Log collection
+  logs:
+    enabled: false
+    inputs:
+      - type: log
+        paths:
+          - /var/log/*.log
+          - /var/log/messages
+          - /var/log/syslog
+        exclude:
+          - /var/log/btmp
+          - /var/log/wtmp
+        fields:
+          service: web
+          environment: production
+        multiline:
+          pattern: '^\d{4}-\d{2}-\d{2}'
+          negate: true
+          match: after
+
+      - type: log
+        paths:
+          - /var/log/nginx/*.log
+        fields:
+          service: nginx
+          log_type: access
+
+  # Docker container monitoring
+  docker:
+    enabled: false
+    period: 30s
+
+# Security configuration
+security:
+  token: "${KINETICOPS_TOKEN}"
+
+# Logging configuration
+logging:
+  level: info
+  to_file: false
+  file: /var/log/kineticops-agent.log

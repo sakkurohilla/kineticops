@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -371,37 +372,49 @@ func CollectHostNow(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "metric": metric})
 }
 
-// CreateHostWithAgent creates a host with agent setup
+// CreateHostWithAgent creates a host with simple agent setup
 func CreateHostWithAgent(c *fiber.Ctx) error {
-	var req models.AgentSetupRequest
+	var req models.Host
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 
-	if hostAgentService == nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
+	tid := c.Locals("tenant_id")
+	if tid == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
 	}
 
-	response, err := hostAgentService.SetupAgent(&req)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	req.TenantID = tid.(int64)
+	req.AgentStatus = "pending"
+	req.LastSeen = time.Now()
+
+	if err := postgres.CreateHost(postgres.DB, &req); err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			return c.Status(409).JSON(fiber.Map{"error": "Host already exists"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": "Cannot create host"})
 	}
 
-	return c.JSON(response)
+	return c.JSON(fiber.Map{
+		"host_id": req.ID,
+		"message": "Host created. Install agent using the provided instructions.",
+		"install_command": fmt.Sprintf("curl -sSL https://install.kineticops.com/agent.sh | sudo bash -s -- --host=%s --token=<your-token>", req.IP),
+	})
 }
 
-// GetHostServices returns discovered services for a host
-func GetHostServices(c *fiber.Ctx) error {
-	hostID, _ := strconv.Atoi(c.Params("id"))
-	
-	if hostAgentService == nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Agent service not initialized"})
+// CleanupFailedHost removes host if creation failed
+func CleanupFailedHost(hostname string) {
+	hosts, err := postgres.ListHosts(postgres.DB, 0, 100, 0)
+	if err == nil {
+		for _, h := range hosts {
+			if h.Hostname == hostname && (h.AgentStatus == "installing" || h.AgentStatus == "failed") {
+				postgres.DeleteHost(postgres.DB, h.ID)
+				break
+			}
+		}
 	}
-
-	services, err := hostAgentService.GetHostServices(hostID)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	return c.JSON(services)
 }
+
+
+
+

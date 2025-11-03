@@ -14,6 +14,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.Mutex
+	maxClients int // Enterprise connection limit
 	// lastMessages keeps the most recent message per host_id so new clients can
 	// receive a warm-up snapshot when they connect. We store the message along
 	// with the monotonic sequence id so older messages don't overwrite newer
@@ -30,6 +31,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		maxClients: 10000, // Enterprise limit
 		lastMessages: make(map[int64]struct {
 			Seq uint64
 			Msg []byte
@@ -42,6 +44,13 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.mu.Lock()
+			// Check connection limit
+			if len(h.clients) >= h.maxClients {
+				fmt.Printf("[WS HUB] Connection limit reached, rejecting client user=%d\n", client.userID)
+				close(client.send)
+				h.mu.Unlock()
+				continue
+			}
 			h.clients[client] = true
 			fmt.Printf("[WS HUB] registered client user=%d, total_clients=%d\n", client.userID, len(h.clients))
 			// send warm-up messages (last known metrics) to the newly registered client
@@ -63,7 +72,23 @@ func (h *Hub) Run() {
 			h.mu.Unlock()
 		case message := <-h.broadcast:
 			h.mu.Lock()
+			// Parse message to check if it's user-specific
+			var msgData map[string]interface{}
+			targetUserID := int64(-1) // -1 means broadcast to all
+			if json.Unmarshal(message, &msgData) == nil {
+				if userID, ok := msgData["target_user_id"]; ok {
+					if uid, ok := userID.(float64); ok {
+						targetUserID = int64(uid)
+					}
+				}
+			}
+			
 			for client := range h.clients {
+				// Skip if message is user-specific and doesn't match client
+				if targetUserID != -1 && client.userID != targetUserID {
+					continue
+				}
+				
 				select {
 				case client.send <- message:
 				default:

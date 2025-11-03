@@ -23,7 +23,7 @@ interface AgentSetupResponse {
 }
 
 const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'create', hostId, initialData }) => {
-  const [formData, setFormData] = useState<CreateHostRequest & { ssh_key?: string; auth_method?: 'password' | 'key'; setup_method?: 'automatic' | 'manual' }>({
+  const [formData, setFormData] = useState<CreateHostRequest & { ssh_key?: string; auth_method?: 'password' | 'key'; setup_method?: 'automatic' | 'manual' | 'none' }>({
     hostname: '',
     ip: '',
     ssh_user: 'root',
@@ -224,7 +224,7 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
                 Setup Method
               </h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div 
                   className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                     formData.setup_method === 'automatic' 
@@ -269,6 +269,30 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
                     <div>
                       <h4 className="font-semibold text-gray-900">📋 Manual</h4>
                       <p className="text-sm text-gray-600">Download script and run manually</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div 
+                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                    formData.setup_method === 'none' 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  onClick={() => setFormData(prev => ({ ...prev, setup_method: 'none' }))}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="setup_method"
+                      value="none"
+                      checked={formData.setup_method === 'none'}
+                      onChange={handleChange}
+                      className="text-blue-600"
+                    />
+                    <div>
+                      <h4 className="font-semibold text-gray-900">🚫 No Agent</h4>
+                      <p className="text-sm text-gray-600">Create host without monitoring agent</p>
                     </div>
                   </div>
                 </div>
@@ -352,8 +376,8 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
             </div>
           </div>
 
-          {/* SSH Configuration - Only show for automatic setup or edit mode */}
-          {(mode === 'edit' || formData.setup_method === 'automatic') && (
+          {/* SSH Configuration - Required for all methods */}
+          {(mode === 'edit' || formData.setup_method !== undefined) && (
             <div className="space-y-4 pt-6 border-t border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-600 rounded-full"></div>
@@ -438,7 +462,8 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Paste your private SSH key content here. Ensure it's properly formatted.
+                  <strong>Private SSH key required</strong> (not public key). Generate with: <code className="bg-gray-100 px-1 rounded">ssh-keygen -t ed25519</code><br/>
+                  Copy content from: <code className="bg-gray-100 px-1 rounded">~/.ssh/id_ed25519</code> (private key file)
                 </p>
               </div>
             )}

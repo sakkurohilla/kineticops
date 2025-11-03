@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -18,18 +17,18 @@ func NewAgentRepository(db *sqlx.DB) *AgentRepository {
 
 func (r *AgentRepository) Create(agent *models.Agent) error {
 	query := `
-		INSERT INTO agents (host_id, agent_token, status, version, setup_method, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO agents (host_id, token, status, version)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`
 	
 	return r.db.QueryRow(query, agent.HostID, agent.AgentToken, agent.Status, 
-		agent.Version, agent.SetupMethod, agent.Metadata).Scan(
+		agent.Version).Scan(
 		&agent.ID, &agent.CreatedAt, &agent.UpdatedAt)
 }
 
 func (r *AgentRepository) GetByToken(token string) (*models.Agent, error) {
 	var agent models.Agent
-	query := `SELECT * FROM agents WHERE agent_token = $1`
+	query := `SELECT * FROM agents WHERE token = $1`
 	err := r.db.Get(&agent, query, token)
 	if err != nil {
 		return nil, err
@@ -55,21 +54,18 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 	defer tx.Rollback()
 
 	// Update agent heartbeat
-	metadataJSON, _ := json.Marshal(heartbeat.Metadata)
 	_, err = tx.Exec(`
 		UPDATE agents 
-		SET last_heartbeat = $1, cpu_usage = $2, memory_usage = $3, disk_usage = $4, 
-		    services_count = $5, metadata = $6, status = 'online', updated_at = CURRENT_TIMESTAMP
-		WHERE agent_token = $7`,
-		time.Now(), heartbeat.CPUUsage, heartbeat.MemoryUsage, heartbeat.DiskUsage,
-		len(heartbeat.Services), metadataJSON, token)
+		SET last_heartbeat = $1, status = 'online', updated_at = CURRENT_TIMESTAMP
+		WHERE token = $2`,
+		time.Now(), token)
 	if err != nil {
 		return err
 	}
 
 	// Get agent to find host_id and agent_id
 	var hostID, agentID int
-	err = tx.QueryRow("SELECT host_id, id FROM agents WHERE agent_token = $1", token).Scan(&hostID, &agentID)
+	err = tx.QueryRow("SELECT host_id, id FROM agents WHERE token = $1", token).Scan(&hostID, &agentID)
 	if err != nil {
 		return err
 	}

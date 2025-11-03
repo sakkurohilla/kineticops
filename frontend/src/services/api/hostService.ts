@@ -24,7 +24,7 @@ export interface TestSSHRequest {
 }
 
 export interface AgentSetupRequest {
-  setup_method: 'automatic' | 'manual';
+  setup_method: 'automatic' | 'manual' | 'none';
   hostname: string;
   ip: string;
   username: string;
@@ -176,6 +176,11 @@ const hostService = {
       console.error('Failed to fetch host services:', error);
       return [];
     }
+  },
+
+  // Alias for getAllHosts
+  getHosts: async (): Promise<Host[]> => {
+    return hostService.getAllHosts();
   },
 };
 

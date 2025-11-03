@@ -177,14 +177,7 @@ const HostDetails: React.FC = () => {
               <p className="text-sm font-medium text-gray-600 mb-1">Group</p>
               <p className="text-base text-gray-900">{host.group || 'default'}</p>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">SSH Port</p>
-              <p className="text-base text-gray-900">{host.ssh_port || 22}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">SSH User</p>
-              <p className="text-base text-gray-900">{host.ssh_user || 'root'}</p>
-            </div>
+
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">Last Seen</p>
               <p className="text-base text-gray-900">

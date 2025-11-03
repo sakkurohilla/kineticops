@@ -1,31 +1,14 @@
 package routes
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 )
 
 func RegisterAuthRoutes(app *fiber.App) {
-	// Rate limiter for public auth endpoints
-	rl := limiter.New(limiter.Config{
-		Max:        20,
-		Expiration: 60 * time.Second,
-		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP()
-		},
-		LimitReached: func(c *fiber.Ctx) error {
-			return c.Status(429).JSON(fiber.Map{
-				"error": "Too many requests. Please try again in a minute.",
-			})
-		},
-	})
-
-	// PUBLIC auth routes (with rate limiting)
-	auth := app.Group("/api/v1/auth", rl)
+	// PUBLIC auth routes (rate limiting disabled)
+	auth := app.Group("/api/v1/auth")
 
 	// Registration & Login
 	auth.Post("/register", handlers.Register)

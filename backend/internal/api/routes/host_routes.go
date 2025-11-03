@@ -34,8 +34,6 @@ func RegisterHostRoutes(app *fiber.App) {
 
 	// Agent setup and management routes
 	hosts.Post("/with-agent", handlers.CreateHostWithAgent)
-	hosts.Get("/:id/agent/status", handlers.GetAgentStatus)
-	hosts.Get("/:id/services", handlers.GetHostServices)
 
 	// Agent heartbeat endpoint (public - agents authenticate with token)
 	app.Post("/api/v1/agents/heartbeat", handlers.AgentHeartbeat)

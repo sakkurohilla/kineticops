@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
@@ -25,15 +26,65 @@ func NewAgentService(agentRepo *postgres.AgentRepository, hostRepo *postgres.Hos
 }
 
 func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentSetupResponse, error) {
-	// Create host first
+	// Clean up any failed previous attempts and check for duplicates
+	existingHosts, err := postgres.ListHosts(postgres.DB, 0, 100, 0)
+	if err == nil {
+		for _, h := range existingHosts {
+			// Check for duplicate hostname OR IP
+			if h.Hostname == req.Hostname || h.IP == req.IP {
+				if h.AgentStatus == "installing" || h.AgentStatus == "failed" || h.AgentStatus == "" {
+					// Remove failed attempt
+					postgres.DeleteHost(postgres.DB, h.ID)
+					log.Printf("Cleaned up failed host creation attempt: %s (%s)", h.Hostname, h.IP)
+				} else {
+					if h.Hostname == req.Hostname {
+						return nil, fmt.Errorf("host with hostname '%s' already exists", req.Hostname)
+					}
+					if h.IP == req.IP {
+						return nil, fmt.Errorf("host with IP '%s' already exists (hostname: %s)", req.IP, h.Hostname)
+					}
+				}
+			}
+		}
+	}
+
+	// Test SSH connection BEFORE creating host
+	if req.SetupMethod == "automatic" {
+		var sshErr error
+		if req.SSHKey != "" {
+			sshErr = TestSSHConnectionWithKey(req.IP, req.Port, req.Username, "", req.SSHKey)
+		} else {
+			sshErr = TestSSHConnection(req.IP, req.Port, req.Username, req.Password)
+		}
+		if sshErr != nil {
+			return nil, fmt.Errorf("SSH connection failed: %v", sshErr)
+		}
+	}
+
+	// Create host only after SSH test passes
 	host := &models.Host{
 		Hostname:     req.Hostname,
 		IP:           req.IP,
+		SSHUser:      req.Username,
+		SSHPassword:  req.Password,
+		SSHKey:       req.SSHKey,
+		SSHPort:      int64(req.Port),
+		OS:           "linux",
+		Group:        "default",
 		AgentStatus:  "installing",
+		TenantID:     1, // Default tenant
 	}
 	
-	err := s.hostRepo.Create(host)
+	err = s.hostRepo.Create(host)
 	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			if strings.Contains(err.Error(), "hostname") {
+				return nil, fmt.Errorf("host with hostname '%s' already exists", req.Hostname)
+			}
+			if strings.Contains(err.Error(), "ip") {
+				return nil, fmt.Errorf("host with IP '%s' already exists", req.IP)
+			}
+		}
 		return nil, fmt.Errorf("failed to create host: %v", err)
 	}
 
@@ -128,24 +179,24 @@ set -e
 echo "Installing KineticOps Agent..."
 
 # Create agent directory
-mkdir -p ~/.kineticops
-cd ~/.kineticops
+sudo mkdir -p /opt/kineticops-agent
+cd /opt/kineticops-agent
 
-# Download agent binary (placeholder - in production this would download from your server)
-cat > agent << 'EOF'
+# Create agent script
+sudo tee agent > /dev/null << 'EOF'
 #!/bin/bash
 # KineticOps Agent v1.0
 TOKEN="%s"
 SERVER_URL="http://localhost:8080"
 
 while true; do
-    # Collect system metrics
-    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | sed 's/%%us,//')
-    MEMORY_USAGE=$(free | grep Mem | awk '{printf("%.1f", $3/$2 * 100.0)}')
-    DISK_USAGE=$(df -h / | awk 'NR==2{printf("%.1f", $5)}' | sed 's/%%//')
+    # Collect system metrics with error handling
+    CPU_USAGE=$(awk '/cpu /{u=$2+$4; t=$2+$3+$4+$5; if (NR==1){u1=u; t1=t;} else print (u-u1) * 100 / (t-t1); exit}' <(grep 'cpu ' /proc/stat; sleep 1; grep 'cpu ' /proc/stat) 2>/dev/null || echo "0")
+    MEMORY_USAGE=$(free | awk '/^Mem:/{printf "%.1f", $3/$2 * 100.0}' 2>/dev/null || echo "0")
+    DISK_USAGE=$(df / | awk 'NR==2{gsub(/%/,""); print $5}' 2>/dev/null || echo "0")
     
     # Get running services
-    SERVICES=$(ps aux | grep -E "(nginx|apache|mysql|postgres|redis|docker)" | grep -v grep | awk '{print $11}' | sort | uniq | head -10 | tr '\n' ',' | sed 's/,$//')
+    SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
     
     # Send heartbeat
     curl -s -X POST "$SERVER_URL/api/v1/agents/heartbeat" \
@@ -156,19 +207,19 @@ while true; do
             \"memory_usage\": ${MEMORY_USAGE:-0},
             \"disk_usage\": ${DISK_USAGE:-0},
             \"services\": [],
-            \"system_info\": {
+            \"metadata\": {
                 \"hostname\": \"$(hostname)\",
                 \"os\": \"$(uname -s)\",
                 \"kernel\": \"$(uname -r)\",
-                \"uptime\": \"$(uptime -p)\"
+                \"uptime\": \"$(cat /proc/uptime | awk '{print int($1)}')\"
             }
-        }" || true
+        }" 2>/dev/null || echo "Heartbeat failed"
     
     sleep 30
 done
 EOF
 
-chmod +x agent
+sudo chmod +x agent
 
 # Create systemd service
 sudo tee /etc/systemd/system/kineticops-agent.service > /dev/null << EOF
@@ -178,11 +229,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=$HOME/.kineticops
-ExecStart=$HOME/.kineticops/agent
+User=root
+WorkingDirectory=/opt/kineticops-agent
+ExecStart=/opt/kineticops-agent/agent
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -195,7 +248,7 @@ sudo systemctl start kineticops-agent
 
 echo "KineticOps Agent installed and started successfully!"
 echo "Service status:"
-sudo systemctl status kineticops-agent --no-pager
+sudo systemctl status kineticops-agent --no-pager -l
 `, token)
 }
 

@@ -62,6 +62,17 @@ apiClient.interceptors.response.use(
       message: error.message,
     });
 
+    // Handle network errors (server down)
+    if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
+      console.log('Server is down, logging out user');
+      authService.logout();
+      window.location.href = '/login';
+      return Promise.reject({
+        message: 'Server is unavailable. Please try again later.',
+        status: 503,
+      });
+    }
+
     // Handle 401
     if (error.response?.status === 401 && error.config && !error.config._retry) {
       error.config._retry = true;

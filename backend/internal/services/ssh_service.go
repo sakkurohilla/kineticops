@@ -25,15 +25,21 @@ func TestSSHConnection(host string, port int, username, password string) error {
 func TestSSHConnectionWithKey(host string, port int, username, password, privateKey string) error {
 	var authMethods []ssh.AuthMethod
 	
+	// Always try password first if provided (more reliable)
+	if password != "" {
+		authMethods = append(authMethods, ssh.Password(password))
+	}
+	
+	// Try SSH key if provided
 	if privateKey != "" {
 		signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 		if err != nil {
 			return fmt.Errorf("failed to parse private key: %w", err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	} else if password != "" {
-		authMethods = append(authMethods, ssh.Password(password))
-	} else {
+	}
+	
+	if len(authMethods) == 0 {
 		return fmt.Errorf("either password or private key must be provided")
 	}
 
