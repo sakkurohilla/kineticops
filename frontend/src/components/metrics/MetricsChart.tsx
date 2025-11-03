@@ -192,9 +192,11 @@ const MetricsChart: React.FC<MetricsChartProps> = ({
           </div>
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={300}>
-          {renderChart()}
-        </ResponsiveContainer>
+        <div style={{ width: '100%', height: '300px', minWidth: '300px', minHeight: '300px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            {renderChart()}
+          </ResponsiveContainer>
+        </div>
       )}
     </Card>
   );

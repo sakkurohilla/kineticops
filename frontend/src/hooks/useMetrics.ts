@@ -39,14 +39,15 @@ export const useMetrics = (timeRange: TimeRange, hostId?: number, autoRefresh = 
         return;
       }
 
-      // Fetch metrics from backend
+      // Fetch metrics from backend (now returns aggregated data)
       console.log(`[useMetrics] Fetching ${timeRange} metrics for host ${hostId || 'all'}`);
-      const metricsData = timeRange === 'custom' && customStart && customEnd
+      const aggregatedData = timeRange === 'custom' && customStart && customEnd
         ? await metricsService.getMetricsCustomRange(customStart, customEnd, hostId)
         : await metricsService.getMetricsRange(timeRange, hostId);
-      console.log(`[useMetrics] Received ${metricsData.length} metrics`);
       
-      // Group by metric type
+      console.log(`[useMetrics] Received aggregated data:`, aggregatedData);
+      
+      // Handle new aggregated format: {cpu_usage: [...], memory_usage: [...], etc}
       const grouped: MetricsData = {
         cpu: [],
         memory: [],
@@ -54,30 +55,39 @@ export const useMetrics = (timeRange: TimeRange, hostId?: number, autoRefresh = 
         network: [],
       };
 
-      metricsData.forEach((metric: any) => {
-        // normalize possible field names from backend
-        const timestamp = metric.timestamp || metric.Timestamp || metric.created_at || metric.CreatedAt || new Date().toISOString();
-        const valueRaw = metric.metric_value ?? metric.value ?? metric.Value ?? metric.ValueRaw ?? 0;
-        const value = parseFloat(String(valueRaw || 0));
-
-        const metricNameRaw = metric.name || metric.Name || metric.metric_name || metric.type || metric.Type || '';
-        const metricName = String(metricNameRaw).toLowerCase();
-
-        const dataPoint = {
-          timestamp,
-          value,
-        };
-
-        if (metricName.includes('cpu')) {
-          grouped.cpu.push(dataPoint);
-        } else if (metricName.includes('memory') || metricName.includes('mem')) {
-          grouped.memory.push(dataPoint);
-        } else if (metricName.includes('disk')) {
-          grouped.disk.push(dataPoint);
-        } else if (metricName.includes('network') || metricName.includes('net')) {
-          grouped.network.push(dataPoint);
+      // Process aggregated data format
+      if (aggregatedData && typeof aggregatedData === 'object') {
+        const aggData = aggregatedData as any;
+        
+        // Map aggregated metrics to our format
+        if (aggData.cpu_usage && Array.isArray(aggData.cpu_usage)) {
+          grouped.cpu = aggData.cpu_usage.map((item: any) => ({
+            timestamp: item.timestamp,
+            value: item.value || 0
+          }));
         }
-      });
+        
+        if (aggData.memory_usage && Array.isArray(aggData.memory_usage)) {
+          grouped.memory = aggData.memory_usage.map((item: any) => ({
+            timestamp: item.timestamp,
+            value: item.value || 0
+          }));
+        }
+        
+        if (aggData.disk_usage && Array.isArray(aggData.disk_usage)) {
+          grouped.disk = aggData.disk_usage.map((item: any) => ({
+            timestamp: item.timestamp,
+            value: item.value || 0
+          }));
+        }
+        
+        if (aggData.network_bytes && Array.isArray(aggData.network_bytes)) {
+          grouped.network = aggData.network_bytes.map((item: any) => ({
+            timestamp: item.timestamp,
+            value: item.value || 0
+          }));
+        }
+      }
 
       // Sort by timestamp and log data for debugging
       Object.keys(grouped).forEach((key) => {

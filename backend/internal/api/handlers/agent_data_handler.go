@@ -121,11 +121,12 @@ func processAgentEvent(event *AgentDataEvent, token string) error {
 		return err
 	}
 
-	// Update host last seen
+	// Update host last seen with UTC timestamp
 	postgres.DB.Model(&models.Host{}).Where("id = ?", host.ID).Updates(map[string]interface{}{
-		"last_seen":    time.Now(),
+		"last_seen":    time.Now().UTC(),
 		"agent_status": "online",
 	})
+	fmt.Printf("[DEBUG] Updated host %d last_seen to %s\n", host.ID, time.Now().UTC().Format(time.RFC3339))
 
 	// Process based on event kind
 	switch event.Event.Kind {
@@ -143,10 +144,20 @@ func processAgentEvent(event *AgentDataEvent, token string) error {
 func findOrCreateHost(hostname, agentName, token string) (*models.Host, error) {
 	var host models.Host
 	
-	// Try to find existing host by hostname
+	// Try to find existing host by hostname first
 	err := postgres.DB.Where("hostname = ?", hostname).First(&host).Error
 	if err == nil {
+		fmt.Printf("[DEBUG] Found existing host by hostname: %s (ID: %d)\n", hostname, host.ID)
 		return &host, nil
+	}
+	
+	// Also check by IP if hostname lookup failed
+	if hostname != "" {
+		err = postgres.DB.Where("ip = ?", hostname).First(&host).Error
+		if err == nil {
+			fmt.Printf("[DEBUG] Found existing host by IP: %s (ID: %d)\n", hostname, host.ID)
+			return &host, nil
+		}
 	}
 
 	// Resolve user from installation token if provided
@@ -160,6 +171,7 @@ func findOrCreateHost(hostname, agentName, token string) (*models.Host, error) {
 	}
 
 	// Create new host with proper user association
+	now := time.Now().UTC()
 	host = models.Host{
 		Hostname:    hostname,
 		IP:          "auto-discovered",
@@ -169,8 +181,9 @@ func findOrCreateHost(hostname, agentName, token string) (*models.Host, error) {
 		TenantID:    int64(tenantID),
 		Group:       "auto-discovered",
 		Description: fmt.Sprintf("Auto-discovered by %s", agentName),
-		LastSeen:    time.Now(),
+		LastSeen:    now,
 	}
+	fmt.Printf("[DEBUG] Creating new host %s with last_seen: %s\n", hostname, now.Format(time.RFC3339))
 
 	if err := postgres.DB.Create(&host).Error; err != nil {
 		return nil, err

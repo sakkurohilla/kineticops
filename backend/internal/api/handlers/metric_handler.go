@@ -7,7 +7,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
-	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
@@ -104,49 +103,40 @@ func GetMetricsRange(c *fiber.Ctx) error {
 	}
 
 	rangeParam := c.Query("range", "24h")
-	var startTime time.Time
-
-	now := time.Now().UTC()
-	switch rangeParam {
-	case "1h":
-		startTime = now.Add(-1 * time.Hour)
-	case "6h":
-		startTime = now.Add(-6 * time.Hour)
-	case "24h":
-		startTime = now.Add(-24 * time.Hour)
-	case "7d":
-		startTime = now.Add(-7 * 24 * time.Hour)
-	case "30d":
-		startTime = now.Add(-30 * 24 * time.Hour)
-	default:
-		startTime = now.Add(-24 * time.Hour)
-	}
-
-	// Get host_id from query parameter
 	hostID, _ := strconv.ParseInt(c.Query("host_id"), 10, 64)
 	
-	// Get metrics for specific host or all hosts of this tenant within time range
-	var metrics []models.Metric
-	query := postgres.DB.Where("tenant_id = ? AND timestamp >= ? AND timestamp <= ?", tid.(int64), startTime, now)
-	
-	// Filter by host_id if specified
-	if hostID > 0 {
-		query = query.Where("host_id = ?", hostID)
+	// If no host_id provided, return aggregated data for all hosts
+	if hostID == 0 {
+		// Return empty structure for dashboard overview
+		return c.JSON(map[string][]interface{}{
+			"cpu_usage":     {},
+			"memory_usage":  {},
+			"disk_usage":    {},
+			"network_bytes": {},
+		})
 	}
-	
-	err := query.Order("timestamp ASC").Limit(1000).Find(&metrics).Error
 
+	// Use aggregation service for proper time-series data
+	aggService := services.NewMetricsAggregationService()
+	
+	// Get all metric types for the host
+	metricNames := []string{"cpu_usage", "memory_usage", "disk_usage", "network_bytes"}
+	result, err := aggService.GetMultipleMetricsAggregated(hostID, metricNames, rangeParam)
+	
 	if err != nil {
-		return c.JSON([]models.Metric{}) // Return empty array on error
+		fmt.Printf("[ERROR] Aggregation failed: %v\n", err)
+		return c.JSON(map[string][]interface{}{
+			"cpu_usage":     {},
+			"memory_usage":  {},
+			"disk_usage":    {},
+			"network_bytes": {},
+		})
 	}
 
-	// Debug: log the query parameters and result count
-	fmt.Printf("[DEBUG] Range: %s, Host: %d, Start: %s, End: %s, Found: %d metrics\n", 
-		rangeParam, hostID, startTime.Format(time.RFC3339), now.Format(time.RFC3339), len(metrics))
+	fmt.Printf("[DEBUG] Aggregated metrics for host %d, range %s: %d metric types\n", 
+		hostID, rangeParam, len(result))
 
-
-
-	return c.JSON(metrics)
+	return c.JSON(result)
 }
 
 

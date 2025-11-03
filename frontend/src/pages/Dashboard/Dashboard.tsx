@@ -13,7 +13,6 @@ import {
   Shield,
   Eye,
   Settings,
-  RefreshCw,
   ChevronRight,
   Database
 } from 'lucide-react';
@@ -22,6 +21,7 @@ import hostService from '../../services/api/hostService';
 import apiClient from '../../services/api/client';
 // import { useMetrics } from '../../hooks/useMetrics';
 import useWebsocket from '../../hooks/useWebsocket';
+import { formatTimestamp } from '../../utils/dateUtils';
 
 interface DashboardStats {
   totalHosts: number;
@@ -201,32 +201,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-        {/* Modern Header with Gradient */}
-        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white p-8 rounded-b-3xl shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent">
-                🚀 KineticOps Dashboard
-              </h1>
-              <p className="text-blue-100 text-lg">Real-time infrastructure monitoring • Enterprise scale</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full border border-white/30">
-                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse shadow-lg"></div>
-                <span className="text-sm font-semibold text-white">LIVE</span>
-              </div>
-              <button 
-                onClick={fetchDashboardData}
-                className="px-6 py-3 bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-full border border-white/30 transition-all duration-300 hover:scale-105"
-              >
-                <RefreshCw className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-8 space-y-8">
+      <div className="p-8 space-y-8">
 
         {/* Paytm-Style Colorful Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -596,7 +571,7 @@ const Dashboard: React.FC = () => {
                         </td>
                         <td className="py-4 px-4">
                           <span className="text-sm text-gray-500">
-                            {host.last_seen ? new Date(host.last_seen).toLocaleString() : 'Never'}
+                            {host.last_seen ? formatTimestamp(host.last_seen) : 'Never'}
                           </span>
                         </td>
                         <td className="py-4 px-4">
@@ -665,7 +640,6 @@ const Dashboard: React.FC = () => {
             </div>
           </Card>
         )}
-        </div>
       </div>
     </MainLayout>
   );

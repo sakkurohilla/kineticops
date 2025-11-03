@@ -62,9 +62,35 @@ const Header: React.FC = () => {
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
       <div className="px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Page Title */}
-          <div className="flex items-center">
-            <h2 className="text-xl font-semibold text-gray-800">Dashboard</h2>
+          {/* Dashboard Title with Live Status */}
+          <div className="flex items-center space-x-6">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                🚀 KineticOps Dashboard
+              </h1>
+              <p className="text-gray-600 mt-1">Real-time infrastructure monitoring • Enterprise scale</p>
+            </div>
+            
+            {/* Live Indicator */}
+            <div className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-full border border-green-200">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-lg"></div>
+              <span className="text-sm font-semibold text-green-700">LIVE</span>
+            </div>
+            
+            {/* User Info */}
+            {user && (
+              <div className="flex items-center space-x-3 px-4 py-2 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                  <span className="text-white font-bold text-sm">
+                    {user.username.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">{user.username}</p>
+                  <p className="text-xs text-gray-500">{user.email || 'akash@example.com'}</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Side */}
