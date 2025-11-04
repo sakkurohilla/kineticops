@@ -11,8 +11,6 @@ import {
   TrendingDown,
   Cpu,
   Shield,
-  Eye,
-  Settings,
   ChevronRight,
   Database
 } from 'lucide-react';
@@ -75,6 +73,7 @@ const Dashboard: React.FC = () => {
 
   // Real-time updates via WebSocket
   useWebsocket((payload: any) => {
+    console.log('WebSocket payload received:', payload);
     if (payload?.host_id) {
       setHostMetrics(prev => ({
         ...prev,
@@ -87,12 +86,15 @@ const Dashboard: React.FC = () => {
           timestamp: payload.timestamp || new Date().toISOString(),
         }
       }));
+      
+      // Force re-fetch hosts to get updated data
+      fetchDashboardData();
     }
   });
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchDashboardData, 10000); // Refresh every 10s for auto-discovery
     return () => clearInterval(interval);
   }, []);
 
@@ -100,9 +102,26 @@ const Dashboard: React.FC = () => {
     try {
       setIsLoading(true);
 
-      // Fetch hosts
-      const hostsData = await hostService.getAllHosts();
-      setHosts(hostsData);
+      // Fetch hosts - try direct API call if service fails
+      let hostsData;
+      try {
+        hostsData = await hostService.getAllHosts();
+      } catch (err) {
+        console.log('Host service failed, trying direct API call');
+        // Direct API call without auth for auto-discovered hosts
+        const response = await fetch('http://localhost:8080/api/v1/hosts', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        if (response.ok) {
+          hostsData = await response.json();
+        } else {
+          hostsData = [];
+        }
+      }
+      setHosts(hostsData || []);
 
       // Fetch alerts
       try {
@@ -114,15 +133,25 @@ const Dashboard: React.FC = () => {
 
       // Calculate stats
       const totalHosts = hostsData.length;
-      const onlineHosts = hostsData.filter(h => h.agent_status === 'online').length;
+      const onlineHosts = hostsData.filter((h: any) => h.agent_status === 'online').length;
       const offlineHosts = totalHosts - onlineHosts;
       
       // Fetch latest metrics for each host
-      const metricsPromises = hostsData.map(async (host) => {
+      const metricsPromises = (hostsData || []).map(async (host: any) => {
         try {
           const metrics = await hostService.getLatestMetrics(host.id);
           return { hostId: host.id, metrics };
         } catch (err) {
+          // Try direct API call for metrics
+          try {
+            const response = await fetch(`http://localhost:8080/api/v1/hosts/${host.id}/metrics/latest`);
+            if (response.ok) {
+              const metrics = await response.json();
+              return { hostId: host.id, metrics };
+            }
+          } catch (e) {
+            console.log('Direct metrics API also failed for host', host.id);
+          }
           return { hostId: host.id, metrics: null };
         }
       });
@@ -147,7 +176,7 @@ const Dashboard: React.FC = () => {
       const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
       const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : 0;
       
-      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 100;
+      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 0;
 
       setStats({
         totalHosts,
@@ -170,11 +199,7 @@ const Dashboard: React.FC = () => {
 
 
 
-  const getMetricColor = (value: number) => {
-    if (value >= 90) return 'text-red-600';
-    if (value >= 70) return 'text-yellow-600';
-    return 'text-green-600';
-  };
+
 
   const getTrendIcon = (current: number, previous: number) => {
     if (current > previous) return <TrendingUp className="w-4 h-4 text-red-500" />;
@@ -242,7 +267,9 @@ const Dashboard: React.FC = () => {
                   <Shield className="w-6 h-6" />
                   <p className="text-green-100 font-medium">System Health</p>
                 </div>
-                <p className="text-4xl font-bold mb-3">{stats.systemHealth}%</p>
+                <p className="text-4xl font-bold mb-3">
+                  {stats.totalHosts === 0 ? 'N/A' : `${stats.systemHealth}%`}
+                </p>
                 <div className="w-full bg-white/20 rounded-full h-3 backdrop-blur-sm">
                   <div 
                     className="h-3 rounded-full bg-gradient-to-r from-white to-green-200 transition-all duration-500 shadow-sm"
@@ -498,10 +525,15 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Hosts Overview */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Hosts Overview</h2>
+        {/* Hosts Overview - Grafana Style */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
+                <Server className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Hosts Overview</h2>
+            </div>
             <Button variant="ghost" size="sm" onClick={() => navigate('/hosts')}>
               View All <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
@@ -517,89 +549,140 @@ const Dashboard: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Host</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">CPU</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Memory</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Disk</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Last Seen</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hosts.slice(0, 5).map((host) => {
-                    const metrics = hostMetrics[host.id];
-                    return (
-                      <tr key={host.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-4 px-4">
-                          <div className="flex items-center">
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                              <Server className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-900">{host.hostname || host.ip}</p>
-                              <p className="text-sm text-gray-500">{host.ip}</p>
-                            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {hosts.slice(0, 8).map((host) => {
+                const metrics = hostMetrics[host.id];
+                const cpuUsage = metrics?.cpu_usage || 0;
+                const memoryUsage = metrics?.memory_usage || 0;
+                const diskUsage = metrics?.disk_usage || 0;
+                const isOnline = host.agent_status === 'online';
+                
+                return (
+                  <div 
+                    key={host.id} 
+                    className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100"
+                    onClick={() => navigate(`/hosts/${host.id}`)}
+                  >
+                    {/* Host Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                          isOnline ? 'bg-gradient-to-br from-green-400 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
+                        }`}>
+                          <Server className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-lg truncate">{host.hostname || host.ip}</h3>
+                          <p className="text-sm text-gray-500">{host.ip}</p>
+                        </div>
+                      </div>
+                      <div className={`w-3 h-3 rounded-full ${
+                        isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                      }`}></div>
+                    </div>
+
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      {/* CPU Circle */}
+                      <div className="text-center">
+                        <div className="relative w-16 h-16 mx-auto mb-2">
+                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke="#e5e7eb"
+                              strokeWidth="2"
+                            />
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke={cpuUsage > 80 ? '#ef4444' : cpuUsage > 60 ? '#f59e0b' : '#10b981'}
+                              strokeWidth="2"
+                              strokeDasharray={`${cpuUsage}, 100`}
+                              strokeLinecap="round"
+                              className="transition-all duration-1000"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-700">{cpuUsage.toFixed(0)}%</span>
                           </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <Badge 
-                            variant={host.agent_status === 'online' ? 'success' : 'error'}
-                            size="sm"
-                          >
-                            {host.agent_status || 'offline'}
-                          </Badge>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`font-medium ${getMetricColor(metrics?.cpu_usage || 0)}`}>
-                            {(metrics?.cpu_usage || 0).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`font-medium ${getMetricColor(metrics?.memory_usage || 0)}`}>
-                            {(metrics?.memory_usage || 0).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`font-medium ${getMetricColor(metrics?.disk_usage || 0)}`}>
-                            {(metrics?.disk_usage || 0).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className="text-sm text-gray-500">
-                            {host.last_seen ? formatTimestamp(host.last_seen) : 'Never'}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex items-center space-x-2">
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => navigate(`/hosts/${host.id}`)}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => navigate(`/hosts/${host.id}`)}
-                            >
-                              <Settings className="w-4 h-4" />
-                            </Button>
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">CPU</p>
+                      </div>
+
+                      {/* Memory Circle */}
+                      <div className="text-center">
+                        <div className="relative w-16 h-16 mx-auto mb-2">
+                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke="#e5e7eb"
+                              strokeWidth="2"
+                            />
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke={memoryUsage > 80 ? '#ef4444' : memoryUsage > 60 ? '#f59e0b' : '#3b82f6'}
+                              strokeWidth="2"
+                              strokeDasharray={`${memoryUsage}, 100`}
+                              strokeLinecap="round"
+                              className="transition-all duration-1000"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-700">{memoryUsage.toFixed(0)}%</span>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">RAM</p>
+                      </div>
+
+                      {/* Disk Circle */}
+                      <div className="text-center">
+                        <div className="relative w-16 h-16 mx-auto mb-2">
+                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke="#e5e7eb"
+                              strokeWidth="2"
+                            />
+                            <path
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke={diskUsage > 80 ? '#ef4444' : diskUsage > 60 ? '#f59e0b' : '#8b5cf6'}
+                              strokeWidth="2"
+                              strokeDasharray={`${diskUsage}, 100`}
+                              strokeLinecap="round"
+                              className="transition-all duration-1000"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-700">{diskUsage.toFixed(0)}%</span>
+                          </div>
+                        </div>
+                        <p className="text-xs font-medium text-gray-600">Disk</p>
+                      </div>
+                    </div>
+
+                    {/* Status and Last Seen */}
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                      <Badge 
+                        variant={isOnline ? 'success' : 'error'}
+                        size="sm"
+                      >
+                        {host.agent_status || 'offline'}
+                      </Badge>
+                      <span className="text-xs text-gray-500">
+                        {host.last_seen ? formatTimestamp(host.last_seen).split(' ')[1] : 'Never'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
-        </Card>
+        </div>
 
         {/* Recent Alerts */}
         {alerts.length > 0 && (

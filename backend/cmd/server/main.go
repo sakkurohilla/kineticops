@@ -90,40 +90,49 @@ func main() {
 	retentionService := services.NewRetentionService(30)
 	retentionService.StartRetentionWorker()
 
+	// Start downsampling service for performance optimization
+	downsamplingService := services.NewDownsamplingService()
+	downsamplingService.StartDownsamplingWorker()
+
 	// Set up Redpanda/Kafka
 	brokers := []string{"localhost:9092"}
 	topic := "metrics-events"
 
-	producer := kafkaevents.InitProducer(brokers, topic)
-	// Connect Kafka producer to agent data handler
-	handlers.SetKafkaProducer(producer)
+	_ = kafkaevents.InitProducer(brokers, topic)
 
 	// WebSocket hub
 	wsHub := ws.NewHub()
 	go wsHub.Run()
 	// make hub available globally for fallbacks (e.g. when Kafka is down)
 	ws.SetGlobalHub(wsHub)
-	// Connect WebSocket hub to agent data handler for real-time updates
-	handlers.SetWebSocketHub(wsHub)
 
-	// Warm-start hub with latest persisted host metrics from DB so clients get
-	// a snapshot immediately after server start. This uses the host_metrics
-	// table populated by the collector.
+	// Warm-start hub with latest metrics from the metrics table
 	if hosts, err := services.ListHosts(0, 1000, 0); err == nil {
 		for _, h := range hosts {
-			if latest, err := postgres.GetLatestHostMetric(postgres.DB, h.ID); err == nil && latest != nil {
-				payload := map[string]interface{}{
-					"host_id":      latest.HostID,
-					"cpu_usage":    latest.CPUUsage,
-					"memory_usage": latest.MemoryUsage,
-					"disk_usage":   latest.DiskUsage,
-					"network_in":   latest.NetworkIn,
-					"network_out":  latest.NetworkOut,
-					"uptime":       latest.Uptime,
-					"load_average": latest.LoadAverage,
-					"timestamp":    latest.Timestamp.Format(time.RFC3339),
-					"seq":          telemetry.NextSeq(),
+			var metrics []struct {
+				Name      string    `json:"name"`
+				Value     float64   `json:"value"`
+				Timestamp time.Time `json:"timestamp"`
+			}
+			err := postgres.DB.Raw(`
+				WITH latest_metrics AS (
+					SELECT name, value, timestamp,
+						ROW_NUMBER() OVER (PARTITION BY name ORDER BY timestamp DESC) as rn
+					FROM metrics WHERE host_id = ?
+				)
+				SELECT name, value, timestamp FROM latest_metrics WHERE rn = 1
+			`, h.ID).Scan(&metrics).Error
+			
+			if err == nil && len(metrics) > 0 {
+				payload := map[string]interface{}{"host_id": h.ID, "seq": telemetry.NextSeq()}
+				var latestTimestamp time.Time
+				for _, m := range metrics {
+					payload[m.Name] = m.Value
+					if m.Timestamp.After(latestTimestamp) {
+						latestTimestamp = m.Timestamp
+					}
 				}
+				payload["timestamp"] = latestTimestamp.Format(time.RFC3339)
 				if b, err := json.Marshal(payload); err == nil {
 					wsHub.RememberMessage(b)
 					wsHub.Broadcast(b)
@@ -135,17 +144,9 @@ func main() {
 	// Kafka consumer to process agent events and broadcast to WebSocket clients
 	kafkaevents.StartConsumer(brokers, topic, func(msg []byte) {
 		fmt.Println("[DEBUG] Processing Kafka message:", string(msg))
-		
-		// Try to process as agent event first
-		var agentEvent handlers.AgentDataEvent
-		if err := json.Unmarshal(msg, &agentEvent); err == nil {
-			// Process agent event from Kafka
-			handlers.ProcessKafkaEvent(&agentEvent)
-		} else {
-			// Fallback: broadcast as metric update
-			wsHub.RememberMessage(msg)
-			wsHub.Broadcast(msg)
-		}
+		// Broadcast as metric update
+		wsHub.RememberMessage(msg)
+		wsHub.Broadcast(msg)
 	})
 
 	// Fiber app with error handler
@@ -158,27 +159,12 @@ func main() {
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-	// DEBUG: log handler errors with request context (temporary)
-	app.Use(func(c *fiber.Ctx) error {
-		err := c.Next()
-		if err != nil {
-			log.Printf("[HTTP ERROR] %s %s -> %v", c.Method(), c.OriginalURL(), err)
-			return middleware.ErrorHandler(c, err)
-		}
-		return nil
-	})
+
 
 	// Register ALL routes through unified router
 	routes.RegisterAllRoutes(app)
 
-	// Protected demo route
-	app.Get("/protected", middleware.AuthRequired(), func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"msg":      "Access granted",
-			"user_id":  c.Locals("user_id"),
-			"username": c.Locals("username"),
-		})
-	})
+
 
 	// WebSocket JWT-enabled endpoint
 	app.Get("/ws", websocket.New(ws.WsHandler(wsHub, cfg.JWTSecret)))

@@ -106,7 +106,7 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
     e.preventDefault();
 
 
-    // For create mode require a successful SSH test. For edit mode, allow saving without re-testing.
+    // For create mode require a successful SSH test. Edit mode doesn't need SSH test.
     if (mode === 'create' && (!testResult || !testResult.success)) {
       setError('Please test the SSH connection first');
       return;
@@ -122,11 +122,15 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
 
     try {
       if (mode === 'edit' && hostId) {
-        // Do not send ssh_password if left empty during edit (avoid overwriting existing password)
-        const payload: any = { ...formData };
-        if (!payload.ssh_password) {
-          delete payload.ssh_password;
-        }
+        // Only send basic fields for edit - no SSH credentials
+        const payload = {
+          hostname: formData.hostname,
+          ip: formData.ip,
+          os: formData.os,
+          group: formData.group,
+          tags: formData.tags,
+          description: formData.description
+        };
         await hostService.updateHost(hostId, payload);
         onSuccess();
         onClose();
@@ -171,7 +175,9 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
             </div>
             <div>
               <h2 className="text-2xl font-bold">{mode === 'edit' ? 'Edit Host' : 'Add New Host'}</h2>
-              <p className="text-blue-100 text-sm">Configure SSH connection to monitor your server</p>
+              <p className="text-blue-100 text-sm">
+                {mode === 'edit' ? 'Update host information and settings' : 'Configure SSH connection to monitor your server'}
+              </p>
             </div>
           </div>
           <button
@@ -324,6 +330,7 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
                 onChange={handleChange}
                 placeholder="192.168.1.100"
                 required
+                disabled={mode === 'edit'}
               />
 
               <div>
@@ -376,8 +383,8 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
             </div>
           </div>
 
-          {/* SSH Configuration - Required for all methods */}
-          {(mode === 'edit' || formData.setup_method !== undefined) && (
+          {/* SSH Configuration - Only for create mode */}
+          {mode === 'create' && formData.setup_method !== undefined && (
             <div className="space-y-4 pt-6 border-t border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-600 rounded-full"></div>
@@ -560,7 +567,7 @@ const AddHostForm: React.FC<AddHostFormProps> = ({ onClose, onSuccess, mode = 'c
                   type="submit"
                   variant="primary"
                   fullWidth
-                  disabled={creating || (mode === 'create' && formData.setup_method === 'automatic' && !testResult?.success)}
+                  disabled={creating || (mode === 'create' && formData.setup_method !== 'none' && !testResult?.success)}
                 >
                   {creating ? (
                     <>

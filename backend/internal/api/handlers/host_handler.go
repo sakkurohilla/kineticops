@@ -117,26 +117,38 @@ func UpdateHost(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"msg": "host updated"})
 }
 
-// DeleteHost deletes a host
+// DeleteHost deletes a host - PUBLIC ACCESS for auto-discovered hosts
 func DeleteHost(c *fiber.Ctx) error {
-	tid := c.Locals("tenant_id")
-	if tid == nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
-	}
-	tenantID := tid.(int64)
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 
+	// Get host info before deletion
 	host, err := postgres.GetHost(postgres.DB, id)
-	if err != nil || host.TenantID != tenantID {
-		return c.Status(404).JSON(fiber.Map{"error": "Not found"})
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
 	}
 
+	// EXPIRE ALL TOKENS for this tenant - prevent agent reconnection
+	postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
+		"used": true,
+		"expires_at": time.Now().Add(-1 * time.Hour), // Expire 1 hour ago
+	})
+	
+	// Delete all related data first
+	postgres.DB.Exec("DELETE FROM host_metrics WHERE host_id = ?", id)
+	postgres.DB.Exec("DELETE FROM metrics WHERE host_id = ?", id)
+	postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id)
+	postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id)
+	
+	// Delete the host
 	err = postgres.DeleteHost(postgres.DB, id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot delete host"})
 	}
 
-	return c.JSON(fiber.Map{"msg": "host deleted"})
+	return c.JSON(fiber.Map{
+		"msg": "Host deleted and all tokens expired",
+		"note": "Agent will stop working - generate new token to reconnect",
+	})
 }
 
 // HostHeartbeat updates host heartbeat/status
@@ -203,63 +215,161 @@ func TestSSHConnection(c *fiber.Ctx) error {
 
 // GetHostMetrics returns recent metrics for a host
 func GetHostMetrics(c *fiber.Ctx) error {
-	tid := c.Locals("tenant_id")
-	if tid == nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
+	hostID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	rangeParam := c.Query("range", "24h")
+
+	// Check if host belongs to authenticated tenant
+	var tenantID int64 = 0
+	if tid := c.Locals("tenant_id"); tid != nil {
+		tenantID = tid.(int64)
 	}
 
-	hostID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	// Verify host access
+	host, err := postgres.GetHost(postgres.DB, hostID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
+	}
+	if tenantID != 0 && host.TenantID != tenantID {
+		return c.Status(403).JSON(fiber.Map{"error": "Access denied"})
+	}
 
-	var metrics []map[string]interface{}
-	err := postgres.DB.Raw(`
-		SELECT * FROM host_metrics 
-		WHERE host_id = ? 
-		ORDER BY timestamp DESC 
-		LIMIT 100
-	`, hostID).Scan(&metrics).Error
+	// Use aggregation service for proper time-series data
+	aggService := services.NewMetricsAggregationService()
+	metricNames := []string{"cpu_usage", "memory_usage", "disk_usage", "network_bytes"}
+	result, err := aggService.GetMultipleMetricsAggregated(hostID, metricNames, rangeParam)
 
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
+		return c.JSON(map[string][]interface{}{
+			"cpu_usage":     {},
+			"memory_usage":  {},
+			"disk_usage":    {},
+			"network_bytes": {},
+		})
 	}
 
-	return c.JSON(metrics)
+	return c.JSON(result)
 }
 
 // GetHostLatestMetrics returns only the most recent metric
 func GetHostLatestMetrics(c *fiber.Ctx) error {
-	tid := c.Locals("tenant_id")
-	if tid == nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
-	}
-
 	hostID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 
-	var metric map[string]interface{}
-	err := postgres.DB.Raw(`
-		SELECT * FROM host_metrics 
-		WHERE host_id = ? 
-		ORDER BY timestamp DESC 
-		LIMIT 1
-	`, hostID).Scan(&metric).Error
+	// Check if host belongs to authenticated tenant
+	var tenantID int64 = 0
+	if tid := c.Locals("tenant_id"); tid != nil {
+		tenantID = tid.(int64)
+	}
+
+	// Verify host access
+	host, err := postgres.GetHost(postgres.DB, hostID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
+	}
+	if tenantID != 0 && host.TenantID != tenantID {
+		return c.Status(403).JSON(fiber.Map{"error": "Access denied"})
+	}
+
+	// Get latest metrics from the metrics table
+	var metrics []struct {
+		Name      string    `json:"name"`
+		Value     float64   `json:"value"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
+	// Get latest metrics with special handling for disk_usage
+	var allMetrics []struct {
+		Name      string    `json:"name"`
+		Value     float64   `json:"value"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+	
+	// Get all recent metrics
+	err = postgres.DB.Raw(`
+		SELECT name, value, timestamp
+		FROM metrics 
+		WHERE host_id = ? AND tenant_id = ? AND timestamp > NOW() - INTERVAL '5 minutes'
+		ORDER BY timestamp DESC
+	`, hostID, host.TenantID).Scan(&allMetrics).Error
+	
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
+	}
+	
+	// Process metrics with special disk_usage handling
+	metricMap := make(map[string]struct{
+		Value     float64
+		Timestamp time.Time
+	})
+	
+	for _, m := range allMetrics {
+		if m.Name == "disk_usage" {
+			// For disk_usage, always use the minimum value (root filesystem)
+			if existing, exists := metricMap[m.Name]; !exists || m.Value < existing.Value {
+				metricMap[m.Name] = struct{
+					Value     float64
+					Timestamp time.Time
+				}{m.Value, m.Timestamp}
+			}
+		} else {
+			// For other metrics, use the latest value
+			if existing, exists := metricMap[m.Name]; !exists || m.Timestamp.After(existing.Timestamp) {
+				metricMap[m.Name] = struct{
+					Value     float64
+					Timestamp time.Time
+				}{m.Value, m.Timestamp}
+			}
+		}
+	}
+	
+	// Convert back to original format
+	metrics = nil
+	for name, data := range metricMap {
+		metrics = append(metrics, struct {
+			Name      string    `json:"name"`
+			Value     float64   `json:"value"`
+			Timestamp time.Time `json:"timestamp"`
+		}{name, data.Value, data.Timestamp})
+	}
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
 	}
 
-	if len(metric) == 0 {
-		// No metrics yet for this host - return null (client should handle this as 'no data yet')
+	if len(metrics) == 0 {
 		return c.JSON(nil)
 	}
 
-	return c.JSON(metric)
+	// Convert to expected format with proper field names
+	result := make(map[string]interface{})
+	var latestTimestamp time.Time
+	for _, m := range metrics {
+		switch m.Name {
+		case "cpu_usage":
+			result["cpu_usage"] = m.Value
+		case "memory_usage":
+			result["memory_usage"] = m.Value
+		case "disk_usage":
+			result["disk_usage"] = m.Value // Query already returns MIN value
+		case "network_bytes":
+			result["network_in"] = m.Value
+			result["network_out"] = m.Value
+		default:
+			result[m.Name] = m.Value
+		}
+		if m.Timestamp.After(latestTimestamp) {
+			latestTimestamp = m.Timestamp
+		}
+	}
+	// Convert UTC to IST for display
+	ist, _ := time.LoadLocation("Asia/Kolkata")
+	result["timestamp"] = latestTimestamp.In(ist).Format(time.RFC3339)
+
+	return c.JSON(result)
 }
 
 // GetHostMetricsTimeRange returns metrics for a host between start and end timestamps (RFC3339)
 func GetHostMetricsTimeRange(c *fiber.Ctx) error {
-	tid := c.Locals("tenant_id")
-	if tid == nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
-	}
+	// Public endpoint - no auth required
 
 	hostID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	startStr := c.Query("start")

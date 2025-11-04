@@ -1,0 +1,226 @@
+# KineticOps Agent - Enterprise Configuration
+# Advanced configuration matching ELK Beats standards
+
+kineticops.agent:
+  name: "kineticops-agent"
+  version: "8.11.0"
+  hostname: "${HOSTNAME}"
+  datacenter: "${DATACENTER:default}"
+  environment: "${ENVIRONMENT:production}"
+  
+  # Advanced agent settings
+  max_procs: 2
+  reload.enabled: true
+  reload.period: 10s
+  
+  # Queue settings for high throughput
+  queue:
+    mem:
+      events: 4096
+      flush.min_events: 512
+      flush.timeout: 1s
+    disk:
+      max_size: 10GB
+      path: "/var/lib/kineticops-agent/queue"
+
+# Output configuration (like Elasticsearch output)
+output.kineticops:
+  hosts: ["https://api.kineticops.com:443"]
+  protocol: "https"
+  
+  # Authentication
+  api_key: "${KINETICOPS_API_KEY}"
+  installation_token: "${INSTALLATION_TOKEN}"
+  
+  # Advanced connection settings
+  worker: 2
+  bulk_max_size: 1600
+  flush_interval: 10s
+  timeout: 90s
+  max_retries: 3
+  backoff.init: 1s
+  backoff.max: 60s
+  
+  # Compression
+  compression_level: 3
+  
+  # TLS settings
+  ssl:
+    enabled: true
+    verification_mode: "certificate"
+    certificate_authorities: ["/etc/ssl/certs/ca-certificates.crt"]
+    certificate: "/etc/kineticops-agent/certs/agent.crt"
+    key: "/etc/kineticops-agent/certs/agent.key"
+
+# System module (like Metricbeat system module)
+kineticops.modules:
+- module: system
+  enabled: true
+  period: 10s
+  metricsets:
+    - cpu
+    - load
+    - memory
+    - network
+    - process
+    - process_summary
+    - socket_summary
+    - entropy
+    - core
+    - diskio
+    - filesystem
+    - fsstat
+    - raid
+    - socket
+    - service
+  
+  # Advanced CPU settings
+  cpu.metrics: ["percentages", "normalized_percentages", "ticks"]
+  process.include_top_n:
+    by_cpu: 5
+    by_memory: 5
+  
+  # Filesystem settings
+  filesystem.ignore_types: ["tmpfs", "devtmpfs", "debugfs", "cgroup", "pstore", "hugetlbfs"]
+
+# Docker module (like Metricbeat docker module)
+- module: docker
+  enabled: true
+  period: 10s
+  hosts: ["unix:///var/run/docker.sock"]
+  metricsets:
+    - container
+    - cpu
+    - diskio
+    - event
+    - healthcheck
+    - info
+    - image
+    - memory
+    - network
+
+# Kubernetes module
+- module: kubernetes
+  enabled: false
+  period: 10s
+  host: "${NODE_NAME}"
+  hosts: ["https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"]
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  ssl.certificate_authorities:
+    - /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+# Log collection (like Filebeat)
+kineticops.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/*.log
+    - /var/log/messages
+    - /var/log/syslog
+  exclude_lines: ['^DBG']
+  include_lines: ['^ERR', '^WARN']
+  
+  # Advanced log parsing
+  multiline.pattern: '^\d{4}-\d{2}-\d{2}'
+  multiline.negate: true
+  multiline.match: after
+  
+  # Fields and processors
+  fields:
+    logtype: system
+    environment: production
+  fields_under_root: true
+  
+  processors:
+    - add_host_metadata:
+        when.not.contains.tags: forwarded
+    - add_docker_metadata: ~
+    - add_kubernetes_metadata: ~
+
+# Application logs
+- type: log
+  enabled: true
+  paths:
+    - /var/log/nginx/*.log
+    - /var/log/apache2/*.log
+  
+  # JSON log parsing
+  json.keys_under_root: true
+  json.add_error_key: true
+  json.message_key: message
+
+# Advanced processors (like Logstash filters)
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+      netinfo.enabled: false
+      cache.ttl: 5m
+      geo.name: datacenter
+      geo.location: "40.7128, -74.0060"
+      
+  - add_process_metadata:
+      match_pids: [system.process.ppid]
+      target: system.process.parent
+      
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+      match_fields: ["system.process.cgroup.id"]
+      
+  - drop_event:
+      when:
+        regexp:
+          message: "^DEBUG"
+
+# Monitoring and instrumentation
+monitoring:
+  enabled: true
+  elasticsearch:
+    hosts: ["http://localhost:9200"]
+    username: "elastic"
+    password: "${ELASTIC_PASSWORD}"
+  
+  # Metrics collection about the agent itself
+  cluster_uuid: "${CLUSTER_UUID}"
+
+# Advanced logging
+logging:
+  level: info
+  selectors: ["*"]
+  to_files: true
+  files:
+    path: /var/log/kineticops-agent
+    name: kineticops-agent
+    keepfiles: 7
+    permissions: 0644
+    rotateeverybytes: 10485760 # 10MB
+  
+  # Structured logging
+  json: true
+  ecs: true
+
+# HTTP endpoint for health checks
+http:
+  enabled: true
+  host: "0.0.0.0"
+  port: 5066
+  
+# Advanced features
+instrumentation:
+  enabled: true
+  environment: "${ENVIRONMENT:production}"
+  hosts: ["http://apm-server:8200"]
+  secret_token: "${APM_SECRET_TOKEN}"
+
+# Security settings
+seccomp:
+  default_action: errno
+  syscalls:
+    - action: allow
+      names: [accept, accept4, access, arch_prctl, bind, brk, clone, close, connect]
+
+# Resource limits
+max_procs: 4
+bulk_max_size: 1600
+worker: 2
+loadbalance: true
+pipelining: 2

@@ -10,8 +10,20 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',  // ✅ Listen on all network interfaces
+    host: '0.0.0.0',
     port: 3000,
-    strictPort: true,
+    strictPort: false,
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          charts: ['recharts'],
+          ui: ['lucide-react'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
   },
 });

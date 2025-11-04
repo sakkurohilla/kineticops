@@ -18,7 +18,7 @@ type Host struct {
 	RegToken    string    `json:"reg_token"`
 
 	// SSH Configuration
-	SSHUser     string `gorm:"default:'root'" json:"ssh_user"`
+	SSHUser     string `json:"ssh_user"`
 	SSHPassword string `json:"ssh_password,omitempty"` // omitempty for security
 	SSHPort     int64  `gorm:"default:22" json:"ssh_port"`
 	SSHKey      string `json:"ssh_key,omitempty"`

@@ -77,20 +77,7 @@ const Header: React.FC = () => {
               <span className="text-sm font-semibold text-green-700">LIVE</span>
             </div>
             
-            {/* User Info */}
-            {user && (
-              <div className="flex items-center space-x-3 px-4 py-2 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-sm">
-                    {user.username.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{user.username}</p>
-                  <p className="text-xs text-gray-500">{user.email || 'akash@example.com'}</p>
-                </div>
-              </div>
-            )}
+
           </div>
 
           {/* Right Side */}

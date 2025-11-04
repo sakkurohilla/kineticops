@@ -2,7 +2,9 @@ package metrics
 
 import (
 	"context"
+	"net"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -10,7 +12,7 @@ import (
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
+	psnet "github.com/shirou/gopsutil/v3/net"
 
 	"github.com/sakkurohilla/kineticops/agent/config"
 	"github.com/sakkurohilla/kineticops/agent/pipelines"
@@ -83,297 +85,24 @@ func (s *SystemModule) Stop() error {
 	return nil
 }
 
-// collectMetrics gathers all system metrics
+// collectMetrics gathers all system metrics with proper validation
 func (s *SystemModule) collectMetrics() error {
 	timestamp := time.Now().UTC()
-	hostname, _ := host.Info()
-	s.logger.Info("Starting metrics collection cycle", "timestamp", timestamp.Format(time.RFC3339))
-
-	// Collect CPU metrics
-	if s.config.CPU.Enabled {
-		if err := s.collectCPUMetrics(timestamp, hostname.Hostname); err != nil {
-			s.logger.Error("Failed to collect CPU metrics", "error", err)
-		}
-	}
-
-	// Collect memory metrics
-	if s.config.Memory.Enabled {
-		if err := s.collectMemoryMetrics(timestamp, hostname.Hostname); err != nil {
-			s.logger.Error("Failed to collect memory metrics", "error", err)
-		}
-	}
-
-	// Collect filesystem metrics
-	if s.config.Filesystem.Enabled {
-		if err := s.collectFilesystemMetrics(timestamp, hostname.Hostname); err != nil {
-			s.logger.Error("Failed to collect filesystem metrics", "error", err)
-		}
-	}
-
-	// Collect network metrics
-	if s.config.Network.Enabled {
-		if err := s.collectNetworkMetrics(timestamp, hostname.Hostname); err != nil {
-			s.logger.Error("Failed to collect network metrics", "error", err)
-		}
-	}
-
-	// Collect load metrics
-	if err := s.collectLoadMetrics(timestamp, hostname.Hostname); err != nil {
-		s.logger.Error("Failed to collect load metrics", "error", err)
-	}
-
-	s.logger.Info("Metrics collection cycle completed successfully")
-	return nil
-}
-
-// collectCPUMetrics collects CPU usage metrics
-func (s *SystemModule) collectCPUMetrics(timestamp time.Time, hostname string) error {
-	cpuPercent, err := cpu.Percent(0, false)
+	hostInfo, err := host.Info()
 	if err != nil {
+		s.logger.Error("Failed to get host info", "error", err)
 		return err
 	}
 
-	if len(cpuPercent) > 0 {
-		event := s.createBaseEvent(timestamp, hostname, "cpu")
-		event["system"] = map[string]interface{}{
-			"cpu": map[string]interface{}{
-				"total": map[string]interface{}{
-					"pct": cpuPercent[0] / 100.0,
-				},
-			},
-		}
-		event["metricset"] = map[string]interface{}{
-			"name": "cpu",
-		}
-
-		if err := s.pipeline.Send(event); err != nil {
-			return err
-		}
+	// Get all network interfaces and IPs
+	networkIPs := s.getAllNetworkIPs()
+	if len(networkIPs) == 0 {
+		s.logger.Warn("No network interfaces found")
+		networkIPs = []string{"127.0.0.1"}
 	}
 
-	// Per-CPU metrics if enabled
-	if s.config.CPU.PerCPU {
-		cpuPercentPerCPU, err := cpu.Percent(0, true)
-		if err != nil {
-			return err
-		}
-
-		for i, percent := range cpuPercentPerCPU {
-			event := s.createBaseEvent(timestamp, hostname, "cpu")
-			event["system"] = map[string]interface{}{
-				"cpu": map[string]interface{}{
-					"core": map[string]interface{}{
-						"id":  i,
-						"pct": percent / 100.0,
-					},
-				},
-			}
-			event["metricset"] = map[string]interface{}{
-				"name": "cpu",
-			}
-
-			if err := s.pipeline.Send(event); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// collectMemoryMetrics collects memory usage metrics
-func (s *SystemModule) collectMemoryMetrics(timestamp time.Time, hostname string) error {
-	memInfo, err := mem.VirtualMemory()
-	if err != nil {
-		return err
-	}
-
-	swapInfo, err := mem.SwapMemory()
-	if err != nil {
-		return err
-	}
-
-	event := s.createBaseEvent(timestamp, hostname, "memory")
-	event["system"] = map[string]interface{}{
-		"memory": map[string]interface{}{
-			"total": memInfo.Total,
-			"used": map[string]interface{}{
-				"bytes": memInfo.Used,
-				"pct":   memInfo.UsedPercent / 100.0,
-			},
-			"free":      memInfo.Free,
-			"available": memInfo.Available,
-		},
-	}
-	event["metricset"] = map[string]interface{}{
-		"name": "memory",
-	}
-
-	if swapInfo.Total > 0 {
-		event["system"].(map[string]interface{})["swap"] = map[string]interface{}{
-			"total": swapInfo.Total,
-			"used": map[string]interface{}{
-				"bytes": swapInfo.Used,
-				"pct":   swapInfo.UsedPercent / 100.0,
-			},
-			"free": swapInfo.Free,
-		}
-	}
-
-	return s.pipeline.Send(event)
-}
-
-// collectFilesystemMetrics collects filesystem usage metrics
-func (s *SystemModule) collectFilesystemMetrics(timestamp time.Time, hostname string) error {
-	partitions, err := disk.Partitions(false)
-	if err != nil {
-		return err
-	}
-
-	for _, partition := range partitions {
-		// Skip irrelevant filesystems
-		if s.shouldSkipFilesystem(partition) {
-			continue
-		}
-
-		usage, err := disk.Usage(partition.Mountpoint)
-		if err != nil {
-			continue
-		}
-
-		// Skip very small filesystems (< 100MB)
-		if usage.Total < 100*1024*1024 {
-			continue
-		}
-
-		event := s.createBaseEvent(timestamp, hostname, "filesystem")
-		event["system"] = map[string]interface{}{
-			"filesystem": map[string]interface{}{
-				"device_name": partition.Device,
-				"mount_point": partition.Mountpoint,
-				"type":        partition.Fstype,
-				"total":       usage.Total,
-				"used": map[string]interface{}{
-					"bytes": usage.Used,
-					"pct":   usage.UsedPercent / 100.0,
-				},
-				"free":      usage.Free,
-				"available": usage.Free,
-			},
-		}
-		event["metricset"] = map[string]interface{}{
-			"name": "filesystem",
-		}
-
-		if err := s.pipeline.Send(event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// shouldSkipFilesystem determines if a filesystem should be skipped
-func (s *SystemModule) shouldSkipFilesystem(partition disk.PartitionStat) bool {
-	// Skip CD-ROM, DVD, and other optical drives
-	if partition.Device == "/dev/sr0" || partition.Device == "/dev/cdrom" {
-		return true
-	}
-	
-	// Skip tmpfs, devtmpfs, and other virtual filesystems
-	if partition.Fstype == "tmpfs" || partition.Fstype == "devtmpfs" || 
-	   partition.Fstype == "sysfs" || partition.Fstype == "proc" ||
-	   partition.Fstype == "devpts" || partition.Fstype == "cgroup" ||
-	   partition.Fstype == "pstore" || partition.Fstype == "efivarfs" {
-		return true
-	}
-	
-	// Skip snap mounts
-	if len(partition.Mountpoint) > 5 && partition.Mountpoint[:5] == "/snap" {
-		return true
-	}
-	
-	// Skip loop devices
-	if len(partition.Device) > 9 && partition.Device[:9] == "/dev/loop" {
-		return true
-	}
-	
-	return false
-}
-
-// collectNetworkMetrics collects network interface metrics
-func (s *SystemModule) collectNetworkMetrics(timestamp time.Time, hostname string) error {
-	interfaces, err := net.IOCounters(true)
-	if err != nil {
-		return err
-	}
-
-	for _, iface := range interfaces {
-		// Skip loopback interfaces
-		if iface.Name == "lo" || iface.Name == "lo0" {
-			continue
-		}
-
-		event := s.createBaseEvent(timestamp, hostname, "network")
-		event["system"] = map[string]interface{}{
-			"network": map[string]interface{}{
-				"name": iface.Name,
-				"in": map[string]interface{}{
-					"bytes":   iface.BytesRecv,
-					"packets": iface.PacketsRecv,
-					"errors":  iface.Errin,
-					"dropped": iface.Dropin,
-				},
-				"out": map[string]interface{}{
-					"bytes":   iface.BytesSent,
-					"packets": iface.PacketsSent,
-					"errors":  iface.Errout,
-					"dropped": iface.Dropout,
-				},
-			},
-		}
-		event["metricset"] = map[string]interface{}{
-			"name": "network",
-		}
-
-		if err := s.pipeline.Send(event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// collectLoadMetrics collects system load metrics
-func (s *SystemModule) collectLoadMetrics(timestamp time.Time, hostname string) error {
-	loadAvg, err := load.Avg()
-	if err != nil {
-		return err
-	}
-
-	event := s.createBaseEvent(timestamp, hostname, "load")
-	event["system"] = map[string]interface{}{
-		"load": map[string]interface{}{
-			"1":  loadAvg.Load1,
-			"5":  loadAvg.Load5,
-			"15": loadAvg.Load15,
-			"norm": map[string]interface{}{
-				"1":  loadAvg.Load1 / float64(runtime.NumCPU()),
-				"5":  loadAvg.Load5 / float64(runtime.NumCPU()),
-				"15": loadAvg.Load15 / float64(runtime.NumCPU()),
-			},
-		},
-	}
-	event["metricset"] = map[string]interface{}{
-		"name": "load",
-	}
-
-	return s.pipeline.Send(event)
-}
-
-// createBaseEvent creates a base event structure
-func (s *SystemModule) createBaseEvent(timestamp time.Time, hostname, metricset string) map[string]interface{} {
-	return map[string]interface{}{
+	// Create comprehensive event with validation
+	event := map[string]interface{}{
 		"@timestamp": timestamp.Format(time.RFC3339),
 		"agent": map[string]interface{}{
 			"name":    "kineticops-agent",
@@ -381,7 +110,16 @@ func (s *SystemModule) createBaseEvent(timestamp time.Time, hostname, metricset 
 			"version": "1.0.0",
 		},
 		"host": map[string]interface{}{
-			"hostname": hostname,
+			"hostname":        hostInfo.Hostname,
+			"ips":             networkIPs,
+			"primary_ip":      networkIPs[0],
+			"os":              hostInfo.OS,
+			"platform":        hostInfo.Platform,
+			"platform_family": hostInfo.PlatformFamily,
+			"platform_version": hostInfo.PlatformVersion,
+			"arch":            hostInfo.KernelArch,
+			"kernel_version":  hostInfo.KernelVersion,
+			"virtualization":  hostInfo.VirtualizationSystem,
 		},
 		"event": map[string]interface{}{
 			"kind":     "metric",
@@ -389,8 +127,190 @@ func (s *SystemModule) createBaseEvent(timestamp time.Time, hostname, metricset 
 			"type":     "info",
 			"module":   "system",
 		},
-		"service": map[string]interface{}{
-			"type": "system",
+		"system": map[string]interface{}{},
+	}
+
+	systemData := event["system"].(map[string]interface{})
+
+	// CRITICAL: Real uptime from system (seconds)
+	if hostInfo.Uptime > 0 {
+		systemData["uptime"] = hostInfo.Uptime
+	} else {
+		s.logger.Warn("Uptime unavailable")
+		systemData["uptime"] = "unavailable"
+	}
+
+	// CRITICAL: Real boot time (unix timestamp)
+	if hostInfo.BootTime > 0 {
+		systemData["boot_time"] = hostInfo.BootTime
+	} else {
+		s.logger.Warn("Boot time unavailable")
+		systemData["boot_time"] = "unavailable"
+	}
+
+	// Collect all metrics with error handling
+	if cpuData := s.getCPUMetrics(); cpuData != nil {
+		systemData["cpu"] = cpuData
+	}
+
+	if memData := s.getMemoryMetrics(); memData != nil {
+		systemData["memory"] = memData
+	}
+
+	// Only collect root filesystem metrics
+	if diskData := s.getDiskMetrics(); diskData != nil {
+		systemData["filesystem"] = diskData
+	}
+
+	if netData := s.getNetworkMetrics(); netData != nil {
+		systemData["network"] = netData
+	}
+
+	if loadData := s.getLoadMetrics(); loadData != nil {
+		systemData["load"] = loadData
+	}
+
+	return s.pipeline.Send(event)
+}
+
+// getCPUMetrics returns CPU usage data
+func (s *SystemModule) getCPUMetrics() map[string]interface{} {
+	cpuPercent, err := cpu.Percent(0, false)
+	if err != nil || len(cpuPercent) == 0 {
+		return nil
+	}
+	return map[string]interface{}{
+		"total": map[string]interface{}{
+			"pct": cpuPercent[0] / 100.0,
 		},
 	}
 }
+
+// getMemoryMetrics returns memory usage data
+func (s *SystemModule) getMemoryMetrics() map[string]interface{} {
+	memInfo, err := mem.VirtualMemory()
+	if err != nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"total": memInfo.Total,
+		"used": map[string]interface{}{
+			"bytes": memInfo.Used,
+			"pct":   memInfo.UsedPercent / 100.0,
+		},
+		"free":      memInfo.Free,
+		"available": memInfo.Available,
+	}
+}
+
+// getDiskMetrics returns root filesystem usage data only
+func (s *SystemModule) getDiskMetrics() map[string]interface{} {
+	usage, err := disk.Usage("/")
+	if err != nil {
+		s.logger.Error("Failed to get root filesystem usage", "error", err)
+		return nil
+	}
+	
+	// Only return root filesystem data
+	return map[string]interface{}{
+		"device_name": "/dev/root",
+		"mount_point": "/",
+		"total":       usage.Total,
+		"used": map[string]interface{}{
+			"bytes": usage.Used,
+			"pct":   usage.UsedPercent / 100.0,
+		},
+		"free": usage.Free,
+	}
+}
+
+
+
+// getNetworkMetrics returns primary network interface data
+func (s *SystemModule) getNetworkMetrics() map[string]interface{} {
+	interfaces, err := psnet.IOCounters(true)
+	if err != nil {
+		return nil
+	}
+
+	// Find primary interface (not loopback, has traffic)
+	for _, iface := range interfaces {
+		if iface.Name != "lo" && iface.Name != "lo0" && (iface.BytesRecv > 0 || iface.BytesSent > 0) {
+			return map[string]interface{}{
+				"name": iface.Name,
+				"in": map[string]interface{}{
+					"bytes": iface.BytesRecv,
+				},
+				"out": map[string]interface{}{
+					"bytes": iface.BytesSent,
+				},
+			}
+		}
+	}
+	return nil
+}
+
+// getLoadMetrics returns system load data
+func (s *SystemModule) getLoadMetrics() map[string]interface{} {
+	loadAvg, err := load.Avg()
+	if err != nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"1":  loadAvg.Load1,
+		"5":  loadAvg.Load5,
+		"15": loadAvg.Load15,
+	}
+}
+
+// getAllNetworkIPs returns all network interface IP addresses
+func (s *SystemModule) getAllNetworkIPs() []string {
+	var ips []string
+	
+	// Get primary IP via route to external
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err == nil {
+		localAddr := conn.LocalAddr().(*net.UDPAddr)
+		primaryIP := strings.Split(localAddr.IP.String(), ":")[0]
+		ips = append(ips, primaryIP)
+		conn.Close()
+	}
+
+	// Get all interface IPs using gopsutil
+	interfaces, err := psnet.Interfaces()
+	if err != nil {
+		s.logger.Error("Failed to get network interfaces", "error", err)
+		return ips
+	}
+
+	for _, iface := range interfaces {
+		// Skip loopback and down interfaces
+		if strings.Contains(iface.Name, "lo") || len(iface.Addrs) == 0 {
+			continue
+		}
+
+		for _, addr := range iface.Addrs {
+			// Parse IP address
+			if ipAddr := net.ParseIP(addr.Addr); ipAddr != nil {
+				// Skip IPv6 for simplicity, add IPv4 only
+				if ipAddr.To4() != nil {
+					ipStr := ipAddr.String()
+					// Avoid duplicates
+					found := false
+					for _, existing := range ips {
+						if existing == ipStr {
+							found = true
+							break
+						}
+					}
+					if !found {
+						ips = append(ips, ipStr)
+					}
+				}
+			}
+		}
+	}
+
+	return ips
+}
+

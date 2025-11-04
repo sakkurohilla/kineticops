@@ -26,8 +26,8 @@ func NewRetentionService(retentionDays int) *RetentionService {
 func (r *RetentionService) CleanupOldMetrics() error {
 	cutoffTime := time.Now().AddDate(0, 0, -r.retentionDays)
 	
-	// Clean up old host_metrics
-	result := postgres.DB.Where("timestamp < ?", cutoffTime).Delete(&struct{}{})
+	// Clean up old metrics from metrics table
+	result := postgres.DB.Exec("DELETE FROM metrics WHERE timestamp < ?", cutoffTime)
 	if result.Error != nil {
 		return fmt.Errorf("failed to cleanup old metrics: %w", result.Error)
 	}
@@ -38,15 +38,7 @@ func (r *RetentionService) CleanupOldMetrics() error {
 
 // CleanupOldLogs removes logs older than retention period
 func (r *RetentionService) CleanupOldLogs() error {
-	cutoffTime := time.Now().AddDate(0, 0, -r.retentionDays)
-	
-	// Clean up old logs (if using PostgreSQL for logs)
-	result := postgres.DB.Where("timestamp < ?", cutoffTime).Delete(&struct{}{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to cleanup old logs: %w", result.Error)
-	}
-	
-	fmt.Printf("[RETENTION] Cleaned up %d old log records\n", result.RowsAffected)
+	// Logs are stored in MongoDB, skip PostgreSQL cleanup
 	return nil
 }
 

@@ -107,11 +107,18 @@ const hostService = {
   // Delete host
   deleteHost: async (id: number): Promise<any> => {
     try {
+      console.log('Deleting host:', id);
       const response: any = await apiClient.delete(`/hosts/${id}`);
+      console.log('Delete response:', response);
+      
+      // Clear all related cache
       cache.delete('hosts-all');
       cache.delete(`host-${id}`);
+      cache.delete(`metrics-latest-${id}`);
+      
       return response;
     } catch (error: any) {
+      console.error('Delete host error:', error);
       const apiError = handleApiError(error);
       throw apiError;
     }

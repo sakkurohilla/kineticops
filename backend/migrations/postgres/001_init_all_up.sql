@@ -143,6 +143,7 @@ CREATE INDEX idx_hosts_hostname ON hosts(hostname);
 CREATE UNIQUE INDEX idx_hosts_hostname_tenant_unique ON hosts(hostname, tenant_id);
 
 CREATE INDEX idx_host_metrics_host_id ON host_metrics(host_id);
+CREATE UNIQUE INDEX idx_host_metrics_host_id_unique ON host_metrics(host_id);
 CREATE INDEX idx_host_metrics_timestamp ON host_metrics(timestamp);
 CREATE INDEX idx_host_services_host_id ON host_services(host_id);
 CREATE INDEX idx_host_alerts_host_id ON host_alerts(host_id);

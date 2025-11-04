@@ -17,10 +17,7 @@ const getBaseURL = (): string => {
 
 const BASE_URL = getBaseURL();
 
-console.log('=== API CLIENT INITIALIZED ===');
-console.log('BASE_URL:', BASE_URL);
-console.log('Window hostname:', window.location.hostname);
-console.log('Window protocol:', window.location.protocol);
+
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -37,13 +34,10 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    // ✅ Fix the possibly undefined warning
-    const fullUrl = `${config.baseURL || BASE_URL}${config.url || ''}`;
-    console.log('API REQUEST:', config.method?.toUpperCase(), fullUrl);
+
     return config;
   },
   (error) => {
-    console.error('REQUEST ERROR:', error);
     return Promise.reject(error);
   }
 );
@@ -51,20 +45,13 @@ apiClient.interceptors.request.use(
 // Response interceptor
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('API RESPONSE:', response.status, response.config.url);
     return response.data;
   },
   async (error) => {
-    console.error('API ERROR:', {
-      url: error.config?.url,
-      baseURL: error.config?.baseURL,
-      status: error.response?.status,
-      message: error.message,
-    });
+
 
     // Handle network errors (server down)
     if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
-      console.log('Server is down, logging out user');
       authService.logout();
       window.location.href = '/login';
       return Promise.reject({

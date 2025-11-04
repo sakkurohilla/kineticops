@@ -170,7 +170,7 @@ const Hosts: React.FC = () => {
             </p>
             <Button variant="primary" size="lg" onClick={() => setShowAddForm(true)}>
               <Plus className="w-5 h-5" />
-              Add Your First Host
+              Add Host
             </Button>
           </div>
         )}

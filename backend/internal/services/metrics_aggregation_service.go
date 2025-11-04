@@ -25,6 +25,11 @@ type AggregatedMetric struct {
 
 // GetAggregatedMetrics returns properly aggregated metrics for time ranges
 func (s *MetricsAggregationService) GetAggregatedMetrics(hostID int64, metricName string, timeRange string) ([]AggregatedMetric, error) {
+	// Get host to verify tenant access
+	host, err := postgres.GetHost(postgres.DB, hostID)
+	if err != nil {
+		return nil, fmt.Errorf("host not found: %w", err)
+	}
 	var startTime time.Time
 	var interval string
 	now := time.Now().UTC()
@@ -33,25 +38,25 @@ func (s *MetricsAggregationService) GetAggregatedMetrics(hostID int64, metricNam
 	switch timeRange {
 	case "1h":
 		startTime = now.Add(-1 * time.Hour)
-		interval = "1 minute"
+		interval = "minute"
 	case "6h":
 		startTime = now.Add(-6 * time.Hour)
-		interval = "5 minutes"
+		interval = "minute"
 	case "24h":
 		startTime = now.Add(-24 * time.Hour)
-		interval = "15 minutes"
+		interval = "hour"
 	case "7d":
 		startTime = now.Add(-7 * 24 * time.Hour)
-		interval = "1 hour"
+		interval = "hour"
 	case "30d":
 		startTime = now.Add(-30 * 24 * time.Hour)
-		interval = "4 hours"
+		interval = "day"
 	default:
 		startTime = now.Add(-1 * time.Hour)
-		interval = "1 minute"
+		interval = "minute"
 	}
 
-	// SQL query for time-series aggregation
+	// SQL query for time-series aggregation with tenant isolation
 	query := `
 		SELECT 
 			date_trunc($1, timestamp) as time_bucket,
@@ -60,15 +65,16 @@ func (s *MetricsAggregationService) GetAggregatedMetrics(hostID int64, metricNam
 			name
 		FROM metrics 
 		WHERE host_id = $2 
-			AND name = $3 
-			AND timestamp >= $4 
-			AND timestamp <= $5
+			AND tenant_id = $3
+			AND name = $4 
+			AND timestamp >= $5 
+			AND timestamp <= $6
 		GROUP BY time_bucket, host_id, name
 		ORDER BY time_bucket ASC
 	`
 
 	var results []AggregatedMetric
-	rows, err := postgres.DB.Raw(query, interval, hostID, metricName, startTime, now).Rows()
+	rows, err := postgres.DB.Raw(query, interval, hostID, host.TenantID, metricName, startTime, now).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate metrics: %w", err)
 	}
@@ -94,16 +100,12 @@ func (s *MetricsAggregationService) fillTimeGaps(data []AggregatedMetric, start,
 
 	var intervalDuration time.Duration
 	switch interval {
-	case "1 minute":
+	case "minute":
 		intervalDuration = time.Minute
-	case "5 minutes":
-		intervalDuration = 5 * time.Minute
-	case "15 minutes":
-		intervalDuration = 15 * time.Minute
-	case "1 hour":
+	case "hour":
 		intervalDuration = time.Hour
-	case "4 hours":
-		intervalDuration = 4 * time.Hour
+	case "day":
+		intervalDuration = 24 * time.Hour
 	default:
 		intervalDuration = time.Minute
 	}

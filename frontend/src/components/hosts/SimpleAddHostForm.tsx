@@ -34,6 +34,11 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
       setError('Hostname is required');
       return;
     }
+    
+    if (!formData.ip) {
+      setError('IP Address is required');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -179,11 +184,12 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
           />
 
           <Input
-            label="IP Address (Optional)"
+            label="IP Address"
             name="ip"
             value={formData.ip}
             onChange={handleChange}
-            placeholder="192.168.1.100 (will be auto-detected)"
+            placeholder="192.168.1.100"
+            required
           />
 
           <div>

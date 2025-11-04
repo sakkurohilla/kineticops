@@ -7,15 +7,11 @@ import (
 
 func CORS() fiber.Handler {
 	return cors.New(cors.Config{
-		AllowOriginsFunc: func(origin string) bool {
-			// Allow all origins in development
-			// In production, you should restrict this to specific domains
-			return true
-		},
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS,PATCH",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Requested-With,X-Session-Token",
-		AllowCredentials: true,
-		ExposeHeaders:    "Content-Length,Authorization",
-		MaxAge:           3600,
+		AllowOrigins:     "*",
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowCredentials: false,
+		ExposeHeaders:    "Content-Length",
+		MaxAge:           86400,
 	})
 }
