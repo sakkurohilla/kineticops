@@ -1,0 +1,12 @@
+name: "Local Ollama"
+version: "2"
+
+models:
+  - name: "phi3:mini"
+    model: 
+      provider: "ollama"
+      model: "phi3:mini"
+
+tabAutocompleteModel:
+  provider: "ollama"
+  model: "phi3:mini"

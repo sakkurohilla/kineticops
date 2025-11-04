@@ -21,9 +21,17 @@ type Config struct {
 }
 
 func Load() *Config {
+	// Try loading repository-local backend/.env first (used by scripts), then fall
+	// back to a top-level .env if present. Both are optional; environment
+	// variables will still be picked up via AutomaticEnv().
+	_ = godotenv.Load("backend/.env")
 	_ = godotenv.Load(".env")
 	viper.AutomaticEnv()
+
+	// sensible defaults
 	viper.SetDefault("APP_PORT", "8080")
+	viper.SetDefault("POSTGRES_PORT", "5432")
+	viper.SetDefault("REDIS_ADDR", "localhost:6379")
 	return &Config{
 		PostgresHost:     viper.GetString("POSTGRES_HOST"),
 		PostgresPort:     viper.GetString("POSTGRES_PORT"),

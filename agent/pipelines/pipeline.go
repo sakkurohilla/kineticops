@@ -11,24 +11,25 @@ import (
 
 // PipelineManager manages the data pipeline
 type PipelineManager struct {
-	output     outputs.Output
-	logger     *utils.Logger
-	eventChan  chan map[string]interface{}
-	batchSize  int
-	batchTime  time.Duration
-	stopChan   chan struct{}
-	wg         sync.WaitGroup
+	output        outputs.Output
+	logger        *utils.Logger
+	eventChan     chan map[string]interface{}
+	batchSize     int
+	batchTime     time.Duration
+	stopChan      chan struct{}
+	wg            sync.WaitGroup
+	droppedEvents uint64
 }
 
 // NewPipelineManager creates a new pipeline manager
 func NewPipelineManager(output outputs.Output, logger *utils.Logger) *PipelineManager {
 	return &PipelineManager{
-		output:     output,
-		logger:     logger,
-		eventChan:  make(chan map[string]interface{}, 1000),
-		batchSize:  100,
-		batchTime:  5 * time.Second,
-		stopChan:   make(chan struct{}),
+		output:    output,
+		logger:    logger,
+		eventChan: make(chan map[string]interface{}, 1000),
+		batchSize: 100,
+		batchTime: 5 * time.Second,
+		stopChan:  make(chan struct{}),
 	}
 }
 
@@ -60,6 +61,7 @@ func (p *PipelineManager) Send(event map[string]interface{}) error {
 		return nil
 	default:
 		p.logger.Warn("Event channel full, dropping event")
+		// atomic.AddUint64(&p.droppedEvents, 1) // Consider using atomic for thread-safety if you expose this metric
 		return nil
 	}
 }
@@ -89,7 +91,7 @@ func (p *PipelineManager) processBatches(ctx context.Context) {
 
 		case event := <-p.eventChan:
 			batch = append(batch, event)
-			
+
 			// Send batch if it's full
 			if len(batch) >= p.batchSize {
 				p.sendBatch(batch)
@@ -129,7 +131,7 @@ func (p *PipelineManager) sendBatch(batch []map[string]interface{}) {
 // processEvents processes events before sending
 func (p *PipelineManager) processEvents(events []map[string]interface{}) []map[string]interface{} {
 	processed := make([]map[string]interface{}, len(events))
-	
+
 	for i, event := range events {
 		// Create a copy to avoid modifying original
 		processedEvent := make(map[string]interface{})

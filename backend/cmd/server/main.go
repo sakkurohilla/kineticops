@@ -2,18 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-
-	"encoding/json"
-
 	"github.com/sakkurohilla/kineticops/backend/config"
-	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
+	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
 	kafkaevents "github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
@@ -44,17 +43,33 @@ func initDBs(cfg *config.Config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var err error
-	mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
-	if err != nil {
-		log.Printf("[WARN] MongoDB connection error: %v", err)
-		return
+	if cfg.MongoURI == "" {
+		log.Println("[WARN] MongoDB URI not configured; skipping MongoDB initialization")
+	} else {
+		mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
+		if err != nil {
+			// Mask credentials in logs where possible (URI may contain creds)
+			masked := cfg.MongoURI
+			// naive mask: remove substring between @ and the next / if present
+			// e.g. mongodb://user:pass@host:port/db
+			if at := strings.Index(masked, "@"); at != -1 {
+				// find slash after @
+				if slash := strings.Index(masked[at:], "/"); slash != -1 {
+					masked = masked[:at+1] + "[hidden]" + masked[at+slash:]
+				} else {
+					masked = masked[:at+1] + "[hidden]"
+				}
+			}
+			log.Printf("[WARN] MongoDB connection error for URI=%s: %v", masked, err)
+			return
+		}
+		if pingErr := mongoClient.Ping(ctx, nil); pingErr != nil {
+			log.Printf("[WARN] MongoDB ping error: %v", pingErr)
+			return
+		}
+		models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
+		log.Println("MongoDB (logs) connected.")
 	}
-	if pingErr := mongoClient.Ping(ctx, nil); pingErr != nil {
-		log.Printf("[WARN] MongoDB ping error: %v", pingErr)
-		return
-	}
-	models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
-	log.Println("MongoDB (logs) connected.")
 
 	log.Println("All DBs initialized.")
 }
@@ -73,7 +88,7 @@ func main() {
 	sshService := services.NewSSHService()
 	agentService := services.NewAgentService(agentRepo, hostRepo, sshService)
 	workflowService := services.NewWorkflowService(workflowRepo, agentRepo, hostRepo, sshService, cfg.JWTSecret)
-	
+
 	// Initialize handlers with services
 	handlers.InitAgentHandlers(agentService)
 	handlers.InitHostAgentService(agentService)
@@ -85,7 +100,7 @@ func main() {
 
 	// START METRIC COLLECTOR WORKER - ADD THIS
 	workers.StartMetricCollector()
-	
+
 	// Start enterprise retention service (30 days retention)
 	retentionService := services.NewRetentionService(30)
 	retentionService.StartRetentionWorker()
@@ -122,7 +137,7 @@ func main() {
 				)
 				SELECT name, value, timestamp FROM latest_metrics WHERE rn = 1
 			`, h.ID).Scan(&metrics).Error
-			
+
 			if err == nil && len(metrics) > 0 {
 				payload := map[string]interface{}{"host_id": h.ID, "seq": telemetry.NextSeq()}
 				var latestTimestamp time.Time
@@ -159,12 +174,8 @@ func main() {
 	app.Use(middleware.CORS())
 	app.Use(middleware.RateLimiter())
 
-
-
 	// Register ALL routes through unified router
 	routes.RegisterAllRoutes(app)
-
-
 
 	// WebSocket JWT-enabled endpoint
 	app.Get("/ws", websocket.New(ws.WsHandler(wsHub, cfg.JWTSecret)))

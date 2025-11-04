@@ -43,6 +43,9 @@ func CollectMetric(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Update host heartbeat when metrics are received (use host service update function)
+	_ = services.UpdateHostFields(req.HostID, map[string]interface{}{"last_seen": time.Now()})
+
 	return c.Status(201).JSON(fiber.Map{"msg": "Metric collected"})
 }
 
@@ -104,7 +107,7 @@ func GetMetricsRange(c *fiber.Ctx) error {
 
 	rangeParam := c.Query("range", "24h")
 	hostID, _ := strconv.ParseInt(c.Query("host_id"), 10, 64)
-	
+
 	// If no host_id provided, return aggregated data for all hosts
 	if hostID == 0 {
 		// Return empty structure for dashboard overview
@@ -118,11 +121,11 @@ func GetMetricsRange(c *fiber.Ctx) error {
 
 	// Use aggregation service for proper time-series data
 	aggService := services.NewMetricsAggregationService()
-	
+
 	// Get all metric types for the host
 	metricNames := []string{"cpu_usage", "memory_usage", "disk_usage", "network_bytes"}
 	result, err := aggService.GetMultipleMetricsAggregated(hostID, metricNames, rangeParam)
-	
+
 	if err != nil {
 		fmt.Printf("[ERROR] Aggregation failed: %v\n", err)
 		return c.JSON(map[string][]interface{}{
@@ -133,10 +136,8 @@ func GetMetricsRange(c *fiber.Ctx) error {
 		})
 	}
 
-	fmt.Printf("[DEBUG] Aggregated metrics for host %d, range %s: %d metric types\n", 
+	fmt.Printf("[DEBUG] Aggregated metrics for host %d, range %s: %d metric types\n",
 		hostID, rangeParam, len(result))
 
 	return c.JSON(result)
 }
-
-

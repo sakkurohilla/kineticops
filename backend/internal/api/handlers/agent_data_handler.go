@@ -24,6 +24,8 @@ func ReceiveAgentData(c *fiber.Ctx) error {
 	}
 
 	if err := c.BodyParser(&payload); err != nil {
+		// Log parse error for diagnostics (do not echo payload contents)
+		fmt.Printf("[ERROR] agent data parse error: %v\n", err)
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON payload"})
 	}
 
@@ -45,9 +47,9 @@ func ReceiveAgentData(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"message": "Events processed",
+		"message":   "Events processed",
 		"processed": processedCount,
-		"total": len(payload.Events),
+		"total":     len(payload.Events),
 	})
 }
 
@@ -82,7 +84,7 @@ func processEvent(event *AgentEvent, tenantID int64) bool {
 		}
 	}
 
-	host := findOrCreateHost(hostname, primaryIP, os, platform, platformFamily, 
+	host := findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 		platformVersion, arch, kernelVersion, virtualization, ipStrings, tenantID)
 	if host == nil {
 		return false
@@ -104,10 +106,10 @@ func processEvent(event *AgentEvent, tenantID int64) bool {
 	return false
 }
 
-func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily, 
-	platformVersion, arch, kernelVersion, virtualization string, 
+func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
+	platformVersion, arch, kernelVersion, virtualization string,
 	allIPs []string, tenantID int64) *models.Host {
-	
+
 	var host models.Host
 
 	// Multi-layer host identification
@@ -239,6 +241,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		if used, ok := memory["used"].(map[string]interface{}); ok {
 			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.MemoryUsage = pct * 100
+				services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
 			}
 			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
 				metric.MemoryUsed = bytes / (1024 * 1024) // MB
@@ -247,9 +250,6 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		if total, ok := memory["total"].(float64); ok && total > 0 {
 			metric.MemoryTotal = total / (1024 * 1024) // MB
 		}
-		if metric.MemoryUsage > 0 {
-			services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
-		}
 	}
 
 	// Disk metrics with validation - ONLY root filesystem
@@ -257,18 +257,19 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		// STRICT: Only process root filesystem
 		mountPoint, _ := fs["mount_point"].(string)
 		deviceName, _ := fs["device_name"].(string)
-		
+
 		// Skip if not root filesystem
 		if mountPoint != "/" {
 			fmt.Printf("[DEBUG] Skipping filesystem %s mounted at %s\n", deviceName, mountPoint)
 			return
 		}
-		
+
 		fmt.Printf("[DEBUG] Processing root filesystem %s mounted at %s\n", deviceName, mountPoint)
-		
+
 		if used, ok := fs["used"].(map[string]interface{}); ok {
 			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.DiskUsage = pct * 100
+				services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
 				fmt.Printf("[DEBUG] Root disk usage: %.2f%%\n", metric.DiskUsage)
 			}
 			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
@@ -278,21 +279,18 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		if total, ok := fs["total"].(float64); ok && total > 0 {
 			metric.DiskTotal = total / (1024 * 1024 * 1024) // GB
 		}
-		if metric.DiskUsage > 0 {
-			services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
-		}
 	}
 
 	// Network metrics with validation
 	if net, ok := system["network"].(map[string]interface{}); ok {
 		if in, ok := net["in"].(map[string]interface{}); ok {
 			if bytes, ok := in["bytes"].(float64); ok && bytes >= 0 {
-				metric.NetworkIn = bytes
+				metric.NetworkIn = bytes / (1024 * 1024) // Convert to MB
 			}
 		}
 		if out, ok := net["out"].(map[string]interface{}); ok {
 			if bytes, ok := out["bytes"].(float64); ok && bytes >= 0 {
-				metric.NetworkOut = bytes
+				metric.NetworkOut = bytes / (1024 * 1024) // Convert to MB
 			}
 		}
 	}
@@ -303,9 +301,12 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			if load5, ok := load["5"].(float64); ok && load5 >= 0 {
 				if load15, ok := load["15"].(float64); ok && load15 >= 0 {
 					metric.LoadAverage = fmt.Sprintf("%.2f %.2f %.2f", load1, load5, load15)
+
 				}
 			}
 		}
+	} else {
+		metric.LoadAverage = "0.00 0.00 0.00" // Default load average
 	}
 
 	// CRITICAL: Real uptime validation
@@ -315,17 +316,17 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			if v > 0 {
 				metric.Uptime = int64(v)
 			} else {
-				metric.Uptime = -1 // Mark as unavailable
+				metric.Uptime = 0
 			}
 		case string:
 			if v == "unavailable" {
-				metric.Uptime = -1 // Mark as unavailable
+				metric.Uptime = 0
 			}
 		default:
-			metric.Uptime = -1 // Mark as unavailable
+			metric.Uptime = 0
 		}
 	} else {
-		metric.Uptime = -1 // Mark as unavailable
+		metric.Uptime = 0
 	}
 
 	// Store in host_metrics table with error handling

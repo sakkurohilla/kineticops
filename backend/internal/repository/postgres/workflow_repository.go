@@ -18,8 +18,8 @@ func (r *WorkflowRepository) CreateSession(session *models.WorkflowSession) erro
 		INSERT INTO workflow_sessions (host_id, user_id, agent_id, session_token, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, authenticated_at, last_activity`
-	
-	return r.db.QueryRow(query, session.HostID, session.UserID, session.AgentID, 
+
+	return r.db.QueryRow(query, session.HostID, session.UserID, session.AgentID,
 		session.SessionToken, session.ExpiresAt).Scan(
 		&session.ID, &session.AuthenticatedAt, &session.LastActivity)
 }
@@ -70,8 +70,8 @@ func (r *WorkflowRepository) CreateControlLog(log *models.ServiceControlLog) err
 		INSERT INTO service_control_logs (service_id, service_name, host_id, action, status, output, error_message, executed_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, executed_at`
-	
-	return r.db.QueryRow(query, log.ServiceID, log.ServiceName, log.HostID, 
+
+	return r.db.QueryRow(query, log.ServiceID, log.ServiceName, log.HostID,
 		log.Action, log.Status, log.Output, log.ErrorMessage, log.ExecutedBy).Scan(
 		&log.ID, &log.ExecutedAt)
 }

@@ -45,9 +45,9 @@ func (r *HostRepository) Create(host *models.Host) error {
 		INSERT INTO hosts (hostname, ip, ssh_user, ssh_password, ssh_key, ssh_port, os, "group", tags, tenant_id, reg_token, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
 		RETURNING id, created_at`
-	
-	return r.db.QueryRow(query, host.Hostname, host.IP, host.SSHUser, host.SSHPassword, 
-		host.SSHKey, int(host.SSHPort), host.OS, host.Group, host.Tags, 
+
+	return r.db.QueryRow(query, host.Hostname, host.IP, host.SSHUser, host.SSHPassword,
+		host.SSHKey, int(host.SSHPort), host.OS, host.Group, host.Tags,
 		host.TenantID, host.RegToken).Scan(&host.ID, &host.CreatedAt)
 }
 

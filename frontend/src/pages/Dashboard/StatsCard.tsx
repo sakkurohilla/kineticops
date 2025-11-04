@@ -37,13 +37,13 @@ const StatsCard: React.FC<StatsCardProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-gray-300 animate-pulse">
+      <div className="bg-white rounded-lg shadow-md p-3 border-l-4 border-gray-300 animate-pulse">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-3"></div>
-            <div className="h-8 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
+            <div className="h-6 bg-gray-200 rounded w-3/4"></div>
           </div>
-          <div className="w-12 h-12 bg-gray-200 rounded-lg"></div>
+          <div className="w-8 h-8 bg-gray-200 rounded-lg"></div>
         </div>
       </div>
     );
@@ -51,31 +51,31 @@ const StatsCard: React.FC<StatsCardProps> = ({
 
   return (
     <div
-      className={`bg-white rounded-lg shadow-md p-6 border-l-4 ${colorClasses[color]} hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer group`}
+      className={`bg-white rounded-lg shadow-md p-3 border-l-4 ${colorClasses[color]} hover:shadow-lg transition-all duration-300 hover:scale-[1.02] cursor-pointer group`}
     >
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
-          <h3 className="text-3xl font-bold text-gray-900 mb-2">{value}</h3>
+          <p className="text-xs font-medium text-gray-600 mb-1">{title}</p>
+          <h3 className="text-xl font-bold text-gray-900 mb-1">{value}</h3>
           
           {trend && (
             <div className="flex items-center gap-1">
               <span
-                className={`text-sm font-medium ${
+                className={`text-xs font-medium ${
                   trend.isPositive ? 'text-green-600' : 'text-red-600'
                 }`}
               >
                 {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
               </span>
-              <span className="text-xs text-gray-500">vs last month</span>
+              <span className="text-xs text-gray-500">vs last</span>
             </div>
           )}
         </div>
 
         <div
-          className={`w-14 h-14 ${iconBgClasses[color]} rounded-lg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}
+          className={`w-8 h-8 ${iconBgClasses[color]} rounded-lg flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}
         >
-          <Icon className="w-7 h-7 text-white" />
+          <Icon className="w-4 h-4 text-white" />
         </div>
       </div>
     </div>

@@ -20,8 +20,8 @@ func (r *AgentRepository) Create(agent *models.Agent) error {
 		INSERT INTO agents (host_id, token, status, version)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`
-	
-	return r.db.QueryRow(query, agent.HostID, agent.AgentToken, agent.Status, 
+
+	return r.db.QueryRow(query, agent.HostID, agent.AgentToken, agent.Status,
 		agent.Version).Scan(
 		&agent.ID, &agent.CreatedAt, &agent.UpdatedAt)
 }
@@ -135,8 +135,8 @@ func (r *AgentRepository) CreateInstallLog(log *models.AgentInstallationLog) err
 		INSERT INTO agent_installation_logs (agent_id, setup_method, status, logs, error_message)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, started_at`
-	
-	return r.db.QueryRow(query, log.AgentID, log.SetupMethod, log.Status, 
+
+	return r.db.QueryRow(query, log.AgentID, log.SetupMethod, log.Status,
 		log.Logs, log.ErrorMessage).Scan(&log.ID, &log.StartedAt)
 }
 

@@ -52,21 +52,21 @@ const HostCard: React.FC<HostCardProps> = ({ host, onDelete }) => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-xl transition-all duration-300 group overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-lg transition-all duration-300 group overflow-hidden">
       {/* Status Bar */}
       <div className={`h-1 ${host.agent_status === 'online' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
 
-      <div className="p-6">
+      <div className="p-3">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <Server className="w-7 h-7 text-white" />
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+              <Server className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-gray-900 mb-1">{host.hostname || 'Unnamed Host'}</h3>
-              <p className="text-sm text-gray-500 flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${getStatusDot(host.agent_status || 'offline')}`}></span>
+              <h3 className="text-sm font-bold text-gray-900 mb-1">{host.hostname || 'Unnamed Host'}</h3>
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(host.agent_status || 'offline')}`}></span>
                 {host.ip}
               </p>
             </div>
@@ -78,16 +78,16 @@ const HostCard: React.FC<HostCardProps> = ({ host, onDelete }) => {
         </div>
 
         {/* Host Info */}
-        <div className="space-y-2 mb-4">
-          <div className="flex items-center justify-between text-sm">
+        <div className="space-y-1 mb-3">
+          <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600">OS</span>
             <span className="font-medium text-gray-900">{host.os || 'Linux'}</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600">Group</span>
             <span className="font-medium text-gray-900">{host.group || 'default'}</span>
           </div>
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600">Last Seen</span>
             <span className="font-medium text-gray-900">{formatDate(host.last_seen)}</span>
           </div>
@@ -95,11 +95,11 @@ const HostCard: React.FC<HostCardProps> = ({ host, onDelete }) => {
 
         {/* Tags */}
         {host.tags && (
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-1 mb-3">
             {host.tags.split(',').map((tag, idx) => (
               <span
                 key={idx}
-                className="px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-md"
+                className="px-1 py-0.5 bg-blue-50 text-blue-700 text-xs font-medium rounded"
               >
                 {tag.trim()}
               </span>
@@ -108,39 +108,40 @@ const HostCard: React.FC<HostCardProps> = ({ host, onDelete }) => {
         )}
 
         {/* Quick Stats Placeholder */}
-        <div className="grid grid-cols-3 gap-3 mb-4 pt-4 border-t border-gray-100">
+        <div className="grid grid-cols-3 gap-2 mb-3 pt-2 border-t border-gray-100">
           <div className="text-center">
-            <Cpu className="w-5 h-5 text-blue-600 mx-auto mb-1" />
+            <Cpu className="w-3 h-3 text-blue-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">CPU</p>
           </div>
           <div className="text-center">
-            <Activity className="w-5 h-5 text-green-600 mx-auto mb-1" />
+            <Activity className="w-3 h-3 text-green-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">Memory</p>
           </div>
           <div className="text-center">
-            <HardDrive className="w-5 h-5 text-purple-600 mx-auto mb-1" />
+            <HardDrive className="w-3 h-3 text-purple-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">Disk</p>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <Button
             variant="primary"
             size="sm"
             fullWidth
             onClick={() => navigate(`/hosts/${host.id}`)}
+            className="text-xs py-1"
           >
-            <Eye className="w-4 h-4" />
-            View Details
+            <Eye className="w-3 h-3" />
+            Details
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => onDelete(host.id)}
-            className="text-red-600 hover:bg-red-50 border-red-200"
+            className="text-red-600 hover:bg-red-50 border-red-200 text-xs py-1"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3 h-3" />
           </Button>
         </div>
       </div>

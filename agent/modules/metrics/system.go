@@ -3,7 +3,6 @@ package metrics
 import (
 	"context"
 	"net"
-	"runtime"
 	"strings"
 	"time"
 
@@ -88,6 +87,8 @@ func (s *SystemModule) Stop() error {
 // collectMetrics gathers all system metrics with proper validation
 func (s *SystemModule) collectMetrics() error {
 	timestamp := time.Now().UTC()
+	s.logger.Info("Starting metrics collection cycle", "timestamp", timestamp.Format(time.RFC3339))
+	
 	hostInfo, err := host.Info()
 	if err != nil {
 		s.logger.Error("Failed to get host info", "error", err)
@@ -148,40 +149,72 @@ func (s *SystemModule) collectMetrics() error {
 		systemData["boot_time"] = "unavailable"
 	}
 
-	// Collect all metrics with error handling
+	// Collect all metrics with error handling and logging
+	metricsCollected := 0
+	
 	if cpuData := s.getCPUMetrics(); cpuData != nil {
 		systemData["cpu"] = cpuData
+		metricsCollected++
+		s.logger.Info("CPU metrics collected", "usage", cpuData)
+	} else {
+		s.logger.Warn("Failed to collect CPU metrics")
 	}
 
 	if memData := s.getMemoryMetrics(); memData != nil {
 		systemData["memory"] = memData
+		metricsCollected++
+		s.logger.Info("Memory metrics collected", "data", memData)
+	} else {
+		s.logger.Warn("Failed to collect memory metrics")
 	}
 
 	// Only collect root filesystem metrics
 	if diskData := s.getDiskMetrics(); diskData != nil {
 		systemData["filesystem"] = diskData
+		metricsCollected++
+		s.logger.Info("Disk metrics collected", "data", diskData)
+	} else {
+		s.logger.Warn("Failed to collect disk metrics")
 	}
 
 	if netData := s.getNetworkMetrics(); netData != nil {
 		systemData["network"] = netData
+		metricsCollected++
+		s.logger.Info("Network metrics collected", "interface", netData)
+	} else {
+		s.logger.Warn("Failed to collect network metrics")
 	}
 
 	if loadData := s.getLoadMetrics(); loadData != nil {
 		systemData["load"] = loadData
+		metricsCollected++
+		s.logger.Info("Load metrics collected", "load", loadData)
+	} else {
+		s.logger.Warn("Failed to collect load metrics")
 	}
 
+	s.logger.Info("Metrics collection cycle completed successfully", "collected", metricsCollected, "total", 5)
 	return s.pipeline.Send(event)
 }
 
 // getCPUMetrics returns CPU usage data
 func (s *SystemModule) getCPUMetrics() map[string]interface{} {
-	cpuPercent, err := cpu.Percent(0, false)
-	if err != nil || len(cpuPercent) == 0 {
+	cpuPercent, err := cpu.Percent(time.Second, false)
+	if err != nil {
+		s.logger.Error("Failed to get CPU percent", "error", err)
 		return nil
 	}
+	if len(cpuPercent) == 0 {
+		s.logger.Warn("No CPU data returned")
+		return nil
+	}
+	
+	usage := cpuPercent[0]
+	s.logger.Debug("CPU usage collected", "percent", usage)
+	
 	return map[string]interface{}{
 		"total": map[string]interface{}{
-			"pct": cpuPercent[0] / 100.0,
+			"pct": usage / 100.0,
 		},
 	}
 }
@@ -190,16 +223,20 @@ func (s *SystemModule) getCPUMetrics() map[string]interface{} {
 func (s *SystemModule) getMemoryMetrics() map[string]interface{} {
 	memInfo, err := mem.VirtualMemory()
 	if err != nil {
+		s.logger.Error("Failed to get memory info", "error", err)
 		return nil
 	}
+	
+	s.logger.Debug("Memory info collected", "total", memInfo.Total, "used", memInfo.Used, "percent", memInfo.UsedPercent)
+	
 	return map[string]interface{}{
-		"total": memInfo.Total,
+		"total": float64(memInfo.Total),
 		"used": map[string]interface{}{
-			"bytes": memInfo.Used,
+			"bytes": float64(memInfo.Used),
 			"pct":   memInfo.UsedPercent / 100.0,
 		},
-		"free":      memInfo.Free,
-		"available": memInfo.Available,
+		"free":      float64(memInfo.Free),
+		"available": float64(memInfo.Available),
 	}
 }
 
@@ -211,16 +248,18 @@ func (s *SystemModule) getDiskMetrics() map[string]interface{} {
 		return nil
 	}
 	
+	s.logger.Debug("Disk usage collected", "total", usage.Total, "used", usage.Used, "percent", usage.UsedPercent)
+	
 	// Only return root filesystem data
 	return map[string]interface{}{
 		"device_name": "/dev/root",
 		"mount_point": "/",
-		"total":       usage.Total,
+		"total":       float64(usage.Total),
 		"used": map[string]interface{}{
-			"bytes": usage.Used,
+			"bytes": float64(usage.Used),
 			"pct":   usage.UsedPercent / 100.0,
 		},
-		"free": usage.Free,
+		"free": float64(usage.Free),
 	}
 }
 

@@ -18,11 +18,24 @@ func Init() error {
 		DB:       0,                             // default DB
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := Client.Ping(ctx).Err(); err != nil {
-		log.Printf("Redis connection failed: %v", err)
-		return err
+	// Retry ping with exponential backoff a few times to handle transient starts
+	var lastErr error
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := Client.Ping(ctx).Err(); err != nil {
+			lastErr = err
+			log.Printf("Redis ping attempt %d to %s failed: %v", i+1, viper.GetString("REDIS_ADDR"), err)
+			cancel()
+			time.Sleep(time.Duration(i+1) * time.Second)
+			continue
+		}
+		cancel()
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		log.Printf("Redis connection failed after retries to %s: %v", viper.GetString("REDIS_ADDR"), lastErr)
+		return lastErr
 	}
 	return nil
 }

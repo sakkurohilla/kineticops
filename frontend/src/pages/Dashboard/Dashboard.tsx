@@ -226,149 +226,149 @@ const Dashboard: React.FC = () => {
 
   return (
     <MainLayout>
-      <div className="p-8 space-y-8">
+      <div className="p-6 space-y-6">
 
-        {/* Paytm-Style Colorful Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Compact Metrics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Total Hosts - Blue Gradient */}
           <div 
-            className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl p-6 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl"
+            className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg p-3 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
             onClick={() => navigate('/hosts')}
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <Server className="w-6 h-6" />
-                  <p className="text-blue-100 font-medium">Total Hosts</p>
+                <div className="flex items-center space-x-1 mb-1">
+                  <Server className="w-3 h-3" />
+                  <p className="text-blue-100 font-medium text-xs">Total Hosts</p>
                 </div>
-                <p className="text-4xl font-bold mb-3">{stats.totalHosts}</p>
-                <div className="flex items-center space-x-3">
+                <p className="text-xl font-bold mb-1">{stats.totalHosts}</p>
+                <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    <span className="text-sm font-medium">{stats.onlineHosts} online</span>
+                    <div className="w-1 h-1 bg-green-400 rounded-full"></div>
+                    <span className="text-xs font-medium">{stats.onlineHosts}</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-                    <span className="text-sm font-medium">{stats.offlineHosts} offline</span>
+                    <div className="w-1 h-1 bg-red-400 rounded-full"></div>
+                    <span className="text-xs font-medium">{stats.offlineHosts}</span>
                   </div>
                 </div>
               </div>
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                <Server className="w-8 h-8" />
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                <Server className="w-4 h-4" />
               </div>
             </div>
           </div>
 
           {/* System Health - Green Gradient */}
-          <div className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-3xl p-6 text-white transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
+          <div className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Shield className="w-6 h-6" />
-                  <p className="text-green-100 font-medium">System Health</p>
+                <div className="flex items-center space-x-1 mb-1">
+                  <Shield className="w-3 h-3" />
+                  <p className="text-green-100 font-medium text-xs">System Health</p>
                 </div>
-                <p className="text-4xl font-bold mb-3">
+                <p className="text-xl font-bold mb-1">
                   {stats.totalHosts === 0 ? 'N/A' : `${stats.systemHealth}%`}
                 </p>
-                <div className="w-full bg-white/20 rounded-full h-3 backdrop-blur-sm">
+                <div className="w-full bg-white/20 rounded-full h-1.5 backdrop-blur-sm">
                   <div 
-                    className="h-3 rounded-full bg-gradient-to-r from-white to-green-200 transition-all duration-500 shadow-sm"
+                    className="h-1.5 rounded-full bg-gradient-to-r from-white to-green-200 transition-all duration-500 shadow-sm"
                     style={{ width: `${stats.systemHealth}%` }}
                   ></div>
                 </div>
               </div>
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                <Shield className="w-8 h-8" />
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                <Shield className="w-4 h-4" />
               </div>
             </div>
           </div>
 
           {/* Active Alerts - Orange Gradient */}
           <div 
-            className="bg-gradient-to-br from-orange-500 to-red-600 rounded-3xl p-6 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl"
+            className="bg-gradient-to-br from-orange-500 to-red-600 rounded-lg p-3 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
             onClick={() => navigate('/alerts')}
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <AlertTriangle className="w-6 h-6" />
-                  <p className="text-orange-100 font-medium">Active Alerts</p>
+                <div className="flex items-center space-x-1 mb-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  <p className="text-orange-100 font-medium text-xs">Active Alerts</p>
                 </div>
-                <p className="text-4xl font-bold mb-3">{stats.criticalAlerts + stats.warningAlerts}</p>
-                <div className="flex items-center space-x-3">
+                <p className="text-xl font-bold mb-1">{stats.criticalAlerts + stats.warningAlerts}</p>
+                <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-red-300 rounded-full"></div>
-                    <span className="text-sm font-medium">{stats.criticalAlerts} critical</span>
+                    <div className="w-1 h-1 bg-red-300 rounded-full"></div>
+                    <span className="text-xs font-medium">{stats.criticalAlerts}</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <div className="w-2 h-2 bg-yellow-300 rounded-full"></div>
-                    <span className="text-sm font-medium">{stats.warningAlerts} warning</span>
+                    <div className="w-1 h-1 bg-yellow-300 rounded-full"></div>
+                    <span className="text-xs font-medium">{stats.warningAlerts}</span>
                   </div>
                 </div>
               </div>
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                <AlertTriangle className="w-8 h-8" />
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                <AlertTriangle className="w-4 h-4" />
               </div>
             </div>
           </div>
 
           {/* Average CPU - Purple Gradient */}
-          <div className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-3xl p-6 text-white transform hover:scale-105 transition-all duration-300 shadow-xl hover:shadow-2xl">
+          <div className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg">
             <div className="flex items-center justify-between">
               <div>
-                <div className="flex items-center space-x-2 mb-2">
-                  <Cpu className="w-6 h-6" />
-                  <p className="text-purple-100 font-medium">Avg CPU Usage</p>
+                <div className="flex items-center space-x-1 mb-1">
+                  <Cpu className="w-3 h-3" />
+                  <p className="text-purple-100 font-medium text-xs">Avg CPU</p>
                 </div>
-                <p className="text-4xl font-bold mb-3">{stats.avgCpuUsage.toFixed(1)}%</p>
-                <div className="flex items-center space-x-2">
+                <p className="text-xl font-bold mb-1">{stats.avgCpuUsage.toFixed(1)}%</p>
+                <div className="flex items-center space-x-1">
                   {getTrendIcon(stats.avgCpuUsage, 50)}
-                  <span className="text-sm font-medium text-purple-100">vs last hour</span>
+                  <span className="text-xs font-medium text-purple-100">vs last</span>
                 </div>
               </div>
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                <Cpu className="w-8 h-8" />
+              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                <Cpu className="w-4 h-4" />
               </div>
             </div>
           </div>
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Resource Usage Overview */}
           <div className="lg:col-span-2">
-            <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
-                    <Activity className="w-6 h-6 text-white" />
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/20">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <Activity className="w-4 h-4 text-white" />
                   </div>
-                  <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Resource Usage</h2>
+                  <h2 className="text-lg font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Resource Usage</h2>
                 </div>
                 <button 
                   onClick={() => navigate('/metrics')}
-                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-full hover:shadow-lg transition-all duration-300 hover:scale-105"
+                  className="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:shadow-lg transition-all duration-300 hover:scale-105 text-sm"
                 >
-                  View Details <ChevronRight className="w-4 h-4 ml-1 inline" />
+                  Details <ChevronRight className="w-3 h-3 ml-1 inline" />
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* CPU Usage - Animated Circle */}
-                <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200">
-                  <div className="relative w-28 h-28 mx-auto mb-4">
-                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
+                <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                  <div className="relative w-16 h-16 mx-auto mb-2">
+                    <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="#dbeafe"
-                        strokeWidth="3"
+                        strokeWidth="2"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="url(#blueGradient)"
-                        strokeWidth="3"
+                        strokeWidth="2"
                         strokeDasharray={`${stats.avgCpuUsage}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
@@ -381,33 +381,30 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <span className="text-2xl font-bold text-blue-700">{stats.avgCpuUsage.toFixed(0)}%</span>
-                        <div className="w-1 h-1 bg-blue-500 rounded-full mx-auto mt-1 animate-pulse"></div>
-                      </div>
+                      <span className="text-lg font-bold text-blue-700">{stats.avgCpuUsage.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold text-blue-700 flex items-center justify-center space-x-2">
-                    <Cpu className="w-4 h-4" />
-                    <span>CPU Usage</span>
+                  <p className="text-xs font-semibold text-blue-700 flex items-center justify-center space-x-1">
+                    <Cpu className="w-3 h-3" />
+                    <span>CPU</span>
                   </p>
                 </div>
 
                 {/* Memory Usage - Animated Circle */}
-                <div className="text-center p-6 bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl border border-green-200">
-                  <div className="relative w-28 h-28 mx-auto mb-4">
-                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
+                <div className="text-center p-3 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border border-green-200">
+                  <div className="relative w-16 h-16 mx-auto mb-2">
+                    <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="#dcfce7"
-                        strokeWidth="3"
+                        strokeWidth="2"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="url(#greenGradient)"
-                        strokeWidth="3"
+                        strokeWidth="2"
                         strokeDasharray={`${stats.avgMemoryUsage}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
@@ -420,33 +417,30 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <span className="text-2xl font-bold text-green-700">{stats.avgMemoryUsage.toFixed(0)}%</span>
-                        <div className="w-1 h-1 bg-green-500 rounded-full mx-auto mt-1 animate-pulse"></div>
-                      </div>
+                      <span className="text-lg font-bold text-green-700">{stats.avgMemoryUsage.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold text-green-700 flex items-center justify-center space-x-2">
-                    <Activity className="w-4 h-4" />
-                    <span>Memory Usage</span>
+                  <p className="text-xs font-semibold text-green-700 flex items-center justify-center space-x-1">
+                    <Activity className="w-3 h-3" />
+                    <span>Memory</span>
                   </p>
                 </div>
 
                 {/* Disk Usage - Animated Circle */}
-                <div className="text-center p-6 bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl border border-amber-200">
-                  <div className="relative w-28 h-28 mx-auto mb-4">
-                    <svg className="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
+                <div className="text-center p-3 bg-gradient-to-br from-amber-50 to-orange-100 rounded-lg border border-amber-200">
+                  <div className="relative w-16 h-16 mx-auto mb-2">
+                    <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="#fef3c7"
-                        strokeWidth="3"
+                        strokeWidth="2"
                       />
                       <path
                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         fill="none"
                         stroke="url(#orangeGradient)"
-                        strokeWidth="3"
+                        strokeWidth="2"
                         strokeDasharray={`${stats.avgDiskUsage}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
@@ -459,15 +453,12 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <span className="text-2xl font-bold text-amber-700">{stats.avgDiskUsage.toFixed(0)}%</span>
-                        <div className="w-1 h-1 bg-amber-500 rounded-full mx-auto mt-1 animate-pulse"></div>
-                      </div>
+                      <span className="text-lg font-bold text-amber-700">{stats.avgDiskUsage.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold text-amber-700 flex items-center justify-center space-x-2">
-                    <Database className="w-4 h-4" />
-                    <span>Disk Usage</span>
+                  <p className="text-xs font-semibold text-amber-700 flex items-center justify-center space-x-1">
+                    <Database className="w-3 h-3" />
+                    <span>Disk</span>
                   </p>
                 </div>
               </div>
@@ -476,49 +467,49 @@ const Dashboard: React.FC = () => {
 
           {/* Quick Actions - Paytm Style */}
           <div>
-            <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
-              <div className="flex items-center space-x-3 mb-8">
-                <div className="w-10 h-10 bg-gradient-to-r from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6 text-white" />
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/20">
+              <div className="flex items-center space-x-2 mb-4">
+                <div className="w-6 h-6 bg-gradient-to-r from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Quick Actions</h2>
+                <h2 className="text-lg font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Quick Actions</h2>
               </div>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <button 
                   onClick={() => navigate('/hosts')}
-                  className="w-full p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                  className="w-full p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-sm"
                 >
-                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Server className="w-5 h-5" />
+                  <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Server className="w-3 h-3" />
                   </div>
-                  <span className="font-semibold">Add New Host</span>
+                  <span className="font-semibold">Add Host</span>
                 </button>
                 <button 
                   onClick={() => navigate('/metrics')}
-                  className="w-full p-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                  className="w-full p-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-sm"
                 >
-                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Activity className="w-5 h-5" />
+                  <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Activity className="w-3 h-3" />
                   </div>
-                  <span className="font-semibold">View Metrics</span>
+                  <span className="font-semibold">Metrics</span>
                 </button>
                 <button 
                   onClick={() => navigate('/alerts')}
-                  className="w-full p-4 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                  className="w-full p-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-sm"
                 >
-                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                    <AlertTriangle className="w-5 h-5" />
+                  <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center">
+                    <AlertTriangle className="w-3 h-3" />
                   </div>
-                  <span className="font-semibold">Manage Alerts</span>
+                  <span className="font-semibold">Alerts</span>
                 </button>
                 <button 
                   onClick={() => navigate('/logs')}
-                  className="w-full p-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-3"
+                  className="w-full p-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center space-x-2 text-sm"
                 >
-                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                    <Database className="w-5 h-5" />
+                  <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center">
+                    <Database className="w-3 h-3" />
                   </div>
-                  <span className="font-semibold">View Logs</span>
+                  <span className="font-semibold">Logs</span>
                 </button>
               </div>
             </div>
@@ -526,16 +517,16 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Hosts Overview - Grafana Style */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/20">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center">
-                <Server className="w-6 h-6 text-white" />
+        <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-white/20">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                <Server className="w-4 h-4 text-white" />
               </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Hosts Overview</h2>
+              <h2 className="text-lg font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">Hosts Overview</h2>
             </div>
             <Button variant="ghost" size="sm" onClick={() => navigate('/hosts')}>
-              View All <ChevronRight className="w-4 h-4 ml-1" />
+              View All <ChevronRight className="w-3 h-3 ml-1" />
             </Button>
           </div>
 
@@ -549,8 +540,8 @@ const Dashboard: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {hosts.slice(0, 8).map((host) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+              {hosts.slice(0, 10).map((host) => {
                 const metrics = hostMetrics[host.id];
                 const cpuUsage = metrics?.cpu_usage || 0;
                 const memoryUsage = metrics?.memory_usage || 0;
@@ -560,33 +551,33 @@ const Dashboard: React.FC = () => {
                 return (
                   <div 
                     key={host.id} 
-                    className="bg-gradient-to-br from-white to-gray-50 rounded-3xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100"
+                    className="bg-gradient-to-br from-white to-gray-50 rounded-lg p-3 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100"
                     onClick={() => navigate(`/hosts/${host.id}`)}
                   >
                     {/* Host Header */}
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
                           isOnline ? 'bg-gradient-to-br from-green-400 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
                         }`}>
-                          <Server className="w-6 h-6 text-white" />
+                          <Server className="w-3 h-3 text-white" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900 text-lg truncate">{host.hostname || host.ip}</h3>
-                          <p className="text-sm text-gray-500">{host.ip}</p>
+                          <h3 className="font-bold text-gray-900 text-sm truncate">{host.hostname || host.ip}</h3>
+                          <p className="text-xs text-gray-500">{host.ip}</p>
                         </div>
                       </div>
-                      <div className={`w-3 h-3 rounded-full ${
+                      <div className={`w-2 h-2 rounded-full ${
                         isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'
                       }`}></div>
                     </div>
 
                     {/* Metrics Grid */}
-                    <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-3 gap-2 mb-3">
                       {/* CPU Circle */}
                       <div className="text-center">
-                        <div className="relative w-16 h-16 mx-auto mb-2">
-                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                        <div className="relative w-8 h-8 mx-auto mb-1">
+                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
                             <path
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
@@ -612,8 +603,8 @@ const Dashboard: React.FC = () => {
 
                       {/* Memory Circle */}
                       <div className="text-center">
-                        <div className="relative w-16 h-16 mx-auto mb-2">
-                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                        <div className="relative w-8 h-8 mx-auto mb-1">
+                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
                             <path
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
@@ -639,8 +630,8 @@ const Dashboard: React.FC = () => {
 
                       {/* Disk Circle */}
                       <div className="text-center">
-                        <div className="relative w-16 h-16 mx-auto mb-2">
-                          <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                        <div className="relative w-8 h-8 mx-auto mb-1">
+                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
                             <path
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
@@ -666,7 +657,7 @@ const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Status and Last Seen */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                       <Badge 
                         variant={isOnline ? 'success' : 'error'}
                         size="sm"
