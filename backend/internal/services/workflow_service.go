@@ -155,7 +155,12 @@ func (s *WorkflowService) ControlService(serviceID int, action models.ControlAct
 	return &models.ServiceControlResponse{
 		Success: err == nil,
 		Output:  output,
-		Error:   func() string { if err != nil { return err.Error() }; return "" }(),
+		Error: func() string {
+			if err != nil {
+				return err.Error()
+			}
+			return ""
+		}(),
 	}, nil
 }
 
@@ -219,13 +224,13 @@ func (s *WorkflowService) testSSHConnection(req *models.WorkflowSessionRequest) 
 		log.Printf("[WARN] Host %d not found, skipping SSH test: %v", req.HostID, err)
 		return nil
 	}
-	
+
 	// Use host IP for SSH connection
 	hostIP := host.IP
 	if hostIP == "" {
 		return fmt.Errorf("host IP not configured")
 	}
-	
+
 	if req.SSHKey != "" {
 		return TestSSHConnectionWithKey(hostIP, 22, req.Username, "", req.SSHKey)
 	}

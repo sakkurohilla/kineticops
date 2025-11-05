@@ -28,5 +28,4 @@ func RegisterHostRoutes(app *fiber.App) {
 	hosts.Post("/test-ssh", handlers.TestSSHConnection)
 	hosts.Post("/with-agent", handlers.CreateHostWithAgent)
 
-
 }

@@ -22,7 +22,7 @@ func GetAPMStats(c *fiber.Ctx) error {
 		"avg_response_time": 0,
 		"throughput":        0,
 		"error_rate":        0,
-		"apdex":            0,
+		"apdex":             0,
 	})
 }
 

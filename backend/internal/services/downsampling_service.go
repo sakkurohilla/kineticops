@@ -20,21 +20,22 @@ func NewDownsamplingService() *DownsamplingService {
 // CreateDownsampledData creates pre-aggregated data for faster queries
 func (d *DownsamplingService) CreateDownsampledData() error {
 	intervals := []struct {
-		name     string
-		duration string
-		table    string
+		name      string
+		duration  string
+		table     string
+		truncUnit string
 	}{
-		{"5m", "5 minutes", "metrics_5m"},
-		{"1h", "1 hour", "metrics_1h"},
-		{"1d", "1 day", "metrics_1d"},
+		{"5m", "5 minutes", "metrics_5m", "minute"},
+		{"1h", "1 hour", "metrics_1h", "hour"},
+		{"1d", "1 day", "metrics_1d", "day"},
 	}
 
 	for _, interval := range intervals {
 		if err := d.createDownsampledTable(interval.table); err != nil {
 			return err
 		}
-		
-		if err := d.downsampleData(interval.name, interval.duration, interval.table); err != nil {
+
+		if err := d.downsampleData(interval.name, interval.duration, interval.table, interval.truncUnit); err != nil {
 			return err
 		}
 	}
@@ -60,7 +61,8 @@ func (d *DownsamplingService) createDownsampledTable(tableName string) error {
 }
 
 // downsampleData aggregates raw data into downsampled tables
-func (d *DownsamplingService) downsampleData(intervalName, duration, tableName string) error {
+func (d *DownsamplingService) downsampleData(intervalName, duration, tableName, truncUnit string) error {
+	// truncUnit must be a valid date_trunc unit like 'minute', 'hour', 'day'
 	query := fmt.Sprintf(`
 		INSERT INTO %s (host_id, tenant_id, name, value, timestamp)
 		SELECT 
@@ -74,7 +76,7 @@ func (d *DownsamplingService) downsampleData(intervalName, duration, tableName s
 		GROUP BY host_id, tenant_id, name, bucket
 		ON CONFLICT (host_id, name, timestamp) DO UPDATE SET
 			value = EXCLUDED.value
-	`, tableName, duration, duration)
+	`, tableName, truncUnit, duration)
 
 	return postgres.DB.Exec(query).Error
 }

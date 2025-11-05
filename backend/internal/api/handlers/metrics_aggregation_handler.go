@@ -71,13 +71,13 @@ func (h *MetricsAggregationHandler) GetTimeSeriesMetrics(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"metric": metricName,
-		"host_id": hostID,
+		"metric":     metricName,
+		"host_id":    hostID,
 		"start_time": start.Format(time.RFC3339),
-		"end_time": end.Format(time.RFC3339),
-		"interval": interval,
-		"function": function,
-		"data": points,
+		"end_time":   end.Format(time.RFC3339),
+		"interval":   interval,
+		"function":   function,
+		"data":       points,
 	})
 }
 
@@ -96,9 +96,9 @@ func (h *MetricsAggregationHandler) GetDashboardMetrics(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"host_id": hostID,
+		"host_id":    hostID,
 		"time_range": timeRange,
-		"metrics": metrics,
+		"metrics":    metrics,
 	})
 }
 
@@ -116,8 +116,8 @@ func (h *MetricsAggregationHandler) GetLatestMetrics(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"host_id": hostID,
+		"host_id":   hostID,
 		"timestamp": time.Now().Format(time.RFC3339),
-		"metrics": metrics,
+		"metrics":   metrics,
 	})
 }

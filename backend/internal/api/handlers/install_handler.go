@@ -22,7 +22,7 @@ func ServeInstallScript(c *fiber.Ctx) error {
 	if c.Get("X-Forwarded-Proto") == "https" || c.Protocol() == "https" {
 		scheme = "https"
 	}
-	
+
 	// Get the actual host from the request header, but replace localhost with actual IP
 	requestHost := c.Get("Host")
 	if requestHost == "localhost:8080" || requestHost == "127.0.0.1:8080" {
@@ -161,10 +161,10 @@ echo "🌐 Dashboard: $KINETICOPS_HOST"
 func ServeAgentBinary(c *fiber.Ctx) error {
 	osType := c.Params("os")
 	arch := c.Params("arch")
-	
+
 	// Look for pre-built agent binary
 	binaryPath := filepath.Join("/opt/kineticops/agent", fmt.Sprintf("kineticops-agent-%s-%s", osType, arch))
-	
+
 	// If not found, try to serve the local built binary
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 		// Fallback to local agent binary (for development)
@@ -172,9 +172,9 @@ func ServeAgentBinary(c *fiber.Ctx) error {
 		if _, err := os.Stat(localBinary); err == nil {
 			return c.SendFile(localBinary)
 		}
-	return c.Status(404).SendString("Agent binary not found. Please build the agent first.")
+		return c.Status(404).SendString("Agent binary not found. Please build the agent first.")
 	}
-	
+
 	return c.SendFile(binaryPath)
 }
 
@@ -199,7 +199,7 @@ func GenerateInstallationToken(c *fiber.Ctx) error {
 
 	// Generate a simple token for now
 	token := fmt.Sprintf("install_%d_%d", uid, c.Context().Time().Unix())
-	
+
 	// Store the token in database
 	installToken := models.InstallationToken{
 		Token:     token,
@@ -211,13 +211,13 @@ func GenerateInstallationToken(c *fiber.Ctx) error {
 	if err := postgres.DB.Create(&installToken).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create installation token"})
 	}
-	
+
 	// Get the backend host - use actual server IP/hostname
 	scheme := "http"
 	if c.Get("X-Forwarded-Proto") == "https" || c.Protocol() == "https" {
 		scheme = "https"
 	}
-	
+
 	// Get the actual host from the request header, but replace localhost with actual IP
 	requestHost := c.Get("Host")
 	if requestHost == "localhost:8080" || requestHost == "127.0.0.1:8080" {
@@ -225,13 +225,13 @@ func GenerateInstallationToken(c *fiber.Ctx) error {
 		requestHost = "192.168.2.54:8080" // Actual server IP
 	}
 	host := fmt.Sprintf("%s://%s", scheme, requestHost)
-	
+
 	command := fmt.Sprintf("curl -sSL %s/api/v1/install/agent.sh?token=%s | sudo bash", host, token)
 
 	return c.JSON(fiber.Map{
-		"token":   token,
-		"command": command,
-		"expires_in": 86400, // 24 hours
+		"token":        token,
+		"command":      command,
+		"expires_in":   86400, // 24 hours
 		"instructions": "Run this command on your target server as root",
 	})
 }

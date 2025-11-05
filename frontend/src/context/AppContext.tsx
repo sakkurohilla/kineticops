@@ -55,21 +55,36 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   };
 
   const fetchUser = async () => {
-    try {
-      const userData = await apiClient.get<User>('/auth/me');
-      // apiClient may return the raw user object or an AxiosResponse depending on interceptors
-      setUser(userData as any);
-    } catch (error: any) {
-      console.error('Failed to fetch user:', error);
-      
-      // Only logout if it's an auth error (401)
-      // Don't logout for network errors or 429 rate limits
-      if (error.message?.includes('401') || error.message?.includes('Invalid')) {
-        authService.logout();
-        setUser(null);
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const maxRetries = 4;
+    let attempt = 0;
+    setIsLoading(true);
+    while (attempt <= maxRetries) {
+      try {
+        const userData = await apiClient.get<User>('/auth/me');
+        setUser(userData as any);
+        setIsLoading(false);
+        return;
+      } catch (err: any) {
+        console.error('Failed to fetch user:', err);
+        const status = err?.status || err?.response?.status;
+        // If rate limited, retry with exponential backoff
+        if (status === 429 && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // 1s,2s,4s,8s...
+          attempt++;
+          await sleep(delay);
+          continue;
+        }
+
+        // Only logout if it's an auth error (401)
+        if (status === 401 || (err?.message && err.message.includes('Invalid'))) {
+          authService.logout();
+          setUser(null);
+        }
+
+        setIsLoading(false);
+        return;
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 

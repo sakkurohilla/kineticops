@@ -3,6 +3,8 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"runtime"
 	"sync"
 )
 
@@ -23,9 +25,19 @@ type Hub struct {
 		Seq uint64
 		Msg []byte
 	}
+	// broadcastQueue decouples producers from the actual per-client sends so a
+	// single slow client won't block the publisher. Workers read from this
+	// queue and fan-out messages to active clients.
+	broadcastQueue chan []byte
+	workerCount    int
+	// maximum number of host warm-up messages to retain to avoid unbounded
+	// memory growth in high-scale scenarios.
+	maxLastMessages int
 }
 
 func NewHub() *Hub {
+	workerCount := runtime.NumCPU()
+	queueSize := 10000
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		broadcast:  make(chan []byte),
@@ -36,10 +48,45 @@ func NewHub() *Hub {
 			Seq uint64
 			Msg []byte
 		}),
+		broadcastQueue:  make(chan []byte, queueSize),
+		workerCount:     workerCount,
+		maxLastMessages: 2000,
 	}
 }
 
 func (h *Hub) Run() {
+	// start broadcast worker pool
+	for i := 0; i < h.workerCount; i++ {
+		go func(id int) {
+			for msg := range h.broadcastQueue {
+				h.mu.Lock()
+				var msgData map[string]interface{}
+				targetUserID := int64(-1)
+				if json.Unmarshal(msg, &msgData) == nil {
+					if userID, ok := msgData["target_user_id"]; ok {
+						if uid, ok := userID.(float64); ok {
+							targetUserID = int64(uid)
+						}
+					}
+				}
+
+				for client := range h.clients {
+					if targetUserID != -1 && client.userID != targetUserID {
+						continue
+					}
+					select {
+					case client.send <- msg:
+					default:
+						// If client's buffer is full, drop the client to reclaim resources
+						close(client.send)
+						delete(h.clients, client)
+					}
+				}
+				h.mu.Unlock()
+			}
+		}(i)
+	}
+
 	for {
 		select {
 		case client := <-h.register:
@@ -54,11 +101,14 @@ func (h *Hub) Run() {
 			h.clients[client] = true
 			fmt.Printf("[WS HUB] registered client user=%d, total_clients=%d\n", client.userID, len(h.clients))
 			// send warm-up messages (last known metrics) to the newly registered client
-			for _, entry := range h.lastMessages {
-				select {
-				case client.send <- entry.Msg:
-				default:
-					// if the client's buffer is full, skip warming for that message
+			// best-effort: skip warming when lastMessages map is too large
+			if len(h.lastMessages) <= h.maxLastMessages {
+				for _, entry := range h.lastMessages {
+					select {
+					case client.send <- entry.Msg:
+					default:
+						// skip if buffer full
+					}
 				}
 			}
 			h.mu.Unlock()
@@ -71,32 +121,13 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 		case message := <-h.broadcast:
-			h.mu.Lock()
-			// Parse message to check if it's user-specific
-			var msgData map[string]interface{}
-			targetUserID := int64(-1) // -1 means broadcast to all
-			if json.Unmarshal(message, &msgData) == nil {
-				if userID, ok := msgData["target_user_id"]; ok {
-					if uid, ok := userID.(float64); ok {
-						targetUserID = int64(uid)
-					}
-				}
+			// enqueue into broadcastQueue; drop if queue is full to avoid blocking
+			select {
+			case h.broadcastQueue <- message:
+			default:
+				// queue full — drop message and log
+				log.Printf("[WS HUB] broadcast queue full, dropping message\n")
 			}
-			
-			for client := range h.clients {
-				// Skip if message is user-specific and doesn't match client
-				if targetUserID != -1 && client.userID != targetUserID {
-					continue
-				}
-				
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-			h.mu.Unlock()
 		}
 	}
 }

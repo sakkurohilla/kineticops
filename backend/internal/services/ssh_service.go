@@ -24,12 +24,12 @@ func TestSSHConnection(host string, port int, username, password string) error {
 // TestSSHConnectionWithKey tests SSH connection with password or private key
 func TestSSHConnectionWithKey(host string, port int, username, password, privateKey string) error {
 	var authMethods []ssh.AuthMethod
-	
+
 	// Always try password first if provided (more reliable)
 	if password != "" {
 		authMethods = append(authMethods, ssh.Password(password))
 	}
-	
+
 	// Try SSH key if provided
 	if privateKey != "" {
 		signer, err := ssh.ParsePrivateKey([]byte(privateKey))
@@ -38,14 +38,14 @@ func TestSSHConnectionWithKey(host string, port int, username, password, private
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
-	
+
 	if len(authMethods) == 0 {
 		return fmt.Errorf("either password or private key must be provided")
 	}
 
 	config := &ssh.ClientConfig{
-		User: username,
-		Auth: authMethods,
+		User:            username,
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
@@ -68,7 +68,7 @@ func NewSSHClient(host string, port int, username, password string) (*SSHClient,
 // NewSSHClientWithKey creates SSH client with password or private key
 func NewSSHClientWithKey(host string, port int, username, password, privateKey string) (*SSHClient, error) {
 	var authMethods []ssh.AuthMethod
-	
+
 	if privateKey != "" {
 		signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 		if err != nil {
@@ -82,8 +82,8 @@ func NewSSHClientWithKey(host string, port int, username, password, privateKey s
 	}
 
 	config := &ssh.ClientConfig{
-		User: username,
-		Auth: authMethods,
+		User:            username,
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
@@ -290,13 +290,13 @@ func (s *SSHService) ExecuteScript(host, username, password, script string, port
 	if port == 0 {
 		port = 22
 	}
-	
+
 	client, err := NewSSHClient(host, port, username, password)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Upload and execute script
 	cmd := fmt.Sprintf("cat > /tmp/install.sh << 'EOF'\n%s\nEOF\nchmod +x /tmp/install.sh && bash /tmp/install.sh", script)
 	_, err = client.ExecuteCommandTimeout(cmd, 5*time.Minute)
@@ -308,13 +308,13 @@ func (s *SSHService) ExecuteScriptWithKey(host, username, privateKey, script str
 	if port == 0 {
 		port = 22
 	}
-	
+
 	client, err := NewSSHClientWithKey(host, port, username, "", privateKey)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
 	defer client.Close()
-	
+
 	// Upload and execute script
 	cmd := fmt.Sprintf("cat > /tmp/install.sh << 'EOF'\n%s\nEOF\nchmod +x /tmp/install.sh && bash /tmp/install.sh", script)
 	_, err = client.ExecuteCommandTimeout(cmd, 5*time.Minute)

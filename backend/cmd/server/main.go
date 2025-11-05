@@ -113,7 +113,23 @@ func main() {
 	brokers := []string{"localhost:9092"}
 	topic := "metrics-events"
 
-	_ = kafkaevents.InitProducer(brokers, topic)
+	// Initialize Kafka/Redpanda producer with a few retries to tolerate broker startup ordering.
+	var producerInitErr error
+	for i := 0; i < 3; i++ {
+		if _, err := kafkaevents.InitProducer(brokers, topic); err != nil {
+			producerInitErr = err
+			log.Printf("Redpanda producer init attempt %d failed: %v", i+1, err)
+			time.Sleep(time.Duration(i+1) * time.Second)
+			continue
+		}
+		producerInitErr = nil
+		break
+	}
+	if producerInitErr != nil {
+		log.Printf("[WARN] Redpanda/Kafka producer initialization failed after retries: %v", producerInitErr)
+	} else {
+		log.Println("Redpanda producer initialized")
+	}
 
 	// WebSocket hub
 	wsHub := ws.NewHub()

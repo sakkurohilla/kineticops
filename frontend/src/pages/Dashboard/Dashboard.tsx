@@ -12,7 +12,8 @@ import {
   Cpu,
   Shield,
   ChevronRight,
-  Database
+  Database,
+  X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import hostService from '../../services/api/hostService';
@@ -68,6 +69,35 @@ const Dashboard: React.FC = () => {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [hostMetrics, setHostMetrics] = useState<Record<number, any>>({});
+  const [selectedHostId, setSelectedHostId] = useState<number | null>(null);
+  const [selectedHostMetrics, setSelectedHostMetrics] = useState<any | null>(null);
+  // Derived values for selected host analytics (compute once)
+  const selectedMemPercent = (() => {
+    const m = selectedHostMetrics;
+    if (!m) return null;
+    if ((m.memory_total && m.memory_used) || (m.memory_total_bytes && m.memory_used_bytes)) {
+      const total = m.memory_total || m.memory_total_bytes;
+      const used = m.memory_used || m.memory_used_bytes;
+      if (total && used) return (used / total) * 100;
+    }
+    return m.memory_usage ?? null;
+  })();
+
+  const selectedUsedTotalDisplay = (() => {
+    const m = selectedHostMetrics;
+    if (!m) return '—';
+    if ((m.memory_total && m.memory_used) || (m.memory_total_bytes && m.memory_used_bytes)) {
+      const total = m.memory_total || m.memory_total_bytes;
+      const used = m.memory_used || m.memory_used_bytes;
+      const toMB = (v: number) => (v > 1024*1024 ? `${(v / (1024*1024)).toFixed(1)} MB` : `${(v / 1024).toFixed(1)} KB`);
+      return `${toMB(used)} / ${toMB(total)}`;
+    }
+    if (m.memory_total) {
+      const used = (m.memory_usage || 0) / 100 * m.memory_total;
+      return `${used.toFixed(1)} MB / ${m.memory_total.toFixed(1)} MB`;
+    }
+    return '—';
+  })();
   
   // const { data: metricsData } = useMetrics('1h', undefined, true);
 
@@ -79,15 +109,21 @@ const Dashboard: React.FC = () => {
         ...prev,
         [payload.host_id]: {
           cpu_usage: payload.cpu_usage || 0,
-          memory_usage: payload.memory_usage || 0,
-          disk_usage: payload.disk_usage || 0,
+          // prefer explicit totals/used bytes when possible
+          memory_usage: payload.memory_usage ?? null,
+          memory_total: payload.memory_total ?? payload.memory_total_bytes ?? null,
+          memory_used: payload.memory_used ?? payload.memory_used_bytes ?? null,
+          memory_available: payload.memory_available ?? payload.memory_available_bytes ?? null,
+          disk_usage: payload.disk_usage ?? null,
+          disk_total: payload.disk_total ?? payload.disk_total_bytes ?? null,
+          disk_used: payload.disk_used ?? payload.disk_used_bytes ?? null,
           network_in: payload.network_in || 0,
           network_out: payload.network_out || 0,
           timestamp: payload.timestamp || new Date().toISOString(),
         }
       }));
-      
-      // Force re-fetch hosts to get updated data
+
+      // Force re-fetch hosts to get updated data (keeps cards refreshed)
       fetchDashboardData();
     }
   });
@@ -162,10 +198,32 @@ const Dashboard: React.FC = () => {
 
       metricsResults.forEach(({ hostId, metrics }) => {
         if (metrics) {
-          metricsMap[hostId] = metrics;
-          totalCpu += metrics.cpu_usage || 0;
-          totalMemory += metrics.memory_usage || 0;
-          totalDisk += metrics.disk_usage || 0;
+          // compute memory percent from totals when available
+          let memPercent = metrics.memory_usage;
+          if ((metrics.memory_total && metrics.memory_used) || (metrics.memory_total_bytes && metrics.memory_used_bytes)) {
+            const total = metrics.memory_total || metrics.memory_total_bytes;
+            const used = metrics.memory_used || metrics.memory_used_bytes;
+            if (total && used) memPercent = (used / total) * 100;
+          }
+
+          // disk percent fallback
+          let diskPercent = metrics.disk_usage;
+          if ((metrics.disk_total && metrics.disk_used) || (metrics.disk_total_bytes && metrics.disk_used_bytes)) {
+            const dtotal = metrics.disk_total || metrics.disk_total_bytes;
+            const dused = metrics.disk_used || metrics.disk_used_bytes;
+            if (dtotal && dused) diskPercent = (dused / dtotal) * 100;
+          }
+
+          const normalized = {
+            ...metrics,
+            memory_usage: typeof memPercent === 'number' ? memPercent : (metrics.memory_usage || 0),
+            disk_usage: typeof diskPercent === 'number' ? diskPercent : (metrics.disk_usage || 0),
+          };
+
+          metricsMap[hostId] = normalized;
+          totalCpu += normalized.cpu_usage || 0;
+          totalMemory += normalized.memory_usage || 0;
+          totalDisk += normalized.disk_usage || 0;
           validMetrics++;
         }
       });
@@ -220,6 +278,47 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Compact Host Analytics Panel (Dashboard) */}
+        {selectedHostId && (
+          <div className="fixed right-6 top-24 w-72 bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-2xl border border-gray-100 z-50">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Host Analytics</h3>
+                <p className="text-xs text-gray-500">Host ID: {selectedHostId}</p>
+              </div>
+              <button onClick={() => { setSelectedHostId(null); setSelectedHostMetrics(null); }} className="p-1 rounded hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-center">
+                {/* Memory Circle */}
+                <div className="relative w-20 h-20 mx-auto mb-2">
+                  <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#eef2ff" strokeWidth="2" />
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#10b981" strokeWidth="2" strokeDasharray={`${Math.round(selectedMemPercent ?? 0)}, 100`} strokeLinecap="round" className="transition-all duration-500" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-bold text-gray-800">{selectedMemPercent ? Math.round(selectedMemPercent) : '—'}%</span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">Memory</p>
+              </div>
+
+              <div className="pl-2">
+                <p className="text-xs text-gray-600">Used / Total</p>
+                <p className="text-sm font-semibold text-gray-900">{selectedUsedTotalDisplay}</p>
+
+                <p className="mt-3 text-xs text-gray-500">Uptime</p>
+                <p className="text-sm font-medium text-gray-900">{selectedHostMetrics && selectedHostMetrics.uptime ? `${Math.floor(selectedHostMetrics.uptime / 60)}m` : '—'}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 text-xs text-gray-500">Last updated: {selectedHostMetrics?.timestamp ? new Date(selectedHostMetrics.timestamp).toLocaleString() : '—'}</div>
+          </div>
+        )}
       </MainLayout>
     );
   }
@@ -544,7 +643,13 @@ const Dashboard: React.FC = () => {
               {hosts.slice(0, 10).map((host) => {
                 const metrics = hostMetrics[host.id];
                 const cpuUsage = metrics?.cpu_usage || 0;
-                const memoryUsage = metrics?.memory_usage || 0;
+                // prefer memory totals when present
+                let memoryUsage = metrics?.memory_usage || 0;
+                if ((metrics?.memory_total && metrics?.memory_used) || (metrics?.memory_total_bytes && metrics?.memory_used_bytes)) {
+                  const total = metrics?.memory_total || metrics?.memory_total_bytes;
+                  const used = metrics?.memory_used || metrics?.memory_used_bytes;
+                  if (total && used) memoryUsage = (used / total) * 100;
+                }
                 const diskUsage = metrics?.disk_usage || 0;
                 const isOnline = host.agent_status === 'online';
                 
@@ -552,7 +657,11 @@ const Dashboard: React.FC = () => {
                   <div 
                     key={host.id} 
                     className="bg-gradient-to-br from-white to-gray-50 rounded-lg p-3 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100"
-                    onClick={() => navigate(`/hosts/${host.id}`)}
+                    onClick={() => {
+                      setSelectedHostId(host.id);
+                      hostService.getLatestMetrics(host.id).then(m => setSelectedHostMetrics(m)).catch(() => setSelectedHostMetrics(null));
+                    }}
+                    onDoubleClick={() => navigate(`/hosts/${host.id}`)}
                   >
                     {/* Host Header */}
                     <div className="flex items-center justify-between mb-3">

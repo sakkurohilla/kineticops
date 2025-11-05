@@ -37,12 +37,12 @@ func (a *AggregationService) QueryTimeSeries(query AggregationQuery) ([]TimeSeri
 	if query.StartTime.After(query.EndTime) {
 		return nil, fmt.Errorf("start time cannot be after end time")
 	}
-	
+
 	// Auto-select optimal interval based on time range
 	if query.Interval == "" {
 		query.Interval = a.selectOptimalInterval(query.StartTime, query.EndTime)
 	}
-	
+
 	// Default aggregation function
 	if query.Function == "" {
 		query.Function = "avg"
@@ -50,7 +50,7 @@ func (a *AggregationService) QueryTimeSeries(query AggregationQuery) ([]TimeSeri
 
 	// Build optimized query
 	sqlQuery := a.buildTimeSeriesQuery(query)
-	
+
 	rows, err := postgres.DB.Raw(sqlQuery, query.HostID, query.MetricName, query.StartTime, query.EndTime).Rows()
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (a *AggregationService) QueryTimeSeries(query AggregationQuery) ([]TimeSeri
 // selectOptimalInterval chooses best interval based on time range
 func (a *AggregationService) selectOptimalInterval(start, end time.Time) string {
 	duration := end.Sub(start)
-	
+
 	switch {
 	case duration <= 1*time.Hour:
 		return "1m"
@@ -93,7 +93,7 @@ func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string
 	tableName := a.selectOptimalTable(query.StartTime, query.EndTime, query.Interval)
 	intervalSQL := a.getIntervalSQL(query.Interval)
 	functionSQL := a.getFunctionSQL(query.Function)
-	
+
 	if tableName == "metrics" {
 		// Use raw data with aggregation
 		return fmt.Sprintf(`
@@ -128,7 +128,7 @@ func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string
 // selectOptimalTable chooses best table for query performance
 func (a *AggregationService) selectOptimalTable(start, end time.Time, interval string) string {
 	duration := end.Sub(start)
-	
+
 	// Use downsampled tables for longer ranges
 	switch {
 	case duration > 7*24*time.Hour && (interval == "1h" || interval == "1d"):
@@ -182,10 +182,10 @@ func (a *AggregationService) getFunctionSQL(function string) string {
 func (a *AggregationService) GetMetricsForDashboard(hostID int64, timeRange string) (map[string][]TimeSeriesPoint, error) {
 	end := time.Now()
 	start := a.parseTimeRange(timeRange, end)
-	
+
 	metrics := []string{"cpu_usage", "memory_usage", "disk_usage"}
 	result := make(map[string][]TimeSeriesPoint)
-	
+
 	for _, metric := range metrics {
 		query := AggregationQuery{
 			MetricName: metric,
@@ -194,7 +194,7 @@ func (a *AggregationService) GetMetricsForDashboard(hostID int64, timeRange stri
 			EndTime:    end,
 			Function:   "avg",
 		}
-		
+
 		points, err := a.QueryTimeSeries(query)
 		if err != nil {
 			result[metric] = []TimeSeriesPoint{}
@@ -202,7 +202,7 @@ func (a *AggregationService) GetMetricsForDashboard(hostID int64, timeRange stri
 			result[metric] = points
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -232,13 +232,13 @@ func (a *AggregationService) GetLatestMetrics(hostID int64) (map[string]float64,
 		WHERE host_id = $1 
 		ORDER BY name, timestamp DESC
 	`
-	
+
 	rows, err := postgres.DB.Raw(query, hostID).Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	result := make(map[string]float64)
 	for rows.Next() {
 		var name string
@@ -248,6 +248,6 @@ func (a *AggregationService) GetLatestMetrics(hostID int64) (map[string]float64,
 		}
 		result[name] = value
 	}
-	
+
 	return result, nil
 }

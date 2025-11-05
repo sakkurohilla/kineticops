@@ -62,7 +62,7 @@ func DiscoverServices(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"services": services,
-		"count": len(services),
+		"count":    len(services),
 	})
 }
 

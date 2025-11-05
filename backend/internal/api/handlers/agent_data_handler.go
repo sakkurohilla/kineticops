@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -120,8 +122,15 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 		if host.IP != primaryIP && primaryIP != "" {
 			updates["ip"] = primaryIP
 		}
-		if host.Hostname != hostname && hostname != "" {
-			updates["hostname"] = hostname
+		// Only overwrite hostname if host was auto-created (reg_token starts with "auto-")
+		// or if current hostname is empty. This prevents agent auto-updates from
+		// reverting user-edited hostnames.
+		if hostname != "" {
+			if host.Hostname == "" || strings.HasPrefix(host.RegToken, "auto-") {
+				if host.Hostname != hostname {
+					updates["hostname"] = hostname
+				}
+			}
 		}
 		if host.OS != os && os != "" {
 			updates["os"] = os
@@ -238,17 +247,57 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	// Memory metrics with validation
 	if memory, ok := system["memory"].(map[string]interface{}); ok {
+		// Prefer bytes-based calculation when possible. Some agents report `available.bytes` instead
+		// of `used.bytes`. To be accurate, compute used = total - available when available is present.
+		var totalBytes float64 = 0
+		if total, ok := memory["total"].(float64); ok && total > 0 {
+			totalBytes = total
+			metric.MemoryTotal = total / (1024 * 1024) // MB
+		}
+
+		var usedBytes float64 = 0
+		// If available bytes provided, compute used = total - available
+		if avail, ok := memory["available"].(map[string]interface{}); ok {
+			if ab, ok := avail["bytes"].(float64); ok && ab >= 0 && totalBytes > 0 {
+				usedBytes = totalBytes - ab
+			}
+		}
+
+		// If agent reports free bytes (older agents), use total - free to compute used
+		if usedBytes == 0 {
+			if freeVal, ok := memory["free"].(float64); ok && freeVal >= 0 && totalBytes > 0 {
+				usedBytes = totalBytes - freeVal
+			}
+		}
+
+		// Fallback to used.bytes if available
 		if used, ok := memory["used"].(map[string]interface{}); ok {
+			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
+				// if we haven't computed usedBytes from available, use used.bytes
+				if usedBytes == 0 {
+					usedBytes = bytes
+				}
+			}
 			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.MemoryUsage = pct * 100
 				services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
 			}
-			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
-				metric.MemoryUsed = bytes / (1024 * 1024) // MB
-			}
 		}
-		if total, ok := memory["total"].(float64); ok && total > 0 {
-			metric.MemoryTotal = total / (1024 * 1024) // MB
+
+		// If we have totalBytes and computed usedBytes, normalize and store
+		if usedBytes > 0 && totalBytes > 0 {
+			// clamp
+			if usedBytes < 0 {
+				usedBytes = 0
+			}
+			if usedBytes > totalBytes {
+				usedBytes = totalBytes
+			}
+			metric.MemoryUsed = usedBytes / (1024 * 1024)   // MB
+			metric.MemoryTotal = totalBytes / (1024 * 1024) // MB (ensure set)
+			// compute percent
+			metric.MemoryUsage = (usedBytes / totalBytes) * 100
+			services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
 		}
 	}
 
@@ -267,17 +316,61 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		fmt.Printf("[DEBUG] Processing root filesystem %s mounted at %s\n", deviceName, mountPoint)
 
 		if used, ok := fs["used"].(map[string]interface{}); ok {
-			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
-				metric.DiskUsage = pct * 100
-				services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
-				fmt.Printf("[DEBUG] Root disk usage: %.2f%%\n", metric.DiskUsage)
+			// agent may provide pct (0..1 or 0..100) and/or raw bytes
+			var agentPctVal float64 = -1
+			if pct, ok := used["pct"].(float64); ok {
+				agentPctVal = pct
 			}
+
+			var usedBytes float64 = 0
 			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
+				usedBytes = bytes
 				metric.DiskUsed = bytes / (1024 * 1024 * 1024) // GB
 			}
-		}
-		if total, ok := fs["total"].(float64); ok && total > 0 {
-			metric.DiskTotal = total / (1024 * 1024 * 1024) // GB
+
+			var totalBytes float64 = 0
+			if total, ok := fs["total"].(float64); ok && total > 0 {
+				totalBytes = total
+				metric.DiskTotal = total / (1024 * 1024 * 1024) // GB
+			}
+
+			// Prefer bytes-based calculation when available
+			if usedBytes > 0 && totalBytes > 0 {
+				serverPct := (usedBytes / totalBytes) * 100.0
+				metric.DiskUsage = serverPct
+				services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
+				// If agent also reported pct, normalize and compare
+				if agentPctVal >= 0 {
+					var agentPctPercent float64
+					if agentPctVal <= 1 {
+						agentPctPercent = agentPctVal * 100
+					} else {
+						agentPctPercent = agentPctVal
+					}
+					if math.Abs(agentPctPercent-serverPct) > 15.0 {
+						fmt.Printf("[WARN] Disk pct mismatch host=%d device=%s agent_pct=%.2f server_pct=%.2f\n", hostID, deviceName, agentPctPercent, serverPct)
+					}
+				}
+				fmt.Printf("[DEBUG] Root disk usage (bytes) for %s mounted at %s: %.2f%%\n", deviceName, mountPoint, metric.DiskUsage)
+			} else {
+				// Fallback to agent-provided pct when bytes not available
+				if agentPctVal >= 0 {
+					var agentPctPercent float64
+					if agentPctVal <= 1 {
+						agentPctPercent = agentPctVal * 100
+					} else {
+						agentPctPercent = agentPctVal
+					}
+					metric.DiskUsage = agentPctPercent
+					services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
+					fmt.Printf("[DEBUG] Root disk usage (agent pct) for %s mounted at %s: %.2f%%\n", deviceName, mountPoint, metric.DiskUsage)
+				}
+			}
+		} else {
+			// No used block provided - try total only (unlikely) or skip
+			if total, ok := fs["total"].(float64); ok && total > 0 {
+				metric.DiskTotal = total / (1024 * 1024 * 1024) // GB
+			}
 		}
 	}
 

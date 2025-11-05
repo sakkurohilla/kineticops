@@ -5,17 +5,17 @@ import "time"
 // APM (Application Performance Monitoring) Models
 
 type Application struct {
-	ID          int64     `gorm:"primaryKey" json:"id"`
-	TenantID    int64     `gorm:"index" json:"tenant_id"`
-	HostID      int64     `gorm:"index" json:"host_id"`
-	Name        string    `gorm:"size:128;not null" json:"name"`
-	Type        string    `gorm:"size:64" json:"type"` // web, api, worker, etc.
-	Language    string    `gorm:"size:32" json:"language"`
-	Framework   string    `gorm:"size:64" json:"framework"`
-	Version     string    `gorm:"size:32" json:"version"`
-	Status      string    `gorm:"size:32;default:'unknown'" json:"status"`
-	LastSeen    time.Time `json:"last_seen"`
-	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
+	ID        int64     `gorm:"primaryKey" json:"id"`
+	TenantID  int64     `gorm:"index" json:"tenant_id"`
+	HostID    int64     `gorm:"index" json:"host_id"`
+	Name      string    `gorm:"size:128;not null" json:"name"`
+	Type      string    `gorm:"size:64" json:"type"` // web, api, worker, etc.
+	Language  string    `gorm:"size:32" json:"language"`
+	Framework string    `gorm:"size:64" json:"framework"`
+	Version   string    `gorm:"size:32" json:"version"`
+	Status    string    `gorm:"size:32;default:'unknown'" json:"status"`
+	LastSeen  time.Time `json:"last_seen"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 type Transaction struct {
@@ -25,7 +25,7 @@ type Transaction struct {
 	TraceID       string    `gorm:"size:64;index" json:"trace_id"`
 	Name          string    `gorm:"size:256" json:"name"`
 	Type          string    `gorm:"size:64" json:"type"` // web, background
-	Duration      float64   `json:"duration"` // milliseconds
+	Duration      float64   `json:"duration"`            // milliseconds
 	ResponseTime  float64   `json:"response_time"`
 	Throughput    float64   `json:"throughput"`
 	ErrorRate     float64   `json:"error_rate"`

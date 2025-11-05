@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
-import { Plus, Server, Search, RefreshCw, Users, Activity, Cpu, Database, Trash2 } from 'lucide-react';
+import { Plus, Server, Search, RefreshCw, Users, Trash2 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import SimpleAddHostForm from '../../components/hosts/SimpleAddHostForm';
 import { useHosts } from '../../hooks/useHosts';
+// analytics moved to Dashboard
 import { useNavigate } from 'react-router-dom';
 import hostService from '../../services/api/hostService';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -17,6 +18,7 @@ const Hosts: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [hostMetrics, setHostMetrics] = useState<Record<number, any>>({});
   const navigate = useNavigate();
+  const [selectedHostId, setSelectedHostId] = useState<number | null>(null);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -62,8 +64,26 @@ const Hosts: React.FC = () => {
 
     if (hosts.length > 0) {
       fetchMetrics();
+      // default select first host if none selected
+      if (!selectedHostId) setSelectedHostId(hosts[0].id);
     }
   }, [hosts]);
+
+  // When selected host changes, ensure we fetch fresh latest metrics for that host
+  useEffect(() => {
+    const refreshSelected = async () => {
+      if (!selectedHostId) return;
+      try {
+        const latest = await hostService.getLatestMetrics(selectedHostId);
+        setHostMetrics((prev) => ({ ...(prev || {}), [selectedHostId]: latest }));
+      } catch (e) {
+        // ignore
+      }
+    };
+    refreshSelected();
+  }, [selectedHostId]);
+
+  // analytics moved to Dashboard; Hosts page keeps list only
 
   // Get unique groups
   const groups = ['all', ...new Set(hosts.map(h => h.group || 'default'))];
@@ -198,10 +218,12 @@ const Hosts: React.FC = () => {
           </div>
         )}
 
-        {/* Hosts Grid - Dashboard Style */}
+        {/* Hosts Grid - Dashboard Style with Analytics Sidebar */}
         {!loading && !error && filteredHosts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {filteredHosts.map((host) => {
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-3">
+                {filteredHosts.map((host) => {
               const metrics = hostMetrics[host.id];
               const cpuUsage = metrics?.cpu_usage || 0;
               const memoryUsage = metrics?.memory_usage || 0;
@@ -212,7 +234,8 @@ const Hosts: React.FC = () => {
                 <div 
                   key={host.id} 
                   className="bg-gradient-to-br from-white to-gray-50 rounded-lg p-3 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100 group"
-                  onClick={() => navigate(`/hosts/${host.id}`)}
+                  onClick={() => setSelectedHostId(host.id)}
+                  onDoubleClick={() => navigate(`/hosts/${host.id}`)}
                 >
                   {/* Host Header */}
                   <div className="flex items-center justify-between mb-3">
@@ -346,9 +369,12 @@ const Hosts: React.FC = () => {
                 </div>
               );
             })}
+              </div>
+            </div>
+
+            {/* Right-side analytics removed (moved to Dashboard) */}
           </div>
         )}
-
         {/* No Search Results */}
         {!loading && !error && hosts.length > 0 && filteredHosts.length === 0 && (
           <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">

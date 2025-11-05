@@ -40,7 +40,7 @@ func UpdateHostDetails(c *fiber.Ctx) error {
 	updates := map[string]interface{}{
 		"description": req.DisplayName, // Use description field for custom name
 	}
-	
+
 	if req.Group != "" {
 		updates["group"] = req.Group
 	}
@@ -79,14 +79,14 @@ func GetHostDetails(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"id": host.ID,
-		"hostname": host.Hostname,
+		"id":           host.ID,
+		"hostname":     host.Hostname,
 		"display_name": host.Description,
-		"ip": host.IP,
-		"os": host.OS,
-		"status": host.Status,
+		"ip":           host.IP,
+		"os":           host.OS,
+		"status":       host.Status,
 		"agent_status": host.AgentStatus,
-		"group": host.Group,
-		"last_seen": host.LastSeen,
+		"group":        host.Group,
+		"last_seen":    host.LastSeen,
 	})
 }

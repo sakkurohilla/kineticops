@@ -8,13 +8,13 @@ import (
 
 func RegisterInstallRoutes(app *fiber.App) {
 	install := app.Group("/api/v1/install")
-	
+
 	// Generate installation token (protected)
 	install.Post("/token", middleware.AuthRequired(), handlers.GenerateInstallationToken)
-	
+
 	// Serve installation script (public)
 	install.Get("/agent.sh", handlers.ServeInstallScript)
-	
+
 	// Serve agent binary (public)
 	install.Get("/agent-:os-:arch", handlers.ServeAgentBinary)
 }

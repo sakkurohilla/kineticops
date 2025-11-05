@@ -24,11 +24,11 @@ type MetricBatch struct {
 
 // Common metric names as constants
 const (
-	MetricCPUUsage     = "cpu_usage"
-	MetricMemoryUsage  = "memory_usage"
-	MetricDiskUsage    = "disk_usage"
-	MetricNetworkIn    = "network_in"
-	MetricNetworkOut   = "network_out"
-	MetricLoadAverage  = "load_average"
-	MetricUptime       = "uptime"
+	MetricCPUUsage    = "cpu_usage"
+	MetricMemoryUsage = "memory_usage"
+	MetricDiskUsage   = "disk_usage"
+	MetricNetworkIn   = "network_in"
+	MetricNetworkOut  = "network_out"
+	MetricLoadAverage = "load_average"
+	MetricUptime      = "uptime"
 )

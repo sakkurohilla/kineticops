@@ -17,7 +17,7 @@ func InitAgentHandlers(as *services.AgentService) {
 // RegisterAgent - POST /api/v1/agents/register
 func RegisterAgent(c *fiber.Ctx) error {
 	var req struct {
-		Token    string                `json:"token"`
+		Token    string               `json:"token"`
 		Metadata models.AgentMetadata `json:"metadata"`
 	}
 
@@ -32,7 +32,7 @@ func RegisterAgent(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"status": "registered",
+		"status":   "registered",
 		"agent_id": agent.ID,
 	})
 }
@@ -112,8 +112,8 @@ func ExecuteAgentCommand(c *fiber.Ctx) error {
 	// This would execute command via agent
 	// For now, return success
 	return c.JSON(fiber.Map{
-		"success": true,
-		"output": "Command executed successfully",
+		"success":  true,
+		"output":   "Command executed successfully",
 		"agent_id": agentID,
 	})
 }

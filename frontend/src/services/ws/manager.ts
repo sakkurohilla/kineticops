@@ -57,8 +57,7 @@ function connect() {
   const token = authService.getToken();
   const baseWs = deriveBaseWs();
   wsStatus.setWsStatus('connecting', baseWs);
-  const separator = baseWs.includes('?') ? '&' : '?';
-  const url = `${baseWs}${separator}token=${encodeURIComponent(token || '')}`;
+  const url = `${baseWs}`;
   try {
     ws = new WebSocket(url);
   } catch (err) {
@@ -71,11 +70,29 @@ function connect() {
     connectAttempts = 0;
     console.log('[wsManager] connected to', url);
     wsStatus.setWsStatus('connected');
+    // Send initial auth message instead of placing token in URL. Server will
+    // respond with an auth_ok or close the connection on failure.
+    try {
+      ws?.send(JSON.stringify({ type: 'auth', token: token || '' }));
+    } catch (e) {
+      console.error('[wsManager] failed to send auth message', e);
+      ws?.close();
+    }
   };
 
   ws.onmessage = (ev) => {
     try {
       const parsed = JSON.parse(ev.data);
+      // handle server auth_ok/auth_failed messages specially
+      if (parsed && parsed.type === 'auth_ok') {
+        // authenticated; ignore message
+        return;
+      }
+      if (parsed && parsed.type === 'auth_failed') {
+        console.warn('[wsManager] websocket auth failed, closing socket');
+        ws?.close();
+        return;
+      }
       notifyAll(parsed);
     } catch (e) {
       // ignore non-json

@@ -44,11 +44,11 @@ func (s *APMService) RecordTransaction(tx *models.Transaction) error {
 func (s *APMService) GetTransactions(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.Transaction, error) {
 	var transactions []models.Transaction
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&transactions).Error
 	return transactions, err
 }
@@ -72,7 +72,7 @@ func (s *APMService) GetTransactionStats(appID int64, tenantID int64, start, end
 		FROM transactions 
 		WHERE application_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?
 	`
-	
+
 	err := postgres.DB.Raw(query, appID, tenantID, start, end).Scan(&stats).Error
 	if err != nil {
 		return nil, err
@@ -91,9 +91,9 @@ func (s *APMService) GetTransactionStats(appID int64, tenantID int64, start, end
 		"avg_response_time": stats.AvgResponseTime,
 		"throughput":        stats.Throughput,
 		"error_rate":        stats.ErrorRate,
-		"apdex":            stats.Apdex,
-		"total_requests":   stats.TotalRequests,
-		"error_count":      stats.ErrorCount,
+		"apdex":             stats.Apdex,
+		"total_requests":    stats.TotalRequests,
+		"error_count":       stats.ErrorCount,
 	}
 
 	return result, nil
@@ -118,18 +118,18 @@ func (s *APMService) GetTrace(traceID string, tenantID int64) (*models.Trace, []
 	var spans []models.Span
 	err = postgres.DB.Where("trace_id = ? AND tenant_id = ?", traceID, tenantID).
 		Order("start_time ASC").Find(&spans).Error
-	
+
 	return &trace, spans, err
 }
 
 func (s *APMService) GetTraces(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.Trace, error) {
 	var traces []models.Trace
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&traces).Error
 	return traces, err
 }
@@ -138,16 +138,16 @@ func (s *APMService) GetTraces(appID int64, tenantID int64, start, end time.Time
 func (s *APMService) RecordError(errorEvent *models.ErrorEvent) error {
 	// Check if error with same fingerprint exists
 	var existing models.ErrorEvent
-	err := postgres.DB.Where("fingerprint = ? AND tenant_id = ?", 
+	err := postgres.DB.Where("fingerprint = ? AND tenant_id = ?",
 		errorEvent.Fingerprint, errorEvent.TenantID).First(&existing).Error
-	
+
 	if err == nil {
 		// Update existing error
 		existing.Count++
 		existing.LastSeen = errorEvent.Timestamp
 		return postgres.DB.Save(&existing).Error
 	}
-	
+
 	// Create new error
 	errorEvent.FirstSeen = errorEvent.Timestamp
 	errorEvent.LastSeen = errorEvent.Timestamp
@@ -157,30 +157,30 @@ func (s *APMService) RecordError(errorEvent *models.ErrorEvent) error {
 func (s *APMService) GetErrors(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.ErrorEvent, error) {
 	var errors []models.ErrorEvent
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("last_seen DESC").Limit(limit).Find(&errors).Error
 	return errors, err
 }
 
 func (s *APMService) GetErrorStats(appID int64, tenantID int64, start, end time.Time) (map[string]interface{}, error) {
 	var stats struct {
-		TotalErrors   int64 `json:"total_errors"`
-		UniqueErrors  int64 `json:"unique_errors"`
+		TotalErrors   int64   `json:"total_errors"`
+		UniqueErrors  int64   `json:"unique_errors"`
 		ErrorRate     float64 `json:"error_rate"`
-		ResolvedCount int64 `json:"resolved_count"`
+		ResolvedCount int64   `json:"resolved_count"`
 	}
 
 	// Get error counts
 	err := postgres.DB.Model(&models.ErrorEvent{}).
-		Where("application_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?", 
+		Where("application_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?",
 			appID, tenantID, start, end).
 		Select("COUNT(*) as unique_errors, SUM(count) as total_errors, SUM(CASE WHEN resolved THEN 1 ELSE 0 END) as resolved_count").
 		Scan(&stats).Error
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -188,9 +188,9 @@ func (s *APMService) GetErrorStats(appID int64, tenantID int64, start, end time.
 	// Calculate error rate (errors per transaction)
 	var txCount int64
 	postgres.DB.Model(&models.Transaction{}).
-		Where("application_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?", 
+		Where("application_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?",
 			appID, tenantID, start, end).Count(&txCount)
-	
+
 	if txCount > 0 {
 		stats.ErrorRate = float64(stats.TotalErrors) / float64(txCount) * 100
 	}
@@ -213,24 +213,24 @@ func (s *APMService) RecordDatabaseQuery(query *models.DatabaseQuery) error {
 func (s *APMService) GetDatabaseQueries(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.DatabaseQuery, error) {
 	var queries []models.DatabaseQuery
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("duration DESC").Limit(limit).Find(&queries).Error
 	return queries, err
 }
 
 func (s *APMService) GetSlowQueries(appID int64, tenantID int64, threshold float64, start, end time.Time, limit int) ([]models.DatabaseQuery, error) {
 	var queries []models.DatabaseQuery
-	query := postgres.DB.Where("application_id = ? AND tenant_id = ? AND duration > ?", 
+	query := postgres.DB.Where("application_id = ? AND tenant_id = ? AND duration > ?",
 		appID, tenantID, threshold)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("duration DESC").Limit(limit).Find(&queries).Error
 	return queries, err
 }
@@ -243,11 +243,11 @@ func (s *APMService) RecordExternalService(service *models.ExternalService) erro
 func (s *APMService) GetExternalServices(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.ExternalService, error) {
 	var services []models.ExternalService
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("duration DESC").Limit(limit).Find(&services).Error
 	return services, err
 }
@@ -260,15 +260,15 @@ func (s *APMService) RecordPerformanceMetric(metric *models.PerformanceMetric) e
 func (s *APMService) GetPerformanceMetrics(appID int64, tenantID int64, metricName string, start, end time.Time) ([]models.PerformanceMetric, error) {
 	var metrics []models.PerformanceMetric
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if metricName != "" {
 		query = query.Where("metric_name = ?", metricName)
 	}
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp ASC").Find(&metrics).Error
 	return metrics, err
 }
@@ -281,15 +281,15 @@ func (s *APMService) RecordCustomEvent(event *models.CustomEvent) error {
 func (s *APMService) GetCustomEvents(appID int64, tenantID int64, eventType string, start, end time.Time, limit int) ([]models.CustomEvent, error) {
 	var events []models.CustomEvent
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if eventType != "" {
 		query = query.Where("event_type = ?", eventType)
 	}
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&events).Error
 	return events, err
 }
@@ -297,35 +297,35 @@ func (s *APMService) GetCustomEvents(appID int64, tenantID int64, eventType stri
 // Dashboard Data
 func (s *APMService) GetApplicationOverview(appID int64, tenantID int64, start, end time.Time) (map[string]interface{}, error) {
 	overview := make(map[string]interface{})
-	
+
 	// Get transaction stats
 	txStats, err := s.GetTransactionStats(appID, tenantID, start, end)
 	if err != nil {
 		return nil, err
 	}
 	overview["transactions"] = txStats
-	
+
 	// Get error stats
 	errorStats, err := s.GetErrorStats(appID, tenantID, start, end)
 	if err != nil {
 		return nil, err
 	}
 	overview["errors"] = errorStats
-	
+
 	// Get top transactions
 	topTx, err := s.GetTransactions(appID, tenantID, start, end, 10)
 	if err != nil {
 		return nil, err
 	}
 	overview["top_transactions"] = topTx
-	
+
 	// Get recent errors
 	recentErrors, err := s.GetErrors(appID, tenantID, start, end, 10)
 	if err != nil {
 		return nil, err
 	}
 	overview["recent_errors"] = recentErrors
-	
+
 	return overview, nil
 }
 

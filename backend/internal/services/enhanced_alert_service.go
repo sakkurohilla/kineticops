@@ -36,13 +36,13 @@ type AlertCondition struct {
 
 // Alert Channels (like New Relic notification channels)
 type AlertChannel struct {
-	ID          int64     `json:"id"`
-	TenantID    int64     `json:"tenant_id"`
-	Name        string    `json:"name"`
-	Type        string    `json:"type"` // email, slack, webhook, pagerduty
-	Config      string    `json:"config"` // JSON configuration
-	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID        int64     `json:"id"`
+	TenantID  int64     `json:"tenant_id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`   // email, slack, webhook, pagerduty
+	Config    string    `json:"config"` // JSON configuration
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Alert Policies (grouping conditions and channels)
@@ -145,11 +145,11 @@ func (s *EnhancedAlertService) CreateIncident(incident *AlertIncident) error {
 func (s *EnhancedAlertService) GetIncidents(tenantID int64, status string) ([]AlertIncident, error) {
 	var incidents []AlertIncident
 	query := postgres.DB.Where("tenant_id = ?", tenantID)
-	
+
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
-	
+
 	err := query.Order("opened_at DESC").Find(&incidents).Error
 	return incidents, err
 }
@@ -210,23 +210,23 @@ func (s *EnhancedAlertService) evaluateCondition(condition *AlertCondition) {
 	if triggered {
 		// Check if incident already exists
 		var existingIncident AlertIncident
-		err := postgres.DB.Where("condition_id = ? AND status = ?", 
+		err := postgres.DB.Where("condition_id = ? AND status = ?",
 			condition.ID, "open").First(&existingIncident).Error
-		
+
 		if err != nil {
 			// Create new incident
 			incident := &AlertIncident{
 				TenantID:    condition.TenantID,
 				ConditionID: condition.ID,
 				Title:       fmt.Sprintf("Alert: %s", condition.Name),
-				Description: fmt.Sprintf("Condition '%s' triggered. Value: %.2f, Threshold: %.2f", 
+				Description: fmt.Sprintf("Condition '%s' triggered. Value: %.2f, Threshold: %.2f",
 					condition.Name, result, condition.Threshold),
 				Status:   "open",
 				Severity: condition.Severity,
 				OpenedAt: time.Now(),
 			}
 			s.CreateIncident(incident)
-			
+
 			// Send notifications
 			s.sendNotifications(incident)
 		}
@@ -245,21 +245,21 @@ func (s *EnhancedAlertService) evaluateCondition(condition *AlertCondition) {
 func (s *EnhancedAlertService) executeQuery(query string, tenantID int64) (float64, error) {
 	// Simplified query execution - in production, implement full NRQL parser
 	// For now, support basic metric queries
-	
+
 	// Example: "SELECT average(cpu_usage) FROM metrics WHERE host_id = 1"
 	// This is a simplified implementation
-	
+
 	var result float64
-	err := postgres.DB.Raw("SELECT AVG(value) FROM metrics WHERE tenant_id = ? AND name = 'cpu_usage' AND timestamp > NOW() - INTERVAL '5 minutes'", 
+	err := postgres.DB.Raw("SELECT AVG(value) FROM metrics WHERE tenant_id = ? AND name = 'cpu_usage' AND timestamp > NOW() - INTERVAL '5 minutes'",
 		tenantID).Scan(&result).Error
-	
+
 	return result, err
 }
 
 func (s *EnhancedAlertService) sendNotifications(incident *AlertIncident) {
 	// Get notification channels for this policy
 	var channels []AlertChannel
-	err := postgres.DB.Where("tenant_id = ? AND enabled = ?", 
+	err := postgres.DB.Where("tenant_id = ? AND enabled = ?",
 		incident.TenantID, true).Find(&channels).Error
 	if err != nil {
 		return
@@ -290,7 +290,7 @@ func (s *EnhancedAlertService) sendEmailNotification(channel *AlertChannel, inci
 		Subject    string   `json:"subject"`
 	}
 	json.Unmarshal([]byte(channel.Config), &config)
-	
+
 	// Send email (implement with your email service)
 	fmt.Printf("EMAIL ALERT: %s - %s\n", incident.Title, incident.Description)
 }
@@ -302,7 +302,7 @@ func (s *EnhancedAlertService) sendSlackNotification(channel *AlertChannel, inci
 		Channel    string `json:"channel"`
 	}
 	json.Unmarshal([]byte(channel.Config), &config)
-	
+
 	// Send Slack message (implement with Slack API)
 	fmt.Printf("SLACK ALERT: %s - %s\n", incident.Title, incident.Description)
 }
@@ -314,7 +314,7 @@ func (s *EnhancedAlertService) sendWebhookNotification(channel *AlertChannel, in
 		Headers map[string]string `json:"headers"`
 	}
 	json.Unmarshal([]byte(channel.Config), &config)
-	
+
 	// Send webhook (implement HTTP POST)
 	fmt.Printf("WEBHOOK ALERT: %s - %s\n", incident.Title, incident.Description)
 }
@@ -326,7 +326,7 @@ func (s *EnhancedAlertService) sendPagerDutyNotification(channel *AlertChannel, 
 		Severity       string `json:"severity"`
 	}
 	json.Unmarshal([]byte(channel.Config), &config)
-	
+
 	// Send PagerDuty alert (implement with PagerDuty API)
 	fmt.Printf("PAGERDUTY ALERT: %s - %s\n", incident.Title, incident.Description)
 }

@@ -112,7 +112,7 @@ func (s *MetricsAggregationService) fillTimeGaps(data []AggregatedMetric, start,
 
 	var filled []AggregatedMetric
 	dataIndex := 0
-	
+
 	for current := start.Truncate(intervalDuration); current.Before(end); current = current.Add(intervalDuration) {
 		if dataIndex < len(data) && data[dataIndex].Timestamp.Equal(current) {
 			// Exact match - use real data
@@ -124,7 +124,7 @@ func (s *MetricsAggregationService) fillTimeGaps(data []AggregatedMetric, start,
 			if len(filled) > 0 {
 				value = filled[len(filled)-1].Value // Use last known value
 			}
-			
+
 			filled = append(filled, AggregatedMetric{
 				Timestamp: current,
 				Value:     value,
@@ -140,7 +140,7 @@ func (s *MetricsAggregationService) fillTimeGaps(data []AggregatedMetric, start,
 // GetMultipleMetricsAggregated returns multiple metrics aggregated
 func (s *MetricsAggregationService) GetMultipleMetricsAggregated(hostID int64, metricNames []string, timeRange string) (map[string][]AggregatedMetric, error) {
 	result := make(map[string][]AggregatedMetric)
-	
+
 	for _, metricName := range metricNames {
 		data, err := s.GetAggregatedMetrics(hostID, metricName, timeRange)
 		if err != nil {
@@ -150,6 +150,6 @@ func (s *MetricsAggregationService) GetMultipleMetricsAggregated(hostID int64, m
 		}
 		result[metricName] = data
 	}
-	
+
 	return result, nil
 }

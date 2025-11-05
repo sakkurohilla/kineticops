@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +18,6 @@ var hostAgentService *services.AgentService
 func InitHostAgentService(as *services.AgentService) {
 	hostAgentService = as
 }
-
-
 
 // CreateHost creates a new host
 func CreateHost(c *fiber.Ctx) error {
@@ -129,16 +128,16 @@ func DeleteHost(c *fiber.Ctx) error {
 
 	// EXPIRE ALL TOKENS for this tenant - prevent agent reconnection
 	postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
-		"used": true,
+		"used":       true,
 		"expires_at": time.Now().Add(-1 * time.Hour), // Expire 1 hour ago
 	})
-	
+
 	// Delete all related data first
 	postgres.DB.Exec("DELETE FROM host_metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id)
-	
+
 	// Delete the host
 	err = postgres.DeleteHost(postgres.DB, id)
 	if err != nil {
@@ -146,7 +145,7 @@ func DeleteHost(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"msg": "Host deleted and all tokens expired",
+		"msg":  "Host deleted and all tokens expired",
 		"note": "Agent will stop working - generate new token to reconnect",
 	})
 }
@@ -282,7 +281,7 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		Value     float64   `json:"value"`
 		Timestamp time.Time `json:"timestamp"`
 	}
-	
+
 	// Get all recent metrics
 	err = postgres.DB.Raw(`
 		SELECT name, value, timestamp
@@ -290,22 +289,22 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		WHERE host_id = ? AND tenant_id = ? AND timestamp > NOW() - INTERVAL '5 minutes'
 		ORDER BY timestamp DESC
 	`, hostID, host.TenantID).Scan(&allMetrics).Error
-	
+
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
 	}
-	
+
 	// Process metrics with special disk_usage handling
-	metricMap := make(map[string]struct{
+	metricMap := make(map[string]struct {
 		Value     float64
 		Timestamp time.Time
 	})
-	
+
 	for _, m := range allMetrics {
 		if m.Name == "disk_usage" {
 			// For disk_usage, always use the minimum value (root filesystem)
 			if existing, exists := metricMap[m.Name]; !exists || m.Value < existing.Value {
-				metricMap[m.Name] = struct{
+				metricMap[m.Name] = struct {
 					Value     float64
 					Timestamp time.Time
 				}{m.Value, m.Timestamp}
@@ -313,14 +312,14 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		} else {
 			// For other metrics, use the latest value
 			if existing, exists := metricMap[m.Name]; !exists || m.Timestamp.After(existing.Timestamp) {
-				metricMap[m.Name] = struct{
+				metricMap[m.Name] = struct {
 					Value     float64
 					Timestamp time.Time
 				}{m.Value, m.Timestamp}
 			}
 		}
 	}
-	
+
 	// Convert back to original format
 	metrics = nil
 	for name, data := range metricMap {
@@ -361,6 +360,84 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		}
 	}
 	// Convert UTC to IST for display
+	// Also include latest totals/used values from host_metrics table (if available)
+	var hm struct {
+		MemoryTotal float64   `json:"memory_total"`
+		MemoryUsed  float64   `json:"memory_used"`
+		DiskTotal   float64   `json:"disk_total"`
+		DiskUsed    float64   `json:"disk_used"`
+		Uptime      int64     `json:"uptime"`
+		Timestamp   time.Time `json:"timestamp"`
+	}
+	// best-effort fetch - non-fatal
+	_ = postgres.DB.Raw(`
+		SELECT memory_total, memory_used, disk_total, disk_used, timestamp
+		FROM host_metrics
+		WHERE host_id = ?
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`, hostID).Scan(&hm).Error
+	if hm.MemoryTotal != 0 {
+		result["memory_total"] = hm.MemoryTotal
+	}
+	if hm.MemoryUsed != 0 {
+		result["memory_used"] = hm.MemoryUsed
+	}
+	if hm.DiskTotal != 0 {
+		result["disk_total"] = hm.DiskTotal
+	}
+	if hm.DiskUsed != 0 {
+		result["disk_used"] = hm.DiskUsed
+	}
+	if hm.Uptime != 0 {
+		result["uptime"] = hm.Uptime
+	}
+	if hm.Timestamp.After(latestTimestamp) {
+		latestTimestamp = hm.Timestamp
+	}
+
+	// Canonicalize memory_usage and disk_usage using totals when available.
+	// Prefer server-side computation so frontend and API consumers have a single source of truth.
+	// If host_metrics contains totals, compute percentages and overwrite any existing metric values.
+	if hm.MemoryTotal > 0 && hm.MemoryUsed >= 0 {
+		computedMemUsage := (hm.MemoryUsed / hm.MemoryTotal) * 100.0
+		// clamp to [0,100]
+		if computedMemUsage < 0 {
+			computedMemUsage = 0
+		}
+		if computedMemUsage > 100 {
+			computedMemUsage = 100
+		}
+		// record computed value and flag
+		result["memory_usage"] = computedMemUsage
+		result["memory_usage_computed"] = true
+		// if there was a prior memory_usage coming from metrics table, record the delta
+		if prior, ok := result["memory_usage"].(float64); ok {
+			diff := math.Abs(prior - computedMemUsage)
+			result["memory_usage_diff"] = diff
+			if diff >= 15.0 {
+				result["memory_usage_warning"] = "Large discrepancy between snapshot and metric (>15%)"
+			}
+		}
+	}
+	if hm.DiskTotal > 0 && hm.DiskUsed >= 0 {
+		computedDiskUsage := (hm.DiskUsed / hm.DiskTotal) * 100.0
+		if computedDiskUsage < 0 {
+			computedDiskUsage = 0
+		}
+		if computedDiskUsage > 100 {
+			computedDiskUsage = 100
+		}
+		result["disk_usage"] = computedDiskUsage
+		result["disk_usage_computed"] = true
+		if prior, ok := result["disk_usage"].(float64); ok {
+			diff := math.Abs(prior - computedDiskUsage)
+			result["disk_usage_diff"] = diff
+			if diff >= 15.0 {
+				result["disk_usage_warning"] = "Large discrepancy between snapshot and metric (>15%)"
+			}
+		}
+	}
 	ist, _ := time.LoadLocation("Asia/Kolkata")
 	result["timestamp"] = latestTimestamp.In(ist).Format(time.RFC3339)
 
@@ -506,8 +583,8 @@ func CreateHostWithAgent(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"host_id": req.ID,
-		"message": "Host created. Install agent using the provided instructions.",
+		"host_id":         req.ID,
+		"message":         "Host created. Install agent using the provided instructions.",
 		"install_command": fmt.Sprintf("curl -sSL https://install.kineticops.com/agent.sh | sudo bash -s -- --host=%s --token=<your-token>", req.IP),
 	})
 }
@@ -524,7 +601,3 @@ func CleanupFailedHost(hostname string) {
 		}
 	}
 }
-
-
-
-

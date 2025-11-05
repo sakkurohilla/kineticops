@@ -8,10 +8,10 @@ import (
 
 func RegisterAlertRoutes(app *fiber.App) {
 	api := app.Group("/api/v1/alerts")
-	
+
 	// Public endpoint for stats (no auth required for dashboard)
 	api.Get("/stats", handlers.GetAlertStats)
-	
+
 	// Protected endpoints
 	apiAuth := app.Group("/api/v1/alerts", middleware.AuthRequired())
 	apiAuth.Post("/rules", handlers.CreateAlertRule)

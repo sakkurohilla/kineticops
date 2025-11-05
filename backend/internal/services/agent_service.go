@@ -12,15 +12,15 @@ import (
 )
 
 type AgentService struct {
-	agentRepo *postgres.AgentRepository
-	hostRepo  *postgres.HostRepository
+	agentRepo  *postgres.AgentRepository
+	hostRepo   *postgres.HostRepository
 	sshService *SSHService
 }
 
 func NewAgentService(agentRepo *postgres.AgentRepository, hostRepo *postgres.HostRepository, sshService *SSHService) *AgentService {
 	return &AgentService{
-		agentRepo: agentRepo,
-		hostRepo: hostRepo,
+		agentRepo:  agentRepo,
+		hostRepo:   hostRepo,
 		sshService: sshService,
 	}
 }
@@ -63,18 +63,18 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 
 	// Create host only after SSH test passes
 	host := &models.Host{
-		Hostname:     req.Hostname,
-		IP:           req.IP,
-		SSHUser:      req.Username,
-		SSHPassword:  req.Password,
-		SSHKey:       req.SSHKey,
-		SSHPort:      int64(req.Port),
-		OS:           "linux",
-		Group:        "default",
-		AgentStatus:  "installing",
-		TenantID:     1, // Default tenant
+		Hostname:    req.Hostname,
+		IP:          req.IP,
+		SSHUser:     req.Username,
+		SSHPassword: req.Password,
+		SSHKey:      req.SSHKey,
+		SSHPort:     int64(req.Port),
+		OS:          "linux",
+		Group:       "default",
+		AgentStatus: "installing",
+		TenantID:    1, // Default tenant
 	}
-	
+
 	err = s.hostRepo.Create(host)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
@@ -101,7 +101,7 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 		Status:      "pending",
 		SetupMethod: req.SetupMethod,
 	}
-	
+
 	err = s.agentRepo.Create(agent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %v", err)
@@ -138,13 +138,13 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 
 func (s *AgentService) SetupAgentAutomatic(agent *models.Agent, req *models.AgentSetupRequest) {
 	log.Printf("Starting automatic setup for agent %d", agent.ID)
-	
+
 	// Update status to installing
 	s.agentRepo.UpdateStatus(agent.ID, "installing", "Starting automatic installation...")
 
 	// Generate install script
 	script := s.GenerateInstallScript(agent.AgentToken)
-	
+
 	// Connect via SSH and execute
 	var err error
 	if req.SSHKey != "" {
@@ -290,4 +290,3 @@ func (s *AgentService) GetHostServices(hostID int) ([]models.AgentService, error
 	}
 	return s.agentRepo.GetServices(agent.ID)
 }
-

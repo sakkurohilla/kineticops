@@ -124,7 +124,7 @@ func (s *SyntheticService) executeSimpleBrowserMonitor(monitor *models.Synthetic
 	client := &http.Client{
 		Timeout: time.Duration(config.Timeout) * time.Second,
 	}
-	
+
 	resp, err := client.Get(config.URL)
 	duration := time.Since(start).Milliseconds()
 
@@ -136,16 +136,16 @@ func (s *SyntheticService) executeSimpleBrowserMonitor(monitor *models.Synthetic
 	} else {
 		result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 		result.StatusCode = resp.StatusCode
-		
+
 		// Collect basic metrics
 		metrics := map[string]interface{}{
-			"response_time": duration,
-			"status_code":   resp.StatusCode,
+			"response_time":  duration,
+			"status_code":    resp.StatusCode,
 			"content_length": resp.ContentLength,
 		}
 		metricsJSON, _ := json.Marshal(metrics)
 		result.Metrics = string(metricsJSON)
-		
+
 		resp.Body.Close()
 	}
 
@@ -216,22 +216,22 @@ func (s *SyntheticService) executeAPITestMonitor(monitor *models.SyntheticMonito
 func (s *SyntheticService) GetResults(monitorID int64, tenantID int64, start, end time.Time, limit int) ([]models.SyntheticResult, error) {
 	var results []models.SyntheticResult
 	query := postgres.DB.Where("monitor_id = ? AND tenant_id = ?", monitorID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&results).Error
 	return results, err
 }
 
 func (s *SyntheticService) GetMonitorStats(monitorID int64, tenantID int64, start, end time.Time) (map[string]interface{}, error) {
 	var stats struct {
-		TotalRuns     int64   `json:"total_runs"`
-		SuccessfulRuns int64  `json:"successful_runs"`
-		FailedRuns    int64   `json:"failed_runs"`
-		AvgDuration   float64 `json:"avg_duration"`
-		Uptime        float64 `json:"uptime"`
+		TotalRuns      int64   `json:"total_runs"`
+		SuccessfulRuns int64   `json:"successful_runs"`
+		FailedRuns     int64   `json:"failed_runs"`
+		AvgDuration    float64 `json:"avg_duration"`
+		Uptime         float64 `json:"uptime"`
 	}
 
 	query := `
@@ -243,7 +243,7 @@ func (s *SyntheticService) GetMonitorStats(monitorID int64, tenantID int64, star
 		FROM synthetic_results 
 		WHERE monitor_id = ? AND tenant_id = ? AND timestamp BETWEEN ? AND ?
 	`
-	
+
 	err := postgres.DB.Raw(query, monitorID, tenantID, start, end).Scan(&stats).Error
 	if err != nil {
 		return nil, err
@@ -279,7 +279,7 @@ func (s *SyntheticService) GetAlerts(monitorID int64, tenantID int64) ([]models.
 func (s *SyntheticService) CheckAlerts(result *models.SyntheticResult) error {
 	// Get alerts for this monitor
 	var alerts []models.SyntheticAlert
-	err := postgres.DB.Where("monitor_id = ? AND tenant_id = ? AND enabled = ?", 
+	err := postgres.DB.Where("monitor_id = ? AND tenant_id = ? AND enabled = ?",
 		result.MonitorID, result.TenantID, true).Find(&alerts).Error
 	if err != nil {
 		return err
@@ -287,7 +287,7 @@ func (s *SyntheticService) CheckAlerts(result *models.SyntheticResult) error {
 
 	for _, alert := range alerts {
 		triggered := false
-		
+
 		switch alert.Type {
 		case "failure":
 			triggered = !result.Success
@@ -328,11 +328,11 @@ func (s *SyntheticService) RecordAjaxRequest(ajaxReq *models.AjaxRequest) error 
 func (s *SyntheticService) GetBrowserSessions(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.BrowserSession, error) {
 	var sessions []models.BrowserSession
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("start_time BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("start_time DESC").Limit(limit).Find(&sessions).Error
 	return sessions, err
 }
@@ -340,11 +340,11 @@ func (s *SyntheticService) GetBrowserSessions(appID int64, tenantID int64, start
 func (s *SyntheticService) GetPageViews(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.PageView, error) {
 	var pageViews []models.PageView
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&pageViews).Error
 	return pageViews, err
 }
@@ -352,11 +352,11 @@ func (s *SyntheticService) GetPageViews(appID int64, tenantID int64, start, end 
 func (s *SyntheticService) GetJavaScriptErrors(appID int64, tenantID int64, start, end time.Time, limit int) ([]models.JavaScriptError, error) {
 	var errors []models.JavaScriptError
 	query := postgres.DB.Where("application_id = ? AND tenant_id = ?", appID, tenantID)
-	
+
 	if !start.IsZero() && !end.IsZero() {
 		query = query.Where("timestamp BETWEEN ? AND ?", start, end)
 	}
-	
+
 	err := query.Order("timestamp DESC").Limit(limit).Find(&errors).Error
 	return errors, err
 }
@@ -383,7 +383,7 @@ func (s *SyntheticService) runScheduledMonitors() {
 		var lastResult models.SyntheticResult
 		err := postgres.DB.Where("monitor_id = ?", monitor.ID).
 			Order("timestamp DESC").First(&lastResult).Error
-		
+
 		shouldRun := false
 		if err != nil {
 			// No previous results, run now

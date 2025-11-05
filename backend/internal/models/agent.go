@@ -6,21 +6,21 @@ import (
 )
 
 type Agent struct {
-	ID             int             `json:"id" db:"id"`
-	HostID         int             `json:"host_id" db:"host_id"`
-	AgentToken     string          `json:"agent_token" db:"agent_token"`
-	Status         string          `json:"status" db:"status"`
-	Version        string          `json:"version" db:"version"`
-	SetupMethod    string          `json:"setup_method" db:"setup_method"`
-	InstalledAt    *time.Time      `json:"installed_at" db:"installed_at"`
-	LastHeartbeat  *time.Time      `json:"last_heartbeat" db:"last_heartbeat"`
-	CPUUsage       float64         `json:"cpu_usage" db:"cpu_usage"`
-	MemoryUsage    float64         `json:"memory_usage" db:"memory_usage"`
-	DiskUsage      float64         `json:"disk_usage" db:"disk_usage"`
-	ServicesCount  int             `json:"services_count" db:"services_count"`
-	Metadata       json.RawMessage `json:"metadata" db:"metadata"`
-	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
+	ID            int             `json:"id" db:"id"`
+	HostID        int             `json:"host_id" db:"host_id"`
+	AgentToken    string          `json:"agent_token" db:"agent_token"`
+	Status        string          `json:"status" db:"status"`
+	Version       string          `json:"version" db:"version"`
+	SetupMethod   string          `json:"setup_method" db:"setup_method"`
+	InstalledAt   *time.Time      `json:"installed_at" db:"installed_at"`
+	LastHeartbeat *time.Time      `json:"last_heartbeat" db:"last_heartbeat"`
+	CPUUsage      float64         `json:"cpu_usage" db:"cpu_usage"`
+	MemoryUsage   float64         `json:"memory_usage" db:"memory_usage"`
+	DiskUsage     float64         `json:"disk_usage" db:"disk_usage"`
+	ServicesCount int             `json:"services_count" db:"services_count"`
+	Metadata      json.RawMessage `json:"metadata" db:"metadata"`
+	CreatedAt     time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at" db:"updated_at"`
 }
 
 type AgentMetadata struct {
@@ -71,12 +71,12 @@ type HostService struct {
 }
 
 type AgentHeartbeat struct {
-	Token       string                 `json:"token"`
-	CPUUsage    float64               `json:"cpu_usage"`
-	MemoryUsage float64               `json:"memory_usage"`
-	DiskUsage   float64               `json:"disk_usage"`
-	Services    []ServiceInfo         `json:"services"`
-	Metadata    AgentMetadata         `json:"metadata"`
+	Token       string        `json:"token"`
+	CPUUsage    float64       `json:"cpu_usage"`
+	MemoryUsage float64       `json:"memory_usage"`
+	DiskUsage   float64       `json:"disk_usage"`
+	Services    []ServiceInfo `json:"services"`
+	Metadata    AgentMetadata `json:"metadata"`
 }
 
 type ServiceInfo struct {

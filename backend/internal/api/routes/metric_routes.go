@@ -10,7 +10,7 @@ import (
 func RegisterMetricRoutes(app *fiber.App) {
 	// Public agent endpoints (no auth required)
 	app.Post("/api/v1/metrics/collect", handlers.ReceiveAgentData) // Agent data collection
-	
+
 	// Protected user endpoints
 	metrics := app.Group("/api/v1/metrics", middleware.AuthRequired())
 

@@ -15,16 +15,16 @@ type WorkflowSession struct {
 }
 
 type ServiceControlLog struct {
-	ID           int        `json:"id" db:"id"`
-	ServiceID    *int       `json:"service_id" db:"service_id"`
-	ServiceName  string     `json:"service_name" db:"service_name"`
-	HostID       int        `json:"host_id" db:"host_id"`
-	Action       string     `json:"action" db:"action"`
-	Status       string     `json:"status" db:"status"`
-	Output       string     `json:"output" db:"output"`
-	ErrorMessage string     `json:"error_message" db:"error_message"`
-	ExecutedBy   int        `json:"executed_by" db:"executed_by"`
-	ExecutedAt   time.Time  `json:"executed_at" db:"executed_at"`
+	ID           int       `json:"id" db:"id"`
+	ServiceID    *int      `json:"service_id" db:"service_id"`
+	ServiceName  string    `json:"service_name" db:"service_name"`
+	HostID       int       `json:"host_id" db:"host_id"`
+	Action       string    `json:"action" db:"action"`
+	Status       string    `json:"status" db:"status"`
+	Output       string    `json:"output" db:"output"`
+	ErrorMessage string    `json:"error_message" db:"error_message"`
+	ExecutedBy   int       `json:"executed_by" db:"executed_by"`
+	ExecutedAt   time.Time `json:"executed_at" db:"executed_at"`
 }
 
 type ControlAction string

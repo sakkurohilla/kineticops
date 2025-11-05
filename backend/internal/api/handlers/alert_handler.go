@@ -102,7 +102,6 @@ func UpdateAlert(c *fiber.Ctx) error {
 
 // You can add other handlers: trigger alert manually, list alerts, ack/close alerts, etc.
 
-
 // GetAlertStats returns alert statistics for dashboard
 func GetAlertStats(c *fiber.Ctx) error {
 	tid := c.Locals("tenant_id")
@@ -119,15 +118,15 @@ func GetAlertStats(c *fiber.Ctx) error {
 			Medium       int64 `json:"medium"`
 			Low          int64 `json:"low"`
 		}{
-			Total: 0,
-			Open: 0,
+			Total:        0,
+			Open:         0,
 			Acknowledged: 0,
-			Silenced: 0,
-			Resolved: 0,
-			Critical: 0,
-			High: 0,
-			Medium: 0,
-			Low: 0,
+			Silenced:     0,
+			Resolved:     0,
+			Critical:     0,
+			High:         0,
+			Medium:       0,
+			Low:          0,
 		}
 		return c.JSON(stats)
 	}
@@ -149,7 +148,7 @@ func GetAlertStats(c *fiber.Ctx) error {
 	// Count from existing alerts table
 	postgres.DB.Model(&models.Alert{}).Where("tenant_id = ?", tenantID).Count(&stats.Total)
 	postgres.DB.Model(&models.Alert{}).Where("tenant_id = ? AND is_resolved = false", tenantID).Count(&stats.Open)
-	
+
 	// For now, return basic stats - enhance later when you have more alert data
 	stats.Resolved = stats.Total - stats.Open
 	stats.Acknowledged = 0

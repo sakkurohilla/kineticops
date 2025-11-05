@@ -72,7 +72,7 @@ func UpdateSyntheticMonitor(c *fiber.Ctx) error {
 	}
 
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	
+
 	var updates map[string]interface{}
 	if err := c.BodyParser(&updates); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
@@ -92,7 +92,7 @@ func DeleteSyntheticMonitor(c *fiber.Ctx) error {
 	}
 
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	
+
 	if err := syntheticService.DeleteMonitor(id, tid.(int64)); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot delete monitor"})
 	}
@@ -130,7 +130,7 @@ func GetSyntheticResults(c *fiber.Ctx) error {
 
 	monitorID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
-	
+
 	start, _ := time.Parse(time.RFC3339, c.Query("start", time.Now().Add(-24*time.Hour).Format(time.RFC3339)))
 	end, _ := time.Parse(time.RFC3339, c.Query("end", time.Now().Format(time.RFC3339)))
 
@@ -149,7 +149,7 @@ func GetSyntheticStats(c *fiber.Ctx) error {
 	}
 
 	monitorID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	
+
 	start, _ := time.Parse(time.RFC3339, c.Query("start", time.Now().Add(-7*24*time.Hour).Format(time.RFC3339)))
 	end, _ := time.Parse(time.RFC3339, c.Query("end", time.Now().Format(time.RFC3339)))
 
@@ -189,7 +189,7 @@ func GetSyntheticAlerts(c *fiber.Ctx) error {
 	}
 
 	monitorID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	
+
 	alerts, err := syntheticService.GetAlerts(monitorID, tid.(int64))
 	if err != nil {
 		return c.JSON([]models.SyntheticAlert{})
@@ -299,7 +299,7 @@ func GetBrowserSessions(c *fiber.Ctx) error {
 
 	appID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
-	
+
 	start, _ := time.Parse(time.RFC3339, c.Query("start", time.Now().Add(-24*time.Hour).Format(time.RFC3339)))
 	end, _ := time.Parse(time.RFC3339, c.Query("end", time.Now().Format(time.RFC3339)))
 
@@ -319,7 +319,7 @@ func GetPageViews(c *fiber.Ctx) error {
 
 	appID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
-	
+
 	start, _ := time.Parse(time.RFC3339, c.Query("start", time.Now().Add(-24*time.Hour).Format(time.RFC3339)))
 	end, _ := time.Parse(time.RFC3339, c.Query("end", time.Now().Format(time.RFC3339)))
 
@@ -339,7 +339,7 @@ func GetJavaScriptErrors(c *fiber.Ctx) error {
 
 	appID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
-	
+
 	start, _ := time.Parse(time.RFC3339, c.Query("start", time.Now().Add(-24*time.Hour).Format(time.RFC3339)))
 	end, _ := time.Parse(time.RFC3339, c.Query("end", time.Now().Format(time.RFC3339)))
 

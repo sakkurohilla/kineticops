@@ -11,7 +11,7 @@ func ResolveUserFromInstallationToken(token string) (*models.InstallationToken, 
 	err := postgres.DB.Where("token = ?", token).
 		Preload("User").
 		First(&installToken).Error
-	
+
 	if err != nil {
 		return nil, err
 	}
