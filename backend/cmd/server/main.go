@@ -98,6 +98,9 @@ func main() {
 	shutdownTelemetry := telemetry.InitTelemetry()
 	defer shutdownTelemetry()
 
+	// Start Prometheus + pprof on :9090 for metrics and profiling
+	telemetry.StartPrometheusServer(":9090")
+
 	// START METRIC COLLECTOR WORKER - ADD THIS
 	workers.StartMetricCollector()
 

@@ -83,7 +83,11 @@ func WsHandler(hub *Hub, jwtSecret string) func(*websocket.Conn) {
 		// send explicit auth_ok so clients can rely on auth before using socket
 		_ = c.WriteMessage(websocket.TextMessage, []byte("{\"type\":\"auth_ok\"}"))
 
-		client := &Client{hub: hub, conn: c, send: make(chan []byte, 256), userID: userID}
+		client := &Client{hub: hub, conn: c, send: make(chan []byte, 256), userID: userID,
+			// sensible defaults: 50 messages/sec with a small burst
+			limiterRate:  50.0,
+			limiterBurst: 100.0,
+		}
 		hub.register <- client
 		go client.WritePump()
 		client.ReadPump()

@@ -2,9 +2,11 @@ package websocket
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 )
 
 type Client struct {
@@ -12,6 +14,38 @@ type Client struct {
 	conn   *websocket.Conn
 	send   chan []byte
 	userID int64
+	// simple token-bucket limiter fields (tokens refill over time)
+	limiterMu     sync.Mutex
+	limiterTokens float64
+	limiterLast   time.Time
+	limiterRate   float64 // tokens per second
+	limiterBurst  float64 // max tokens
+}
+
+// AllowSend attempts to consume `n` tokens from the client's bucket and
+// returns true when there are enough tokens. It is safe for concurrent use.
+func (c *Client) AllowSend(n int) bool {
+	c.limiterMu.Lock()
+	defer c.limiterMu.Unlock()
+	now := time.Now()
+	if c.limiterLast.IsZero() {
+		c.limiterLast = now
+		// initialize tokens to full burst on first use
+		c.limiterTokens = c.limiterBurst
+	}
+	elapsed := now.Sub(c.limiterLast).Seconds()
+	if elapsed > 0 {
+		c.limiterTokens += elapsed * c.limiterRate
+		if c.limiterTokens > c.limiterBurst {
+			c.limiterTokens = c.limiterBurst
+		}
+		c.limiterLast = now
+	}
+	if float64(n) <= c.limiterTokens {
+		c.limiterTokens -= float64(n)
+		return true
+	}
+	return false
 }
 
 func (c *Client) ReadPump() {
@@ -81,6 +115,8 @@ func (c *Client) WritePump() {
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				// log write error
 				log.Printf("[WS CLIENT] write error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
+				telemetry.IncWSSendErrors(nil, 1)
+				telemetry.IncClientDisconnect()
 				// If write fails, unregister and close connection
 				select {
 				case c.hub.unregister <- c:

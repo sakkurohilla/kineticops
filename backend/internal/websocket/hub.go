@@ -6,6 +6,8 @@ import (
 	"log"
 	"runtime"
 	"sync"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 )
 
 // No need to import github.com/gofiber/contrib/websocket here!
@@ -74,15 +76,24 @@ func (h *Hub) Run() {
 					if targetUserID != -1 && client.userID != targetUserID {
 						continue
 					}
+					// Respect per-client token-bucket limiter. If the client is over its
+					// send rate, count a drop and skip sending to that client.
+					if !client.AllowSend(1) {
+						telemetry.IncClientSendDrop()
+						continue
+					}
 					select {
 					case client.send <- msg:
 					default:
 						// If client's buffer is full, drop the client to reclaim resources
+						telemetry.IncClientDisconnect()
 						close(client.send)
 						delete(h.clients, client)
 					}
 				}
 				h.mu.Unlock()
+				// update hub queue length metric
+				telemetry.SetHubQueueLength(len(h.broadcastQueue))
 			}
 		}(i)
 	}
@@ -100,6 +111,7 @@ func (h *Hub) Run() {
 			}
 			h.clients[client] = true
 			fmt.Printf("[WS HUB] registered client user=%d, total_clients=%d\n", client.userID, len(h.clients))
+			telemetry.SetTotalClients(len(h.clients))
 			// send warm-up messages (last known metrics) to the newly registered client
 			// best-effort: skip warming when lastMessages map is too large
 			if len(h.lastMessages) <= h.maxLastMessages {
@@ -118,15 +130,18 @@ func (h *Hub) Run() {
 				delete(h.clients, client)
 				close(client.send)
 				fmt.Printf("[WS HUB] unregistered client user=%d, total_clients=%d\n", client.userID, len(h.clients))
+				telemetry.SetTotalClients(len(h.clients))
 			}
 			h.mu.Unlock()
 		case message := <-h.broadcast:
 			// enqueue into broadcastQueue; drop if queue is full to avoid blocking
 			select {
 			case h.broadcastQueue <- message:
+				telemetry.SetHubQueueLength(len(h.broadcastQueue))
 			default:
 				// queue full — drop message and log
 				log.Printf("[WS HUB] broadcast queue full, dropping message\n")
+				telemetry.IncBroadcastQueueDrop()
 			}
 		}
 	}
@@ -138,11 +153,16 @@ func (h *Hub) Broadcast(msg []byte) {
 	defer h.mu.Unlock()
 
 	for c := range h.clients {
+		if !c.AllowSend(1) {
+			telemetry.IncClientSendDrop()
+			continue
+		}
 		select {
 		case c.send <- msg:
 		default:
 			// if send would block, remove the client to avoid blocking the hub
 			fmt.Printf("[WS HUB] removing client user=%d due to blocked send\n", c.userID)
+			telemetry.IncClientDisconnect()
 			close(c.send)
 			delete(h.clients, c)
 		}
