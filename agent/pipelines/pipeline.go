@@ -21,14 +21,21 @@ type PipelineManager struct {
 	droppedEvents uint64
 }
 
-// NewPipelineManager creates a new pipeline manager
-func NewPipelineManager(output outputs.Output, logger *utils.Logger) *PipelineManager {
+// NewPipelineManager creates a new pipeline manager with configurable batching.
+func NewPipelineManager(output outputs.Output, logger *utils.Logger, batchSize int, batchTime time.Duration) *PipelineManager {
+	if batchSize <= 0 {
+		batchSize = 200
+	}
+	if batchTime <= 0 {
+		batchTime = 10 * time.Second
+	}
+
 	return &PipelineManager{
 		output:    output,
 		logger:    logger,
 		eventChan: make(chan map[string]interface{}, 1000),
-		batchSize: 100,
-		batchTime: 5 * time.Second,
+		batchSize: batchSize,
+		batchTime: batchTime,
 		stopChan:  make(chan struct{}),
 	}
 }

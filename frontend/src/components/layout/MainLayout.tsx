@@ -1,6 +1,7 @@
 import React, { ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import WsOverlay from '../common/WsOverlay';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -32,6 +33,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             </div>
           </div>
         </footer>
+        {/* WebSocket diagnostic overlay */}
+        <WsOverlay />
       </div>
     </div>
   );

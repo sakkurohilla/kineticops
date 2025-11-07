@@ -8,11 +8,12 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	redisrepo "github.com/sakkurohilla/kineticops/backend/internal/repository/redis"
+	"github.com/sakkurohilla/kineticops/backend/internal/services"
 	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 )
 
 func RegisterHealthRoutes(app *fiber.App) {
-	app.Get("/health", func(c *fiber.Ctx) error {
+	handler := func(c *fiber.Ctx) error {
 		status := fiber.Map{"status": "ok"}
 
 		// PostgreSQL health check
@@ -43,9 +44,21 @@ func RegisterHealthRoutes(app *fiber.App) {
 		// WebSocket clients count
 		status["ws_clients"] = ws.GetGlobalClientCount()
 
+		// Metric batcher status (queue length + last successful flush)
+		if qlen, last := services.GetMetricBatcherStatus(); qlen > 0 || last != "" {
+			status["metrics_batcher_queue_len"] = qlen
+			status["metrics_batcher_last_flush"] = last
+		} else {
+			status["metrics_batcher_queue_len"] = 0
+			status["metrics_batcher_last_flush"] = ""
+		}
+
 		// MongoDB health check (optional - if you want to add it)
 		// Add MongoDB check here if needed
 
 		return c.JSON(status)
-	})
+	}
+
+	app.Get("/health", handler)
+	app.Get("/api/v1/health", handler)
 }

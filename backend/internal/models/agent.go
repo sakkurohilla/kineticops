@@ -21,6 +21,8 @@ type Agent struct {
 	Metadata      json.RawMessage `json:"metadata" db:"metadata"`
 	CreatedAt     time.Time       `json:"created_at" db:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at" db:"updated_at"`
+	Revoked       bool            `json:"revoked" db:"revoked"`
+	RevokedAt     *time.Time      `json:"revoked_at" db:"revoked_at"`
 }
 
 type AgentMetadata struct {

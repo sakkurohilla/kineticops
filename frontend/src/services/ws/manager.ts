@@ -11,6 +11,18 @@ let connectAttempts = 0;
 let reconnectTimer: number | null = null;
 
 function deriveBaseWs() {
+  // Prefer deriving the WS endpoint from the browser location when available.
+  // This makes the built SPA portable: opening the app on another host will
+  // automatically connect back to the same origin for WebSocket upgrades.
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.host) {
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      return `${proto}://${window.location.host}/ws`;
+    }
+  } catch (e) {
+    // fallthrough to API_BASE/config
+  }
+
   let baseWs = config.wsUrl.replace(/\/?$/, '');
   try {
     if (API_BASE) {
@@ -137,6 +149,10 @@ export function subscribe(handler: MessageHandler) {
   };
 }
 
+export function getSubscriberCount() {
+  return subscribers.size;
+}
+
 export function publish(data: any) {
   if (!ws) return false;
   try {
@@ -156,4 +172,4 @@ export function disconnect() {
   wsStatus.setWsStatus('disconnected');
 }
 
-export default { subscribe, publish, disconnect };
+export default { subscribe, publish, disconnect, getSubscriberCount };

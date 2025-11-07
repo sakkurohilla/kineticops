@@ -4,9 +4,11 @@ import (
 	"context"
 
 	"github.com/sakkurohilla/kineticops/agent/config"
+	"github.com/sakkurohilla/kineticops/agent/modules/logs"
 	"github.com/sakkurohilla/kineticops/agent/modules/metrics"
 	"github.com/sakkurohilla/kineticops/agent/outputs"
 	"github.com/sakkurohilla/kineticops/agent/pipelines"
+	"github.com/sakkurohilla/kineticops/agent/state"
 	"github.com/sakkurohilla/kineticops/agent/utils"
 )
 
@@ -15,6 +17,7 @@ type Agent struct {
 	logger   *utils.Logger
 	pipeline *pipelines.PipelineManager
 	modules  []Module
+	stateMgr *state.Manager
 }
 
 type Module interface {
@@ -31,12 +34,24 @@ func NewAgent(cfg *config.Config, logger *utils.Logger) (*Agent, error) {
 		return nil, err
 	}
 
-	// Create pipeline
-	pipeline := pipelines.NewPipelineManager(output, logger)
+	// Create pipeline (batching controlled by agent config)
+	pipeline := pipelines.NewPipelineManager(output, logger, cfg.Agent.BatchSize, cfg.Agent.BatchTime)
+
+	// Create state manager for modules that need persistent offsets
+	stateDir := "/var/lib/kineticops-agent/state"
+	stateMgr, err := state.NewManager(stateDir)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create modules
 	var modules []Module
-	
+
+	// Debug: log whether logs module parsed from config
+	if logger != nil {
+		logger.Info("Logs module configured", "enabled", cfg.Modules.Logs.Enabled, "inputs", len(cfg.Modules.Logs.Inputs))
+	}
+
 	// System metrics module
 	if cfg.Modules.System.Enabled {
 		systemModule, err := metrics.NewSystemModule(&cfg.Modules.System, pipeline, logger)
@@ -46,11 +61,21 @@ func NewAgent(cfg *config.Config, logger *utils.Logger) (*Agent, error) {
 		modules = append(modules, systemModule)
 	}
 
+	// Logs module (file tailing)
+	if cfg.Modules.Logs.Enabled {
+		logsModule, err := logs.NewLogsModule(&cfg.Modules.Logs, pipeline, stateMgr, logger)
+		if err != nil {
+			return nil, err
+		}
+		modules = append(modules, logsModule)
+	}
+
 	return &Agent{
 		config:   cfg,
 		logger:   logger,
 		pipeline: pipeline,
 		modules:  modules,
+		stateMgr: stateMgr,
 	}, nil
 }
 

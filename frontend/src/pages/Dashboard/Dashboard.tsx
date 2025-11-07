@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
@@ -101,36 +101,67 @@ const Dashboard: React.FC = () => {
   
   // const { data: metricsData } = useMetrics('1h', undefined, true);
 
-  // Real-time updates via WebSocket
-  useWebsocket((payload: any) => {
-    console.log('WebSocket payload received:', payload);
-    if (payload?.host_id) {
-      setHostMetrics(prev => ({
-        ...prev,
-        [payload.host_id]: {
-          cpu_usage: payload.cpu_usage || 0,
-          // prefer explicit totals/used bytes when possible
-          memory_usage: payload.memory_usage ?? null,
-          memory_total: payload.memory_total ?? payload.memory_total_bytes ?? null,
-          memory_used: payload.memory_used ?? payload.memory_used_bytes ?? null,
-          memory_available: payload.memory_available ?? payload.memory_available_bytes ?? null,
-          disk_usage: payload.disk_usage ?? null,
-          disk_total: payload.disk_total ?? payload.disk_total_bytes ?? null,
-          disk_used: payload.disk_used ?? payload.disk_used_bytes ?? null,
-          network_in: payload.network_in || 0,
-          network_out: payload.network_out || 0,
-          timestamp: payload.timestamp || new Date().toISOString(),
-        }
-      }));
+  // Keep a ref of last hosts list to avoid refetching when unchanged
+  const lastHostsRef = useRef<number[] | null>(null);
+  // pending metrics buffer for debounce
+  const pendingMetricsRef = useRef<Record<number, any>>({});
+  const debounceTimerRef = useRef<number | null>(null);
+  const DEBOUNCE_MS = 200;
 
-      // Force re-fetch hosts to get updated data (keeps cards refreshed)
-      fetchDashboardData();
+  // Real-time updates via WebSocket - buffer updates and apply debounced
+  useWebsocket((payload: any) => {
+    if (!payload || !payload?.host_id) return;
+
+    // Normalize minimal payload
+    const normalized = {
+      cpu_usage: payload.cpu_usage || 0,
+      memory_usage: payload.memory_usage ?? null,
+      memory_total: payload.memory_total ?? payload.memory_total_bytes ?? null,
+      memory_used: payload.memory_used ?? payload.memory_used_bytes ?? null,
+      memory_available: payload.memory_available ?? payload.memory_available_bytes ?? null,
+      disk_usage: payload.disk_usage ?? null,
+      disk_total: payload.disk_total ?? payload.disk_total_bytes ?? null,
+      disk_used: payload.disk_used ?? payload.disk_used_bytes ?? null,
+      network_in: payload.network_in || 0,
+      network_out: payload.network_out || 0,
+      timestamp: payload.timestamp || new Date().toISOString(),
+    } as any;
+
+    // Buffer into pending metrics
+    pendingMetricsRef.current = {
+      ...pendingMetricsRef.current,
+      [payload.host_id]: {
+        ...(pendingMetricsRef.current[payload.host_id] || {}),
+        ...normalized,
+      }
+    };
+
+    // Schedule debounce flush
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
     }
+    debounceTimerRef.current = window.setTimeout(() => {
+      const toApply = { ...pendingMetricsRef.current };
+      pendingMetricsRef.current = {};
+      debounceTimerRef.current = null;
+
+      // merge into hostMetrics and recompute once
+      setHostMetrics(prev => {
+        const merged = { ...prev, ...toApply };
+        recomputeStats(hosts, merged, alerts);
+        return merged;
+      });
+    }, DEBOUNCE_MS) as unknown as number;
   });
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 10000); // Refresh every 10s for auto-discovery
+    const interval = setInterval(() => {
+      fetchDashboardData();
+      fetchHealth();
+    }, 10000); // Refresh every 10s for auto-discovery + health
+    // initial health fetch
+    fetchHealth();
     return () => clearInterval(interval);
   }, []);
 
@@ -159,6 +190,12 @@ const Dashboard: React.FC = () => {
       }
       setHosts(hostsData || []);
 
+      // Avoid re-fetching per-host metrics if host list didn't change
+      const hostIds = (hostsData || []).map((h: any) => h.id).sort();
+      const last = lastHostsRef.current;
+      const sameHosts = last && JSON.stringify(last) === JSON.stringify(hostIds);
+      lastHostsRef.current = hostIds;
+
       // Fetch alerts
       try {
         const alertsData = await apiClient.get('/alerts?limit=10');
@@ -172,27 +209,53 @@ const Dashboard: React.FC = () => {
       const onlineHosts = hostsData.filter((h: any) => h.agent_status === 'online').length;
       const offlineHosts = totalHosts - onlineHosts;
       
-      // Fetch latest metrics for each host
-      const metricsPromises = (hostsData || []).map(async (host: any) => {
-        try {
-          const metrics = await hostService.getLatestMetrics(host.id);
-          return { hostId: host.id, metrics };
-        } catch (err) {
-          // Try direct API call for metrics
+      let metricsResults: Array<{ hostId: number; metrics: any }>; 
+      if (sameHosts && Object.keys(hostMetrics).length > 0) {
+        // Host list unchanged and we already have metrics from websocket/cache - reuse
+        metricsResults = (hostsData || []).map((h: any) => ({ hostId: h.id, metrics: hostMetrics[h.id] || null }));
+      } else {
+        // Try bulk endpoint first (new backend route)
           try {
-            const response = await fetch(`http://localhost:8080/api/v1/hosts/${host.id}/metrics/latest`);
-            if (response.ok) {
-              const metrics = await response.json();
-              return { hostId: host.id, metrics };
-            }
-          } catch (e) {
-            console.log('Direct metrics API also failed for host', host.id);
+          const allLatest: any = await apiClient.get(`/hosts/metrics/latest/all?limit=${hostIds.length}`);
+          // support both array and map shapes returned by backend
+          if (Array.isArray(allLatest)) {
+            const map: Record<number, any> = {};
+            (allLatest as any[]).forEach((m: any) => { if (m && m.host_id) map[m.host_id] = m; });
+            metricsResults = (hostsData || []).map((h: any) => ({ hostId: h.id, metrics: map[h.id] || null }));
+          } else {
+            metricsResults = (hostsData || []).map((h: any) => ({ hostId: h.id, metrics: allLatest[h.id] || null }));
           }
-          return { hostId: host.id, metrics: null };
-        }
-      });
+        } catch (e) {
+          // Fallback: per-host fetch with timeout
+          const timeoutMs = 1500;
+          const perHost = (hostsData || []).map((host: any) => {
+            const p = (async () => {
+              try {
+                const metrics = await hostService.getLatestMetrics(host.id);
+                return { hostId: host.id, metrics };
+              } catch (err) {
+                try {
+                  const response = await fetch(`http://localhost:8080/api/v1/hosts/${host.id}/metrics/latest`);
+                  if (response.ok) {
+                    const metrics = await response.json();
+                    return { hostId: host.id, metrics };
+                  }
+                } catch (e) {
+                  // ignore
+                }
+                return { hostId: host.id, metrics: null };
+              }
+            })();
+            // apply timeout
+            return Promise.race([
+              p,
+              new Promise(resolve => setTimeout(() => resolve({ hostId: host.id, metrics: null }), timeoutMs))
+            ] as any) as Promise<{ hostId: number; metrics: any }>;
+          });
 
-      const metricsResults = await Promise.all(metricsPromises);
+          metricsResults = await Promise.all(perHost);
+        }
+      }
       const metricsMap: Record<number, any> = {};
       let totalCpu = 0, totalMemory = 0, totalDisk = 0, validMetrics = 0;
 
@@ -228,7 +291,8 @@ const Dashboard: React.FC = () => {
         }
       });
 
-      setHostMetrics(metricsMap);
+      // Merge metrics into existing hostMetrics state to preserve websocket updates
+      setHostMetrics(prev => ({ ...prev, ...metricsMap }));
 
       const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : 0;
       const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
@@ -253,6 +317,68 @@ const Dashboard: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Fetch /health to get metrics_batcher info
+  const [batcherQueueLen, setBatcherQueueLen] = useState<number | null>(null);
+  const [batcherLastFlush, setBatcherLastFlush] = useState<string | null>(null);
+  const fetchHealth = async () => {
+    try {
+      const h: any = await apiClient.get('/health');
+      if (h) {
+        setBatcherQueueLen(h.metrics_batcher_queue_len ?? null);
+        setBatcherLastFlush(h.metrics_batcher_last_flush ?? null);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // Recompute stats locally when we get websocket updates (keeps UI responsive)
+  const recomputeStats = (hostsList: Host[] | null, metricsMap: Record<number, any>, alertsList: Alert[]) => {
+    const hostsArr = hostsList || hosts;
+  // metricsKeys was unused; compute stats directly from hosts list and metricsMap
+    let totalCpu = 0, totalMemory = 0, totalDisk = 0, validMetrics = 0;
+    hostsArr.forEach((host: any) => {
+      const m = metricsMap[host.id];
+      if (!m) return;
+      let memPercent = m.memory_usage;
+      if ((m.memory_total && m.memory_used) || (m.memory_total_bytes && m.memory_used_bytes)) {
+        const total = m.memory_total || m.memory_total_bytes;
+        const used = m.memory_used || m.memory_used_bytes;
+        if (total && used) memPercent = (used / total) * 100;
+      }
+      let diskPercent = m.disk_usage;
+      if ((m.disk_total && m.disk_used) || (m.disk_total_bytes && m.disk_used_bytes)) {
+        const dtotal = m.disk_total || m.disk_total_bytes;
+        const dused = m.disk_used || m.disk_used_bytes;
+        if (dtotal && dused) diskPercent = (dused / dtotal) * 100;
+      }
+      totalCpu += m.cpu_usage || 0;
+      totalMemory += (typeof memPercent === 'number' ? memPercent : 0);
+      totalDisk += (typeof diskPercent === 'number' ? diskPercent : 0);
+      validMetrics++;
+    });
+
+    const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : 0;
+    const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
+    const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : 0;
+    const totalHosts = hostsArr.length;
+    const onlineHosts = hostsArr.filter((h: any) => h.agent_status === 'online').length;
+    const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 0;
+
+    setStats(prev => ({
+      ...prev,
+      totalHosts,
+      onlineHosts,
+      offlineHosts: totalHosts - onlineHosts,
+      criticalAlerts: (alertsList || alerts).filter(a => a.severity === 'critical').length,
+      warningAlerts: (alertsList || alerts).filter(a => a.severity === 'warning' || a.severity === 'high').length,
+      avgCpuUsage,
+      avgMemoryUsage,
+      avgDiskUsage,
+      systemHealth,
+    }));
   };
 
 
@@ -326,6 +452,21 @@ const Dashboard: React.FC = () => {
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
+
+        {/* Ingestion / batcher status */}
+        <div className="flex justify-end">
+          <div className="text-xs text-gray-600 flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <span className="font-medium text-gray-700">Ingest:</span>
+              <span className="px-2 py-1 rounded-md bg-white/10 text-sm">
+                {batcherQueueLen !== null ? `${batcherQueueLen} queued` : '—'}
+              </span>
+            </div>
+            <div className="text-gray-500">
+              Last flush: {batcherLastFlush ? new Date(batcherLastFlush).toLocaleString() : '—'}
+            </div>
+          </div>
+        </div>
 
         {/* Compact Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15
+    image: timescale/timescaledb:latest-pg15
     environment:
       POSTGRES_USER: akash
       POSTGRES_PASSWORD: akash
@@ -36,6 +36,34 @@ services:
       - "9092:9092"
       - "8082:8082"
       - "9644:9644"
+
+  # Elasticsearch and Kibana removed from compose by user request.
+  backend:
+    image: golang:1.25
+    working_dir: /go/src/app
+    volumes:
+      - ./backend:/go/src/app
+    command: bash -lc "cd /go/src/app && go run ./cmd/server"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+      - redpanda
+    env_file:
+      - ./backend/.env
+
+  migrator:
+    image: golang:1.25
+    working_dir: /go/src/app
+    volumes:
+      - ./backend:/go/src/app
+    command: bash -lc "cd /go/src/app && go run ./cmd/migrator -dir ./migrations/postgres"
+    depends_on:
+      - postgres
+    environment:
+      - MIGRATE_DSN=host=postgres port=5432 user=akash password=akash dbname=kineticops sslmode=disable
 
 volumes:
   pgdata:

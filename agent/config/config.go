@@ -24,6 +24,9 @@ type AgentConfig struct {
 	Hostname string        `yaml:"hostname"`
 	Period   time.Duration `yaml:"period"`
 	Tags     []string      `yaml:"tags"`
+	// Pipeline batching controls
+	BatchSize int           `yaml:"batch_size"`
+	BatchTime time.Duration `yaml:"batch_time"`
 }
 
 // OutputConfig defines where to send data
@@ -42,11 +45,11 @@ type KineticOpsOutput struct {
 
 // TLSConfig for secure connections
 type TLSConfig struct {
-	Enabled            bool   `yaml:"enabled"`
-	VerificationMode   string `yaml:"verification_mode"`
+	Enabled                bool     `yaml:"enabled"`
+	VerificationMode       string   `yaml:"verification_mode"`
 	CertificateAuthorities []string `yaml:"certificate_authorities"`
-	Certificate        string `yaml:"certificate"`
-	Key                string `yaml:"key"`
+	Certificate            string   `yaml:"certificate"`
+	Key                    string   `yaml:"key"`
 }
 
 // ModulesConfig enables/disables data collection modules
@@ -68,9 +71,9 @@ type SystemModule struct {
 }
 
 type CPUConfig struct {
-	Enabled   bool `yaml:"enabled"`
-	PerCPU    bool `yaml:"percpu"`
-	TotalCPU  bool `yaml:"totalcpu"`
+	Enabled  bool `yaml:"enabled"`
+	PerCPU   bool `yaml:"percpu"`
+	TotalCPU bool `yaml:"totalcpu"`
 }
 
 type MemoryConfig struct {
@@ -92,12 +95,12 @@ type LogsModule struct {
 }
 
 type LogInput struct {
-	Type        string            `yaml:"type"`
-	Paths       []string          `yaml:"paths"`
-	Exclude     []string          `yaml:"exclude"`
-	Fields      map[string]string `yaml:"fields"`
-	Multiline   MultilineConfig   `yaml:"multiline"`
-	Processors  []ProcessorConfig `yaml:"processors"`
+	Type       string            `yaml:"type"`
+	Paths      []string          `yaml:"paths"`
+	Exclude    []string          `yaml:"exclude"`
+	Fields     map[string]string `yaml:"fields"`
+	Multiline  MultilineConfig   `yaml:"multiline"`
+	Processors []ProcessorConfig `yaml:"processors"`
 }
 
 type MultilineConfig struct {
@@ -113,7 +116,7 @@ type ProcessorConfig struct {
 
 // DockerModule collects Docker container data
 type DockerModule struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool          `yaml:"enabled"`
 	Period  time.Duration `yaml:"period"`
 }
 
@@ -160,13 +163,15 @@ func Load(path string) (*Config, error) {
 // getDefaultConfig returns a default configuration
 func getDefaultConfig() *Config {
 	hostname, _ := os.Hostname()
-	
+
 	config := &Config{
 		Agent: AgentConfig{
-			Name:     "kineticops-agent",
-			Hostname: hostname,
-			Period:   30 * time.Second,
-			Tags:     []string{},
+			Name:      "kineticops-agent",
+			Hostname:  hostname,
+			Period:    30 * time.Second,
+			Tags:      []string{},
+			BatchSize: 500,
+			BatchTime: 30 * time.Second,
 		},
 		Output: OutputConfig{
 			KineticOps: KineticOpsOutput{
@@ -202,8 +207,20 @@ func getDefaultConfig() *Config {
 				Enabled: false,
 				Inputs: []LogInput{
 					{
-						Type:  "log",
+						Type: "log",
+						// Default to tail common logs but exclude system-wide aggregated logs,
+						// journals and any agent binary/backups to avoid feedback loops and
+						// uncontrolled disk growth.
 						Paths: []string{"/var/log/*.log"},
+						Exclude: []string{
+							"/var/log/syslog",
+							"/var/log/messages",
+							"/var/log/kern.log",
+							"/var/log/journal/*",
+							"/var/log/*.gz",
+							"/var/log/*-[0-9]*",
+							"/opt/kineticops-agent/*",
+						},
 					},
 				},
 			},
@@ -227,23 +244,29 @@ func applyDefaults(config *Config) {
 	if config.Agent.Period == 0 {
 		config.Agent.Period = 30 * time.Second
 	}
-	
+	if config.Agent.BatchSize == 0 {
+		config.Agent.BatchSize = 500
+	}
+	if config.Agent.BatchTime == 0 {
+		config.Agent.BatchTime = 30 * time.Second
+	}
+
 	if config.Output.KineticOps.Timeout == 0 {
 		config.Output.KineticOps.Timeout = 30 * time.Second
 	}
-	
+
 	if config.Output.KineticOps.MaxRetry == 0 {
 		config.Output.KineticOps.MaxRetry = 3
 	}
-	
+
 	if config.Modules.System.Period == 0 {
 		config.Modules.System.Period = 30 * time.Second
 	}
-	
+
 	if config.Modules.Docker.Period == 0 {
 		config.Modules.Docker.Period = 30 * time.Second
 	}
-	
+
 	if config.Logging.Level == "" {
 		config.Logging.Level = "info"
 	}
@@ -254,11 +277,11 @@ func validate(config *Config) error {
 	if len(config.Output.KineticOps.Hosts) == 0 {
 		return fmt.Errorf("at least one output host must be specified")
 	}
-	
+
 	if config.Agent.Period < time.Second {
 		return fmt.Errorf("agent period must be at least 1 second")
 	}
-	
+
 	return nil
 }
 
@@ -268,6 +291,6 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	return ioutil.WriteFile(path, data, 0644)
 }

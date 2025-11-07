@@ -1,10 +1,15 @@
 package postgres
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
+	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 )
 
 type AgentRepository struct {
@@ -30,6 +35,19 @@ func (r *AgentRepository) GetByToken(token string) (*models.Agent, error) {
 	var agent models.Agent
 	query := `SELECT * FROM agents WHERE token = $1`
 	err := r.db.Get(&agent, query, token)
+	if err != nil {
+		return nil, err
+	}
+	return &agent, nil
+}
+
+// GetAgentByToken is a convenience wrapper that uses the package-level SqlxDB
+// to resolve an agent by its token. This is handy for middleware or callers
+// that don't have an AgentRepository instance.
+func GetAgentByToken(token string) (*models.Agent, error) {
+	var agent models.Agent
+	query := `SELECT * FROM agents WHERE token = $1`
+	err := SqlxDB.Get(&agent, query, token)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +88,15 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		return err
 	}
 
-	// Update host metrics
+	// Update host metrics - use upsert to avoid duplicate-key errors when a row already exists
 	_, err = tx.Exec(`
 		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, disk_usage, timestamp)
-		VALUES ($1, $2, $3, $4, $5)`,
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (host_id) DO UPDATE SET
+			cpu_usage = EXCLUDED.cpu_usage,
+			memory_usage = EXCLUDED.memory_usage,
+			disk_usage = EXCLUDED.disk_usage,
+			timestamp = EXCLUDED.timestamp`,
 		hostID, heartbeat.CPUUsage, heartbeat.MemoryUsage, heartbeat.DiskUsage, time.Now())
 	if err != nil {
 		return err
@@ -102,7 +125,29 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Broadcast a lightweight metric update for realtime UI updates
+	payload := map[string]interface{}{
+		"type":         "metric",
+		"host_id":      hostID,
+		"cpu_usage":    heartbeat.CPUUsage,
+		"memory_usage": heartbeat.MemoryUsage,
+		"disk_usage":   heartbeat.DiskUsage,
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+	}
+	if b, jerr := json.Marshal(payload); jerr == nil {
+		fmt.Printf("[WS BROADCAST] host=%d heartbeat\n", hostID)
+		if gh := ws.GetGlobalHub(); gh != nil {
+			gh.RememberMessage(b)
+		}
+		ws.BroadcastToClients(b)
+		telemetry.IncWSBroadcast(context.Background(), 1)
+	}
+
+	return nil
 }
 
 func (r *AgentRepository) UpdateStatus(id int, status string, log string) error {
@@ -146,5 +191,12 @@ func (r *AgentRepository) UpdateInstallLog(id int, status, logs, errorMsg string
 		SET status = $1, logs = $2, error_message = $3, completed_at = CURRENT_TIMESTAMP
 		WHERE id = $1`
 	_, err := r.db.Exec(query, status, logs, errorMsg, id)
+	return err
+}
+
+// UpdateRevoked sets the revoked flag for an agent record.
+func (r *AgentRepository) UpdateRevoked(agentID int, revoked bool) error {
+	query := `UPDATE agents SET revoked = $1, revoked_at = CASE WHEN $1 THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	_, err := r.db.Exec(query, revoked, agentID)
 	return err
 }

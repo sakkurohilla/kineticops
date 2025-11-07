@@ -21,14 +21,14 @@ export interface LogFilters {
 }
 
 class LogsService {
-  async searchLogs(filters: LogFilters = {}): Promise<LogEntry[]> {
+  async searchLogs(filters: LogFilters = {}): Promise<{ total: number; limit: number; skip: number; logs: LogEntry[] }> {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         params.append(key, value.toString());
       }
     });
-    
+
     return await apiClient.get(`/logs?${params.toString()}`);
   }
 

@@ -190,13 +190,18 @@ TOKEN="%s"
 SERVER_URL="http://localhost:8080"
 
 while true; do
-    # Collect system metrics with error handling
-    CPU_USAGE=$(awk '/cpu /{u=$2+$4; t=$2+$3+$4+$5; if (NR==1){u1=u; t1=t;} else print (u-u1) * 100 / (t-t1); exit}' <(grep 'cpu ' /proc/stat; sleep 1; grep 'cpu ' /proc/stat) 2>/dev/null || echo "0")
-    MEMORY_USAGE=$(free | awk '/^Mem:/{printf "%.1f", $3/$2 * 100.0}' 2>/dev/null || echo "0")
-    DISK_USAGE=$(df / | awk 'NR==2{gsub(/%/,""); print $5}' 2>/dev/null || echo "0")
-    
-    # Get running services
-    SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
+	# Collect system metrics with improved accuracy and robustness
+	# CPU usage as fraction (0..1) computed from /proc/stat
+	CPU_USAGE=$(bash -lc 'read cpu user1 nice1 system1 idle1 rest < /proc/stat; sleep 1; read cpu user2 nice2 system2 idle2 rest < /proc/stat; prev_total=$((user1+nice1+system1+idle1)); total=$((user2+nice2+system2+idle2)); idle_diff=$((idle2-idle1)); total_diff=$((total-prev_total)); if [ "$total_diff" -gt 0 ]; then awk -v td="$total_diff" -v id="$idle_diff" "BEGIN { printf "%.4f", (td-id)/td }"; else echo "0"; fi' 2>/dev/null || echo "0")
+
+	# Memory usage as percent (0..100) using /proc/meminfo for better accuracy
+	MEMORY_USAGE=$(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END { if(total>0) printf "%.1f", (total-avail)/total*100; else print "0" }' /proc/meminfo 2>/dev/null || echo "0")
+
+	# Disk usage percent for root mount as float (0..100)
+	DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9.' 2>/dev/null || echo "0")
+
+	# Get running services (top 10) - keep existing approach
+	SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
     
     # Send heartbeat
     curl -s -X POST "$SERVER_URL/api/v1/agents/heartbeat" \

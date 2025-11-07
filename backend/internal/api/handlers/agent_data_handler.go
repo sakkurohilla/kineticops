@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -10,6 +12,8 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
+	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 )
 
 type AgentEvent struct {
@@ -17,6 +21,8 @@ type AgentEvent struct {
 	Agent     map[string]interface{} `json:"agent"`
 	Host      map[string]interface{} `json:"host"`
 	Event     map[string]interface{} `json:"event"`
+	Log       map[string]interface{} `json:"log"`
+	Message   string                 `json:"message"`
 	System    map[string]interface{} `json:"system"`
 }
 
@@ -102,10 +108,93 @@ func processEvent(event *AgentEvent, tenantID int64) bool {
 	// Process system metrics with validation
 	if event.System != nil {
 		processSystemMetrics(host.ID, host.TenantID, event.System, now)
+		// Also check for embedded log in the same event
+		if event.Log != nil || event.Message != "" {
+			processAgentLog(event, host.ID, tenantID)
+		}
+		return true
+	}
+
+	// If this event carried a log but no system block, try to process it
+	if event.Log != nil || event.Message != "" {
+		processAgentLog(event, host.ID, tenantID)
 		return true
 	}
 
 	return false
+}
+
+// processAgentLog converts an AgentEvent carrying a log into models.Log and stores it.
+func processAgentLog(event *AgentEvent, hostID, tenantID int64) {
+	// Build log model from various possible fields
+	l := &models.Log{
+		TenantID: tenantID,
+		HostID:   hostID,
+	}
+
+	// Timestamp
+	if event.Timestamp != "" {
+		if t, err := time.Parse(time.RFC3339, event.Timestamp); err == nil {
+			l.Timestamp = t
+		} else {
+			l.Timestamp = time.Now().UTC()
+		}
+	} else {
+		l.Timestamp = time.Now().UTC()
+	}
+
+	// Message
+	if event.Message != "" {
+		l.Message = event.Message
+	} else if msg, ok := event.Log["message"].(string); ok {
+		l.Message = msg
+	}
+
+	// Level
+	if lvl, ok := event.Log["level"].(string); ok {
+		l.Level = lvl
+	} else if t, ok := event.Event["type"].(string); ok {
+		l.Level = t
+	}
+
+	// Correlation id
+	if cid, ok := event.Log["correlation_id"].(string); ok {
+		l.CorrelID = cid
+	} else if cid2, ok := event.Event["correlation_id"].(string); ok {
+		l.CorrelID = cid2
+	}
+
+	// Meta / fields
+	l.Meta = make(map[string]string)
+	if fields, ok := event.Log["fields"].(map[string]interface{}); ok {
+		for k, v := range fields {
+			l.Meta[k] = fmt.Sprintf("%v", v)
+		}
+	}
+	// fallback to top-level event fields
+	if l.Meta == nil || len(l.Meta) == 0 {
+		if evfields, ok := event.Event["fields"].(map[string]interface{}); ok {
+			for k, v := range evfields {
+				l.Meta[k] = fmt.Sprintf("%v", v)
+			}
+		}
+	}
+
+	// Persist via service (parses/enriches and inserts into MongoDB)
+	if err := services.CollectLog(context.Background(), l); err != nil {
+		fmt.Printf("[WARN] failed to persist agent log for host=%d: %v\n", hostID, err)
+		return
+	}
+
+	// Broadcast to websocket clients for real-time tailing
+	payload := map[string]interface{}{"type": "log", "log": l}
+	if b, err := json.Marshal(payload); err == nil {
+		if gh := ws.GetGlobalHub(); gh != nil {
+			gh.RememberMessage(b)
+		}
+		ws.BroadcastToClients(b)
+		telemetry.IncWSBroadcast(context.Background(), 1)
+	}
 }
 
 func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
@@ -150,6 +239,15 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 	}
 
 	// Create new host with complete information
+	// Prevent re-creation if the host was recently deleted (tombstone exists)
+	var tombstoneCount int
+	// check deleted_hosts for entries in last 7 days
+	_ = postgres.DB.Raw("SELECT count(*) FROM deleted_hosts WHERE hostname = ? AND tenant_id = ? AND deleted_at > NOW() - INTERVAL '7 days'", hostname, tenantID).Scan(&tombstoneCount).Error
+	if tombstoneCount > 0 {
+		fmt.Printf("[INFO] Skipping auto-creation for recently deleted host %s (tenant=%d)\n", hostname, tenantID)
+		return nil
+	}
+
 	now := time.Now().UTC()
 	host = models.Host{
 		Hostname:    hostname,
@@ -446,5 +544,30 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to store host metrics for host %d: %v\n", hostID, err)
+	}
+
+	// Broadcast the updated metrics to websocket clients for realtime dashboard updates
+	payload := map[string]interface{}{
+		"type":         "metric",
+		"host_id":      hostID,
+		"cpu_usage":    metric.CPUUsage,
+		"memory_usage": metric.MemoryUsage,
+		"memory_total": metric.MemoryTotal,
+		"memory_used":  metric.MemoryUsed,
+		"disk_usage":   metric.DiskUsage,
+		"disk_total":   metric.DiskTotal,
+		"disk_used":    metric.DiskUsed,
+		"network_in":   metric.NetworkIn,
+		"network_out":  metric.NetworkOut,
+		"uptime":       metric.Uptime,
+		"load_average": metric.LoadAverage,
+		"timestamp":    metric.Timestamp.UTC().Format(time.RFC3339),
+	}
+	if b, jerr := json.Marshal(payload); jerr == nil {
+		if gh := ws.GetGlobalHub(); gh != nil {
+			gh.RememberMessage(b)
+		}
+		ws.BroadcastToClients(b)
+		telemetry.IncWSBroadcast(context.Background(), 1)
 	}
 }

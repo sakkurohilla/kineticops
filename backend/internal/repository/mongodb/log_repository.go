@@ -38,6 +38,18 @@ func SearchLogs(ctx context.Context, tenantID int64, filters map[string]interfac
 	return logs, nil
 }
 
+// CountLogs returns the total number of log documents matching the filters.
+func CountLogs(ctx context.Context, tenantID int64, filters map[string]interface{}, text string) (int64, error) {
+	q := bson.M{"tenant_id": tenantID}
+	for k, v := range filters {
+		q[k] = v
+	}
+	if text != "" {
+		q["$text"] = bson.M{"$search": text}
+	}
+	return models.LogCollection.CountDocuments(ctx, q)
+}
+
 func DeleteOldLogs(ctx context.Context, cutoff time.Time) error {
 	_, err := models.LogCollection.DeleteMany(ctx, bson.M{"timestamp": bson.M{"$lt": cutoff}})
 	return err

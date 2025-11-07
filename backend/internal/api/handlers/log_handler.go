@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
+	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
+	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 )
 
 type CollectLogRequest struct {
@@ -43,6 +46,21 @@ func CollectLog(c *fiber.Ctx) error {
 	if err := services.CollectLog(context.Background(), log); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot store log"})
 	}
+
+	// Broadcast new log to connected websocket clients (realtime tail)
+	// Wrap with a small envelope so frontend can easily filter by type
+	payload := map[string]interface{}{
+		"type": "log",
+		"log":  log,
+	}
+	if b, err := json.Marshal(payload); err == nil {
+		// Best-effort: remember message for new clients and broadcast
+		if gh := ws.GetGlobalHub(); gh != nil {
+			gh.RememberMessage(b)
+		}
+		ws.BroadcastToClients(b)
+		telemetry.IncWSBroadcast(context.Background(), 1)
+	}
 	return c.Status(201).JSON(fiber.Map{"msg": "Log stored"})
 }
 
@@ -71,12 +89,31 @@ func SearchLogs(c *fiber.Ctx) error {
 	text := c.Query("search")
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	skip, _ := strconv.Atoi(c.Query("skip"))
-	if limit == 0 {
+	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
 	logs, err := services.SearchLogs(context.Background(), tid.(int64), filters, text, limit, skip)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot search logs"})
 	}
-	return c.JSON(logs)
+	// fetch total count for pagination
+	total, err := services.CountLogs(context.Background(), tid.(int64), filters, text)
+	if err != nil {
+		// non-fatal: return logs without total
+		return c.JSON(fiber.Map{"limit": limit, "skip": skip, "logs": logs})
+	}
+	return c.JSON(fiber.Map{"total": total, "limit": limit, "skip": skip, "logs": logs})
+}
+
+// TriggerLogRetention runs the retention cleanup immediately. Admin-only.
+func TriggerLogRetention(c *fiber.Ctx) error {
+	// require admin scope in middleware.AuthRequired (already enforced by route)
+	days, _ := strconv.Atoi(c.Query("days"))
+	if days <= 0 {
+		days = 30
+	}
+	if err := services.EnforceLogRetention(days); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Retention failed"})
+	}
+	return c.JSON(fiber.Map{"msg": "Retention started", "days": days})
 }

@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	broadcastQueueDrops prometheus.Counter
-	clientSendDrops     prometheus.Counter
-	clientDisconnects   prometheus.Counter
-	hubQueueLength      prometheus.Gauge
-	totalClients        prometheus.Gauge
+	broadcastQueueDrops  prometheus.Counter
+	clientSendDrops      prometheus.Counter
+	clientDisconnects    prometheus.Counter
+	hubQueueLength       prometheus.Gauge
+	totalClients         prometheus.Gauge
+	ingestionQueueLength prometheus.Gauge
 )
 
 func initPromMetrics() {
@@ -39,8 +40,13 @@ func initPromMetrics() {
 		Name: "ws_total_clients",
 		Help: "Current number of connected websocket clients",
 	})
+	ingestionQueueLength = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_ingestion_queue_length",
+		Help: "Number of metrics currently buffered in the ingestion batcher",
+	})
 
 	prometheus.MustRegister(broadcastQueueDrops, clientSendDrops, clientDisconnects, hubQueueLength, totalClients)
+	prometheus.MustRegister(ingestionQueueLength)
 }
 
 // StartPrometheusServer starts a separate HTTP server exposing /metrics and pprof endpoints.
@@ -98,5 +104,12 @@ func SetHubQueueLength(n int) {
 func SetTotalClients(n int) {
 	if totalClients != nil {
 		totalClients.Set(float64(n))
+	}
+}
+
+// SetMetricIngestionQueueLength sets the current size of the metric ingestion buffer
+func SetMetricIngestionQueueLength(n int) {
+	if ingestionQueueLength != nil {
+		ingestionQueueLength.Set(float64(n))
 	}
 }

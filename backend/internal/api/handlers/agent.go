@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
+	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
@@ -116,4 +117,32 @@ func ExecuteAgentCommand(c *fiber.Ctx) error {
 		"output":   "Command executed successfully",
 		"agent_id": agentID,
 	})
+}
+
+// RevokeAgent - POST /api/v1/agents/:id/revoke
+func RevokeAgent(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid agent id"})
+	}
+	repo := postgres.NewAgentRepository(postgres.SqlxDB)
+	if err := repo.UpdateRevoked(id, true); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to revoke agent"})
+	}
+	return c.JSON(fiber.Map{"msg": "Agent revoked", "agent_id": id})
+}
+
+// UnrevokeAgent - POST /api/v1/agents/:id/unrevoke
+func UnrevokeAgent(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid agent id"})
+	}
+	repo := postgres.NewAgentRepository(postgres.SqlxDB)
+	if err := repo.UpdateRevoked(id, false); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to unrevoke agent"})
+	}
+	return c.JSON(fiber.Map{"msg": "Agent unrevoked", "agent_id": id})
 }

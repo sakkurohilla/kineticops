@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/auth"
+	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
 
 // AuthRequired returns a middleware handler (your existing function - keep it)
@@ -95,11 +96,31 @@ func AgentOrUserAuth() fiber.Handler {
 			return c.Next()
 		}
 
-		// Fallback: check agent token header
+		// Fallback: check agent token header. Support both a global AGENT_TOKEN
+		// (for simple deployments) and per-agent tokens stored in Postgres.
 		agentToken := c.Get("X-Agent-Token")
-		if agentToken != "" && cfg.AgentToken != "" && agentToken == cfg.AgentToken {
-			c.Locals("agent_token", true)
-			return c.Next()
+		if agentToken != "" {
+			// 1) Global token match (legacy/simple mode)
+			if cfg.AgentToken != "" && agentToken == cfg.AgentToken {
+				c.Locals("agent_token", true)
+				// tenant id not known for global token - leave tenant unset
+				return c.Next()
+			}
+
+			// 2) Per-agent token: look up the agent and resolve its host -> tenant
+			if agent, err := postgres.GetAgentByToken(agentToken); err == nil && agent != nil {
+				// Reject revoked tokens immediately
+				if agent.Revoked {
+					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Agent token revoked"})
+				}
+				// Resolve host to find tenant id
+				if host, herr := postgres.GetHost(postgres.DB, int64(agent.HostID)); herr == nil && host != nil {
+					c.Locals("agent_token", true)
+					c.Locals("tenant_id", host.TenantID)
+					c.Locals("agent_id", agent.ID)
+					return c.Next()
+				}
+			}
 		}
 
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing or invalid credentials"})

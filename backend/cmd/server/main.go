@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	fiberRecover "github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
@@ -22,6 +23,8 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 	"github.com/sakkurohilla/kineticops/backend/internal/workers"
+
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -69,6 +72,48 @@ func initDBs(cfg *config.Config) {
 		}
 		models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
 		log.Println("MongoDB (logs) connected.")
+
+		// Ensure indexes for efficient log search and retention
+		go func() {
+			ctxIdx, cancelIdx := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelIdx()
+
+			// Text index for fast full-text search across message and full_text
+			textIndex := mongo.IndexModel{
+				Keys:    bson.D{{Key: "full_text", Value: "text"}, {Key: "message", Value: "text"}},
+				Options: options.Index().SetBackground(true).SetName("idx_logs_fulltext"),
+			}
+
+			// Compound index for tenant/host/time queries
+			compoundIdx := mongo.IndexModel{
+				Keys:    bson.D{{Key: "tenant_id", Value: 1}, {Key: "host_id", Value: 1}, {Key: "timestamp", Value: -1}},
+				Options: options.Index().SetBackground(true).SetName("idx_logs_tenant_host_time"),
+			}
+
+			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, textIndex); err != nil {
+				log.Printf("[WARN] failed to create text index on logs: %v", err)
+			} else {
+				log.Println("[INFO] created/ensured text index on logs")
+			}
+
+			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, compoundIdx); err != nil {
+				log.Printf("[WARN] failed to create compound index on logs: %v", err)
+			} else {
+				log.Println("[INFO] created/ensured compound index on logs")
+			}
+
+			// Create TTL index to enforce log retention (30 days by default)
+			ttlIdx := mongo.IndexModel{
+				Keys:    bson.D{{Key: "timestamp", Value: 1}},
+				Options: options.Index().SetExpireAfterSeconds(60 * 60 * 24 * 30).SetBackground(true).SetName("idx_logs_ttl_30d"),
+			}
+
+			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, ttlIdx); err != nil {
+				log.Printf("[WARN] failed to create TTL index on logs: %v", err)
+			} else {
+				log.Println("[INFO] created/ensured TTL index on logs (30d)")
+			}
+		}()
 	}
 
 	log.Println("All DBs initialized.")
@@ -98,11 +143,17 @@ func main() {
 	shutdownTelemetry := telemetry.InitTelemetry()
 	defer shutdownTelemetry()
 
+	// Elasticsearch integration removed per user request. No-op.
+
 	// Start Prometheus + pprof on :9090 for metrics and profiling
 	telemetry.StartPrometheusServer(":9090")
 
 	// START METRIC COLLECTOR WORKER - ADD THIS
 	workers.StartMetricCollector()
+
+	// Start the metric batcher to improve ingestion throughput. Batches up to 500
+	// metrics or flushes every 5 seconds.
+	services.StartMetricBatcher(500, 5*time.Second)
 
 	// Start enterprise retention service (30 days retention)
 	retentionService := services.NewRetentionService(30)
@@ -111,6 +162,9 @@ func main() {
 	// Start downsampling service for performance optimization
 	downsamplingService := services.NewDownsamplingService()
 	downsamplingService.StartDownsamplingWorker()
+
+	// Start alert scheduler worker
+	workers.StartAlertScheduler()
 
 	// Set up Redpanda/Kafka
 	brokers := []string{"localhost:9092"}
@@ -133,6 +187,9 @@ func main() {
 	} else {
 		log.Println("Redpanda producer initialized")
 	}
+
+	// Start a reingest consumer that listens for failed metric batches and retries insertion
+	workers.StartReingestConsumer(brokers, "metrics-failed", "kineticops-reingest")
 
 	// WebSocket hub
 	wsHub := ws.NewHub()
@@ -191,6 +248,9 @@ func main() {
 	// Global middlewares
 	app.Use(middleware.Logger())
 	app.Use(middleware.CORS())
+	// Recover from panics in handlers to avoid process exit
+	app.Use(fiberRecover.New())
+	// Apply the API rate limiter (middleware.RateLimiter only applies to /api/ paths)
 	app.Use(middleware.RateLimiter())
 
 	// Register ALL routes through unified router
@@ -198,6 +258,29 @@ func main() {
 
 	// WebSocket JWT-enabled endpoint
 	app.Get("/ws", websocket.New(ws.WsHandler(wsHub, cfg.JWTSecret)))
+
+	// Serve frontend static files (if the frontend `dist/` exists). This allows
+	// serving the SPA from the same origin as the API so browsers can connect
+	// to the WebSocket without cross-origin issues. We only enable the SPA
+	// fallback for non-API and non-WS routes.
+	// Note: The frontend build output is expected at `frontend/dist` relative to
+	// the repository root. If you deploy elsewhere, adapt the path or use a
+	// reverse proxy.
+	app.Static("/assets", "./frontend/dist/assets")
+
+	app.Use(func(c *fiber.Ctx) error {
+		path := c.Path()
+		// skip API and WS endpoints
+		if strings.HasPrefix(path, "/api/") || path == "/ws" || strings.HasPrefix(path, "/api") {
+			return c.Next()
+		}
+		// attempt to serve static file if exists
+		if strings.HasPrefix(path, "/assets/") {
+			return c.Next()
+		}
+		// otherwise, serve SPA index.html
+		return c.SendFile("./frontend/dist/index.html")
+	})
 
 	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
 	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)

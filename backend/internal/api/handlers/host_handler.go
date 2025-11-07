@@ -138,11 +138,21 @@ func DeleteHost(c *fiber.Ctx) error {
 	postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id)
 
+	// Also delete agent-specific records to ensure no orphaned agent rows remain
+	// (agents table typically references hosts ON DELETE CASCADE, but some DBs
+	// or migrations may not enforce cascade; delete explicitly for safety.)
+	postgres.DB.Exec("DELETE FROM agent_services WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+	postgres.DB.Exec("DELETE FROM agent_installation_logs WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+	postgres.DB.Exec("DELETE FROM agents WHERE host_id = ?", id)
+
 	// Delete the host
 	err = postgres.DeleteHost(postgres.DB, id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot delete host"})
 	}
+
+	// Record tombstone to prevent immediate auto-recreation by agents
+	postgres.DB.Exec("INSERT INTO deleted_hosts (hostname, tenant_id, deleted_at) VALUES (?, ?, CURRENT_TIMESTAMP)", host.Hostname, host.TenantID)
 
 	return c.JSON(fiber.Map{
 		"msg":  "Host deleted and all tokens expired",
@@ -334,10 +344,6 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
 	}
 
-	if len(metrics) == 0 {
-		return c.JSON(nil)
-	}
-
 	// Convert to expected format with proper field names
 	result := make(map[string]interface{})
 	var latestTimestamp time.Time
@@ -394,6 +400,20 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 	}
 	if hm.Timestamp.After(latestTimestamp) {
 		latestTimestamp = hm.Timestamp
+	}
+
+	// If no metrics were found in the metrics table, still return a result
+	// derived from the latest host_metrics snapshot so the UI has a recent
+	// value to display after a refresh.
+	if len(metrics) == 0 {
+		// If we have only host_metrics data, ensure timestamp is set
+		if latestTimestamp.IsZero() && !hm.Timestamp.IsZero() {
+			latestTimestamp = hm.Timestamp
+		}
+		// If still zero, return empty payload
+		if latestTimestamp.IsZero() {
+			return c.JSON(nil)
+		}
 	}
 
 	// Canonicalize memory_usage and disk_usage using totals when available.
@@ -526,6 +546,150 @@ func GetHostDashboardMetrics(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(metrics)
+}
+
+// GetAllHostsLatestMetrics returns the latest metrics for all hosts (tenant-scoped when authenticated).
+// Returns an array of objects: { host_id, cpu_usage, memory_usage, disk_usage, network_in, network_out, memory_total, memory_used, disk_total, disk_used, uptime, timestamp }
+func GetAllHostsLatestMetrics(c *fiber.Ctx) error {
+	// Determine tenant scope (0 = all)
+	var tenantID int64 = 0
+	if tid := c.Locals("tenant_id"); tid != nil {
+		tenantID = tid.(int64)
+	}
+
+	// Determine host scope: if tenant-scoped, list hosts for the tenant and limit queries
+	var hostIDs []int64
+	if tenantID != 0 {
+		hostsList, err := services.ListHosts(tenantID, 1000, 0)
+		if err == nil && len(hostsList) > 0 {
+			hostIDs = make([]int64, 0, len(hostsList))
+			for _, h := range hostsList {
+				hostIDs = append(hostIDs, h.ID)
+			}
+		}
+	}
+
+	// 1) load latest host_metrics snapshot per host
+	var snaps []struct {
+		HostID      int64     `json:"host_id"`
+		MemoryTotal float64   `json:"memory_total"`
+		MemoryUsed  float64   `json:"memory_used"`
+		DiskTotal   float64   `json:"disk_total"`
+		DiskUsed    float64   `json:"disk_used"`
+		Uptime      int64     `json:"uptime"`
+		Timestamp   time.Time `json:"timestamp"`
+	}
+
+	snapQuery := `SELECT DISTINCT ON (host_id) host_id, memory_total, memory_used, disk_total, disk_used, uptime, timestamp
+		FROM host_metrics`
+	if len(hostIDs) > 0 {
+		snapQuery += ` WHERE host_id IN (?)`
+	}
+	snapQuery += ` ORDER BY host_id, timestamp DESC`
+
+	if err := postgres.DB.Raw(snapQuery, hostIDs).Scan(&snaps).Error; err != nil {
+		// non-fatal - continue with empty snapshots
+		snaps = []struct {
+			HostID      int64     `json:"host_id"`
+			MemoryTotal float64   `json:"memory_total"`
+			MemoryUsed  float64   `json:"memory_used"`
+			DiskTotal   float64   `json:"disk_total"`
+			DiskUsed    float64   `json:"disk_used"`
+			Uptime      int64     `json:"uptime"`
+			Timestamp   time.Time `json:"timestamp"`
+		}{}
+	}
+
+	// map host_id -> snapshot
+	snapMap := make(map[int64]map[string]interface{})
+	for _, s := range snaps {
+		snapMap[s.HostID] = map[string]interface{}{
+			"memory_total": s.MemoryTotal,
+			"memory_used":  s.MemoryUsed,
+			"disk_total":   s.DiskTotal,
+			"disk_used":    s.DiskUsed,
+			"uptime":       s.Uptime,
+			"timestamp":    s.Timestamp,
+		}
+	}
+
+	// 2) load latest metrics (timeseries) per host for last 5 minutes
+	var rows []struct {
+		HostID    int64     `json:"host_id"`
+		Name      string    `json:"name"`
+		Value     float64   `json:"value"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
+	// Use a window function to pick the latest row per host+name within recent window
+	metricsQuery := `WITH recent AS (
+		SELECT host_id, name, value, timestamp,
+		  ROW_NUMBER() OVER (PARTITION BY host_id, name ORDER BY timestamp DESC) AS rn
+		FROM metrics WHERE timestamp > NOW() - INTERVAL '5 minutes'`
+	if len(hostIDs) > 0 {
+		metricsQuery += ` AND host_id IN (?)`
+	}
+	metricsQuery += ` ) SELECT host_id, name, value, timestamp FROM recent WHERE rn = 1`
+
+	if err := postgres.DB.Raw(metricsQuery, hostIDs).Scan(&rows).Error; err != nil {
+		rows = []struct {
+			HostID    int64     `json:"host_id"`
+			Name      string    `json:"name"`
+			Value     float64   `json:"value"`
+			Timestamp time.Time `json:"timestamp"`
+		}{}
+	}
+
+	// assemble per-host map
+	resultMap := make(map[int64]map[string]interface{})
+
+	// seed with snapshots
+	for hid, m := range snapMap {
+		resultMap[hid] = map[string]interface{}{}
+		for k, v := range m {
+			resultMap[hid][k] = v
+		}
+	}
+
+	// merge timeseries metrics
+	for _, r := range rows {
+		m, ok := resultMap[r.HostID]
+		if !ok {
+			m = map[string]interface{}{}
+			resultMap[r.HostID] = m
+		}
+		switch r.Name {
+		case "cpu_usage":
+			m["cpu_usage"] = r.Value
+		case "memory_usage":
+			m["memory_usage"] = r.Value
+		case "disk_usage":
+			m["disk_usage"] = r.Value
+		case "network_bytes":
+			// approximate split for display - clients may interpret differently
+			m["network_in"] = r.Value
+			m["network_out"] = r.Value
+		default:
+			m[r.Name] = r.Value
+		}
+		// prefer latest timestamp
+		if existingTs, ok := m["timestamp"].(time.Time); !ok || r.Timestamp.After(existingTs) {
+			m["timestamp"] = r.Timestamp
+		}
+	}
+
+	// Convert to slice of host metrics
+	out := make([]map[string]interface{}, 0, len(resultMap))
+	for hid, m := range resultMap {
+		m["host_id"] = hid
+		// Ensure timestamp formatted as RFC3339 for frontend
+		if ts, ok := m["timestamp"].(time.Time); ok {
+			m["timestamp"] = ts.Format(time.RFC3339)
+		}
+		out = append(out, m)
+	}
+
+	return c.JSON(out)
 }
 
 // CollectHostNow triggers an immediate collection for the given host id (debug/testing).

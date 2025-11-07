@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,14 +79,14 @@ func (l *LogsModule) Start(ctx context.Context) error {
 // Stop stops log collection
 func (l *LogsModule) Stop() error {
 	close(l.stopChan)
-	
+
 	// Stop all watchers
 	for path, watcher := range l.watchers {
 		if err := watcher.Stop(); err != nil {
 			l.logger.Error("Error stopping watcher", "path", path, "error", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -229,14 +230,32 @@ func (l *LogsModule) readLines(watcher *LogWatcher, input *config.LogInput) {
 			continue
 		}
 
+		// Skip lines that look like agent's own logs to avoid feedback loop
+		// (agent writes to syslog/journal on some systems). Also skip our debug markers.
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "kineticops-agent[") || strings.Contains(lower, "kineticops-agent") || strings.Contains(lower, "log event queued to pipeline") || strings.Contains(lower, "log event read") {
+			// avoid logging or sending self-produced lines
+			continue
+		}
+
 		// Create log event
 		event := l.createLogEvent(line, watcher.path, input)
-		
+
+		// Debug/visibility: log that we read a line and are queuing it to the pipeline.
+		// Use DEBUG so these high-volume messages are omitted in normal (info) runs.
+		preview := line
+		if len(preview) > 160 {
+			preview = preview[:160] + "..."
+		}
+		l.logger.Debug("Log event read", "file", watcher.path, "preview", preview)
+
 		// Send to pipeline
 		if err := l.pipeline.Send(event); err != nil {
 			l.logger.Error("Failed to send log event", "error", err)
 			continue
 		}
+
+		l.logger.Debug("Log event queued to pipeline", "file", watcher.path)
 
 		// Update offset
 		watcher.offset += int64(len(line)) + 1 // +1 for newline
@@ -253,6 +272,9 @@ func (l *LogsModule) createLogEvent(line, filePath string, input *config.LogInpu
 	timestamp := time.Now().UTC()
 	hostname, _ := os.Hostname()
 
+	// Try to determine a primary (non-loopback) IPv4 address for the host and include it
+	primaryIP := getPrimaryIP()
+
 	event := map[string]interface{}{
 		"@timestamp": timestamp.Format(time.RFC3339),
 		"agent": map[string]interface{}{
@@ -261,7 +283,8 @@ func (l *LogsModule) createLogEvent(line, filePath string, input *config.LogInpu
 			"version": "1.0.0",
 		},
 		"host": map[string]interface{}{
-			"hostname": hostname,
+			"hostname":   hostname,
+			"primary_ip": primaryIP,
 		},
 		"event": map[string]interface{}{
 			"kind":     "event",
@@ -300,14 +323,61 @@ func (l *LogsModule) createLogEvent(line, filePath string, input *config.LogInpu
 // extractLogLevel tries to extract log level from the message
 func (l *LogsModule) extractLogLevel(message string) string {
 	message = strings.ToUpper(message)
-	
+
 	levels := []string{"ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE", "FATAL"}
 	for _, level := range levels {
 		if strings.Contains(message, level) {
 			return strings.ToLower(level)
 		}
 	}
-	
+
+	return ""
+}
+
+// getPrimaryIP returns the first non-loopback IPv4 address found on the host
+// or an empty string if none could be determined.
+func getPrimaryIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		// skip down or loopback interfaces
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip := v.IP
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				ip4 := ip.To4()
+				if ip4 == nil {
+					continue
+				}
+				return ip4.String()
+			case *net.IPAddr:
+				ip := v.IP
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				ip4 := ip.To4()
+				if ip4 == nil {
+					continue
+				}
+				return ip4.String()
+			}
+		}
+	}
 	return ""
 }
 

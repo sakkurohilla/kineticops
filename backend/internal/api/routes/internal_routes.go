@@ -10,4 +10,6 @@ import (
 func RegisterInternalRoutes(app *fiber.App) {
 	internal := app.Group("/api/v1/internal", middleware.AuthRequired())
 	internal.Get("/telemetry", handlers.Telemetry)
+	// Development debug endpoints (authenticated admin only)
+	internal.Post("/debug/ws/burst", handlers.DebugWSSend)
 }

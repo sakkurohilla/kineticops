@@ -38,6 +38,11 @@ func CollectMetric(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Backpressure: when the batcher queue is very large, return 429 so agents can retry
+	if qlen := services.GetMetricBatcherQueueLength(); qlen > 2000 {
+		return c.Status(429).JSON(fiber.Map{"error": "ingestion overloaded"})
+	}
+
 	err := services.CollectMetric(req.HostID, tid.(int64), req.Name, req.Value, req.Labels)
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})

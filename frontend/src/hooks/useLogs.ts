@@ -31,16 +31,17 @@ export const useLogs = (): UseLogsReturn => {
       setIsLoading(true);
       setError(null);
 
-      const logsData = await logsService.searchLogs({
+      const res = await logsService.searchLogs({
         level: filters.level,
         search: filters.search,
         start: filters.startDate,
         end: filters.endDate,
-        limit: 100
-      }) as Log[];
-      
-      setLogs(logsData);
-      setHasMore(logsData.length >= 100);
+        limit: 100,
+        skip: 0,
+      });
+
+      setLogs(res.logs as Log[]);
+      setHasMore(res.logs.length + (res.skip || 0) < (res.total || 0));
     } catch (err: any) {
       const apiError = handleApiError(err);
       setError(apiError.message);
