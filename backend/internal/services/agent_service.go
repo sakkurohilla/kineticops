@@ -173,7 +173,9 @@ func (s *AgentService) GenerateAgentToken() (string, error) {
 }
 
 func (s *AgentService) GenerateInstallScript(token string) string {
-	return fmt.Sprintf(`#!/bin/bash
+	// Use a template and replace a token placeholder to avoid fmt interpreting
+	// % sequences in the script (awk/printf patterns use % formats).
+	tpl := `#!/bin/bash
 set -e
 
 echo "Installing KineticOps Agent..."
@@ -186,7 +188,7 @@ cd /opt/kineticops-agent
 sudo tee agent > /dev/null << 'EOF'
 #!/bin/bash
 # KineticOps Agent v1.0
-TOKEN="%s"
+TOKEN="{{TOKEN}}"
 SERVER_URL="http://localhost:8080"
 
 while true; do
@@ -197,8 +199,16 @@ while true; do
 	# Memory usage as percent (0..100) using /proc/meminfo for better accuracy
 	MEMORY_USAGE=$(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END { if(total>0) printf "%.1f", (total-avail)/total*100; else print "0" }' /proc/meminfo 2>/dev/null || echo "0")
 
-	# Disk usage percent for root mount as float (0..100)
-	DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9.' 2>/dev/null || echo "0")
+	# Disk usage: report both total and used bytes for the root mount so the
+	# backend can compute a canonical percentage and avoid discrepancies.
+	DISK_TOTAL_BYTES=$(df --output=size -B1 / | tail -1 | tr -dc '0-9' 2>/dev/null || echo "0")
+	DISK_USED_BYTES=$(df --output=used -B1 / | tail -1 | tr -dc '0-9' 2>/dev/null || echo "0")
+	# Also compute a best-effort percent for backward compatibility
+	if [ "$DISK_TOTAL_BYTES" -gt 0 ]; then
+		DISK_USAGE=$(awk -v used="$DISK_USED_BYTES" -v tot="$DISK_TOTAL_BYTES" 'BEGIN{ if(tot>0) printf "%.2f", used/tot*100; else print "0" }')
+	else
+		DISK_USAGE=0
+	fi
 
 	# Get running services (top 10) - keep existing approach
 	SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
@@ -211,13 +221,15 @@ while true; do
             \"cpu_usage\": ${CPU_USAGE:-0},
             \"memory_usage\": ${MEMORY_USAGE:-0},
             \"disk_usage\": ${DISK_USAGE:-0},
-            \"services\": [],
-            \"metadata\": {
-                \"hostname\": \"$(hostname)\",
-                \"os\": \"$(uname -s)\",
-                \"kernel\": \"$(uname -r)\",
-                \"uptime\": \"$(cat /proc/uptime | awk '{print int($1)}')\"
-            }
+			"services": [],
+			"metadata": {
+				"hostname": "$(hostname)",
+				"os": "$(uname -s)",
+				"kernel": "$(uname -r)",
+				"uptime": $(awk '{print int($1)}' /proc/uptime)
+			},
+			"disk_total_bytes": ${DISK_TOTAL_BYTES:-0},
+			"disk_used_bytes": ${DISK_USED_BYTES:-0}
         }" 2>/dev/null || echo "Heartbeat failed"
     
     sleep 30
@@ -254,7 +266,13 @@ sudo systemctl start kineticops-agent
 echo "KineticOps Agent installed and started successfully!"
 echo "Service status:"
 sudo systemctl status kineticops-agent --no-pager -l
-`, token)
+`
+
+	// Replace our token placeholder safely (script may contain % characters)
+	// Note: using strings.ReplaceAll avoids fmt interpreting % sequences in the
+	// template which would cause fmt.Sprintf to expect additional args.
+	return strings.ReplaceAll(tpl, "{{TOKEN}}", token)
+
 }
 
 func (s *AgentService) RegisterAgentHeartbeat(heartbeat *models.AgentHeartbeat) error {

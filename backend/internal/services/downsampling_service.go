@@ -35,7 +35,7 @@ func (d *DownsamplingService) CreateDownsampledData() error {
 			return err
 		}
 
-		if err := d.downsampleData(interval.name, interval.duration, interval.table, interval.truncUnit); err != nil {
+		if err := d.downsampleData(interval.duration, interval.table, interval.truncUnit); err != nil {
 			return err
 		}
 	}
@@ -61,7 +61,7 @@ func (d *DownsamplingService) createDownsampledTable(tableName string) error {
 }
 
 // downsampleData aggregates raw data into downsampled tables
-func (d *DownsamplingService) downsampleData(intervalName, duration, tableName, truncUnit string) error {
+func (d *DownsamplingService) downsampleData(duration, tableName, truncUnit string) error {
 	// truncUnit must be a valid date_trunc unit like 'minute', 'hour', 'day'
 	query := fmt.Sprintf(`
 		INSERT INTO %s (host_id, tenant_id, name, value, timestamp)

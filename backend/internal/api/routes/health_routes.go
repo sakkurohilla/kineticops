@@ -2,9 +2,11 @@ package routes
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	redisrepo "github.com/sakkurohilla/kineticops/backend/internal/repository/redis"
@@ -33,9 +35,23 @@ func RegisterHealthRoutes(app *fiber.App) {
 			status["redis"] = "connected"
 		}
 
-		// Kafka/Redpanda health check (attempt to dial first broker)
-		// We use a short timeout so the endpoint remains fast
-		if err := redpanda.ProducerPing([]string{"localhost:9092"}, 500*time.Millisecond); err != nil {
+		// Kafka/Redpanda health check (attempt to dial first broker). Read
+		// the broker list from configuration (comma-separated) to match how
+		// the service is started under docker-compose.
+		cfg := config.Load()
+		var brokers []string
+		if cfg.RedpandaBroker != "" {
+			for _, b := range strings.Split(cfg.RedpandaBroker, ",") {
+				if t := strings.TrimSpace(b); t != "" {
+					brokers = append(brokers, t)
+				}
+			}
+		}
+		if len(brokers) == 0 {
+			// Prefer the compose service hostname as the default inside containers
+			brokers = []string{"redpanda:9092"}
+		}
+		if err := redpanda.ProducerPing(brokers, 500*time.Millisecond); err != nil {
 			status["kafka"] = "unreachable"
 		} else {
 			status["kafka"] = "connected"

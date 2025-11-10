@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
@@ -51,6 +53,10 @@ func AgentHeartbeat(c *fiber.Ctx) error {
 
 	err := agentService.RegisterAgentHeartbeat(&heartbeat)
 	if err != nil {
+		// If token is invalid / not recognized, return 401 so agent can re-register
+		if strings.Contains(err.Error(), "token not recognized") || strings.Contains(err.Error(), "host was recently deleted") || err == sql.ErrNoRows {
+			return c.Status(401).JSON(fiber.Map{"error": "agent token invalid or host deleted"})
+		}
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 

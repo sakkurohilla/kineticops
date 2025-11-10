@@ -85,19 +85,55 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 	var hostID, agentID int
 	err = tx.QueryRow("SELECT host_id, id FROM agents WHERE token = $1", token).Scan(&hostID, &agentID)
 	if err != nil {
+		// If the agent token isn't found, check for a recent tombstone for
+		// this hostname (agent may be using old credentials). If the host was
+		// recently deleted, refuse to auto-recreate it to avoid unwanted
+		// re-registration after manual removal.
+		if heartbeat != nil && heartbeat.Metadata.Hostname != "" {
+			var tombstones int
+			// count deleted_hosts entries in last 7 days for this hostname
+			_ = r.db.Get(&tombstones, "SELECT count(*) FROM deleted_hosts WHERE hostname = $1 AND deleted_at > NOW() - INTERVAL '7 days'", heartbeat.Metadata.Hostname)
+			if tombstones > 0 {
+				fmt.Printf("[AGENT] Refusing heartbeat from token=%s hostname=%s: host recently deleted\n", token, heartbeat.Metadata.Hostname)
+				return fmt.Errorf("token not recognized and host %s was recently deleted", heartbeat.Metadata.Hostname)
+			}
+		}
+		// Otherwise return the original error (unknown token)
 		return err
+	}
+
+	// Compute server-side disk usage percent when disk bytes are provided.
+	diskUsagePct := heartbeat.DiskUsage
+	if heartbeat != nil && heartbeat.DiskTotalBytes > 0 {
+		// use provided byte counts to compute a canonical percent on the server
+		diskUsagePct = 0.0
+		if heartbeat.DiskTotalBytes > 0 {
+			diskUsagePct = (float64(heartbeat.DiskUsedBytes) / float64(heartbeat.DiskTotalBytes)) * 100.0
+		}
 	}
 
 	// Update host metrics - use upsert to avoid duplicate-key errors when a row already exists
 	_, err = tx.Exec(`
-		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, disk_usage, timestamp)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, disk_usage, disk_total, disk_used, network_in, network_out, uptime, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (host_id) DO UPDATE SET
 			cpu_usage = EXCLUDED.cpu_usage,
 			memory_usage = EXCLUDED.memory_usage,
-			disk_usage = EXCLUDED.disk_usage,
+			-- Compute disk_usage server-side: prefer computing from provided bytes (excluded) when available,
+			-- otherwise fall back to the provided EXCLUDED.disk_usage value.
+			disk_usage = CASE
+				WHEN COALESCE(EXCLUDED.disk_total, host_metrics.disk_total) IS NOT NULL AND COALESCE(EXCLUDED.disk_total, host_metrics.disk_total) <> 0
+					THEN (COALESCE(EXCLUDED.disk_used, host_metrics.disk_used)::double precision / NULLIF(COALESCE(EXCLUDED.disk_total, host_metrics.disk_total),0)::double precision) * 100.0
+				ELSE EXCLUDED.disk_usage
+			END,
+			disk_total = COALESCE(EXCLUDED.disk_total, host_metrics.disk_total),
+			disk_used = COALESCE(EXCLUDED.disk_used, host_metrics.disk_used),
+			network_in = COALESCE(EXCLUDED.network_in, host_metrics.network_in),
+			network_out = COALESCE(EXCLUDED.network_out, host_metrics.network_out),
+			uptime = EXCLUDED.uptime,
 			timestamp = EXCLUDED.timestamp`,
-		hostID, heartbeat.CPUUsage, heartbeat.MemoryUsage, heartbeat.DiskUsage, time.Now())
+		hostID, heartbeat.CPUUsage, heartbeat.MemoryUsage, diskUsagePct,
+		heartbeat.DiskTotalBytes, heartbeat.DiskUsedBytes, 0.0, 0.0, heartbeat.Metadata.Uptime, time.Now())
 	if err != nil {
 		return err
 	}
@@ -125,9 +161,21 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		}
 	}
 
+	// After upsert, compute and persist a canonical disk_usage percent from stored bytes
+	// (done inside transaction to avoid races). This ensures an accurate percent even if
+	// the EXCLUDED binding did not produce the expected value in the upsert path.
+	_, err = tx.Exec(`UPDATE host_metrics SET disk_usage = (disk_used::double precision / NULLIF(disk_total,0)::double precision) * 100.0 WHERE host_id = $1`, hostID)
+	if err != nil {
+		// If this fails, fall back to commit and return the original error
+		_ = tx.Rollback()
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+
+	// disk_usage is now computed server-side in the upsert SQL (from disk bytes when provided)
 
 	// Broadcast a lightweight metric update for realtime UI updates
 	payload := map[string]interface{}{
@@ -135,8 +183,17 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		"host_id":      hostID,
 		"cpu_usage":    heartbeat.CPUUsage,
 		"memory_usage": heartbeat.MemoryUsage,
-		"disk_usage":   heartbeat.DiskUsage,
-		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		// disk_usage is the server-canonical percent (computed from bytes if available)
+		"disk_usage": diskUsagePct,
+		"disk_total": heartbeat.DiskTotalBytes,
+		"disk_used":  heartbeat.DiskUsedBytes,
+		"uptime":     0,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// If the agent included uptime in metadata, prefer that value (seconds)
+	if heartbeat != nil && heartbeat.Metadata.Uptime > 0 {
+		payload["uptime"] = heartbeat.Metadata.Uptime
 	}
 	if b, jerr := json.Marshal(payload); jerr == nil {
 		fmt.Printf("[WS BROADCAST] host=%d heartbeat\n", hostID)

@@ -31,8 +31,16 @@ while true; do
     # Memory usage percent using /proc/meminfo
     MEMORY_USAGE=$(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END { if(total>0) printf "%.1f", (total-avail)/total*100; else print "0" }' /proc/meminfo 2>/dev/null || echo "0")
 
-    # Disk usage percent for root mount
-    DISK_USAGE=$(df --output=pcent / | tail -1 | tr -dc '0-9.' 2>/dev/null || echo "0")
+        # Disk usage: report both total and used bytes for the root mount so the
+        # backend can compute a canonical percentage and avoid discrepancies.
+        DISK_TOTAL_BYTES=$(df --output=size -B1 / | tail -1 | tr -dc '0-9' 2>/dev/null || echo "0")
+        DISK_USED_BYTES=$(df --output=used -B1 / | tail -1 | tr -dc '0-9' 2>/dev/null || echo "0")
+        # Also compute a best-effort percent for backward compatibility
+        if [ "$DISK_TOTAL_BYTES" -gt 0 ]; then
+            DISK_USAGE=$(awk -v used="$DISK_USED_BYTES" -v tot="$DISK_TOTAL_BYTES" 'BEGIN{ if(tot>0) printf "%.2f", used/tot*100; else print "0" }')
+        else
+            DISK_USAGE=0
+        fi
 
     # Running services (top 10)
     SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
@@ -40,7 +48,7 @@ while true; do
     # Send heartbeat (use JSON body, token identifies the agent)
     curl -s -X POST "${SERVER_URL}/api/v1/agents/heartbeat" \
         -H "Content-Type: application/json" \
-        -d "{\"token\":\"${TOKEN}\",\"cpu_usage\":${CPU_USAGE:-0},\"memory_usage\":${MEMORY_USAGE:-0},\"disk_usage\":${DISK_USAGE:-0},\"services\":[],\"metadata\":{\"hostname\":\"$(hostname)\",\"os\":\"$(uname -s)\",\"kernel\":\"$(uname -r)\",\"uptime\":\"$(awk '{print int($1)}' /proc/uptime)\"}}" 2>/dev/null || echo "Heartbeat failed"
+        -d "{\"token\":\"${TOKEN}\",\"cpu_usage\":${CPU_USAGE:-0},\"memory_usage\":${MEMORY_USAGE:-0},\"disk_usage\":${DISK_USAGE:-0},\"disk_total_bytes\":${DISK_TOTAL_BYTES:-0},\"disk_used_bytes\":${DISK_USED_BYTES:-0},\"services\":[],\"metadata\":{\"hostname\":\"$(hostname)\",\"os\":\"$(uname -s)\",\"kernel\":\"$(uname -r)\",\"uptime\":$(awk '{print int($1)}' /proc/uptime)}}" 2>/dev/null || echo "Heartbeat failed"
 
     sleep 30
 done

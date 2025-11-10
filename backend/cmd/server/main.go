@@ -167,7 +167,25 @@ func main() {
 	workers.StartAlertScheduler()
 
 	// Set up Redpanda/Kafka
-	brokers := []string{"localhost:9092"}
+	// Read brokers from config (REDPANDA_BROKER). It may be a comma-separated
+	// list like "redpanda:9092,other:9092". Fall back to localhost:9092 when
+	// not configured to preserve previous behavior.
+	var brokers []string
+	if cfg.RedpandaBroker != "" {
+		// split and trim
+		for _, b := range strings.Split(cfg.RedpandaBroker, ",") {
+			if t := strings.TrimSpace(b); t != "" {
+				brokers = append(brokers, t)
+			}
+		}
+	}
+	if len(brokers) == 0 {
+		// When running via docker-compose the Redpanda service is reachable
+		// at the compose hostname `redpanda:9092`. Use that as the default
+		// instead of localhost so services inside the compose network can
+		// reach the broker by name.
+		brokers = []string{"redpanda:9092"}
+	}
 	topic := "metrics-events"
 
 	// Initialize Kafka/Redpanda producer with a few retries to tolerate broker startup ordering.
@@ -266,7 +284,10 @@ func main() {
 	// Note: The frontend build output is expected at `frontend/dist` relative to
 	// the repository root. If you deploy elsewhere, adapt the path or use a
 	// reverse proxy.
-	app.Static("/assets", "./frontend/dist/assets")
+	// Serve built frontend. When running the backend module from its own
+	// directory the frontend build is located at ../frontend/dist. Use the
+	// parent-relative path so both container and local dev runs resolve it.
+	app.Static("/assets", "../frontend/dist/assets")
 
 	app.Use(func(c *fiber.Ctx) error {
 		path := c.Path()
@@ -279,7 +300,9 @@ func main() {
 			return c.Next()
 		}
 		// otherwise, serve SPA index.html
-		return c.SendFile("./frontend/dist/index.html")
+		// Serve the SPA index from the frontend build output relative to the
+		// repository root (one level up when running from backend/).
+		return c.SendFile("../frontend/dist/index.html")
 	})
 
 	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)

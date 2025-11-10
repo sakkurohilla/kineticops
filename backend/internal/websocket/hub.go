@@ -221,8 +221,12 @@ func GetGlobalHub() *Hub {
 // This is a best-effort non-blocking call.
 func BroadcastToClients(msg []byte) {
 	if globalHub == nil {
+		// helpful debug when broadcasting during startup or when hub isn't set
+		fmt.Printf("[WS BROADCAST] no global hub available, dropping message: %s\n", string(msg))
 		return
 	}
+	// report number of connected clients for diagnostics, then hand off to hub
+	fmt.Printf("[WS BROADCAST] broadcasting message to %d clients\n", GetGlobalClientCount())
 	globalHub.Broadcast(msg)
 }
 

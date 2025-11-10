@@ -34,6 +34,8 @@ type AgentMetadata struct {
 	Disk     int64  `json:"disk"`
 	Cores    int    `json:"cores"`
 	BootTime int64  `json:"boot_time"`
+	// Uptime in seconds when provided by lightweight installers/heartbeats
+	Uptime int64 `json:"uptime,omitempty"`
 }
 
 type AgentService struct {
@@ -73,12 +75,15 @@ type HostService struct {
 }
 
 type AgentHeartbeat struct {
-	Token       string        `json:"token"`
-	CPUUsage    float64       `json:"cpu_usage"`
-	MemoryUsage float64       `json:"memory_usage"`
-	DiskUsage   float64       `json:"disk_usage"`
-	Services    []ServiceInfo `json:"services"`
-	Metadata    AgentMetadata `json:"metadata"`
+	Token       string  `json:"token"`
+	CPUUsage    float64 `json:"cpu_usage"`
+	MemoryUsage float64 `json:"memory_usage"`
+	DiskUsage   float64 `json:"disk_usage"`
+	// Optional detailed disk bytes provided by lightweight install agents
+	DiskTotalBytes int64         `json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes  int64         `json:"disk_used_bytes,omitempty"`
+	Services       []ServiceInfo `json:"services"`
+	Metadata       AgentMetadata `json:"metadata"`
 }
 
 type ServiceInfo struct {

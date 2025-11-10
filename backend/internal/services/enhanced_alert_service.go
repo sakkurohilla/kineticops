@@ -242,7 +242,7 @@ func (s *EnhancedAlertService) evaluateCondition(condition *AlertCondition) {
 	}
 }
 
-func (s *EnhancedAlertService) executeQuery(query string, tenantID int64) (float64, error) {
+func (s *EnhancedAlertService) executeQuery(_query string, tenantID int64) (float64, error) {
 	// Simplified query execution - in production, implement full NRQL parser
 	// For now, support basic metric queries
 

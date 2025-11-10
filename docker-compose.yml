@@ -39,11 +39,9 @@ services:
 
   # Elasticsearch and Kibana removed from compose by user request.
   backend:
-    image: golang:1.25
-    working_dir: /go/src/app
-    volumes:
-      - ./backend:/go/src/app
-    command: bash -lc "cd /go/src/app && go run ./cmd/server"
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     depends_on:
@@ -53,6 +51,10 @@ services:
       - redpanda
     env_file:
       - ./backend/.env
+    # No volume mount in production composition: the container runs the
+    # compiled binary from the image. For local iterative development you
+    # can re-enable a volume mount, but be aware that the container will
+    # then try to run the source (requires Go inside the image).
 
   migrator:
     image: golang:1.25

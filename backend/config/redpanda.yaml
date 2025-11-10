@@ -1,5 +1,5 @@
 brokers:
-  - "localhost:9092"
+  - "redpanda:9092"
 topics:
   metrics: "metrics-events"
   alerts: "alert-events"

@@ -49,8 +49,7 @@ func BulkIngestMetrics(c *fiber.Ctx) error {
 
 	// Use sqlx DB's underlying *sql.DB for COPY
 	sqlDB := postgres.SqlxDB.DB
-	var err error
-	if err != nil {
+	if sqlDB == nil {
 		return c.Status(500).JSON(fiber.Map{"error": "server error"})
 	}
 

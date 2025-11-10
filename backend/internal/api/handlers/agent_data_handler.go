@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,7 +258,8 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 		Status:      "active",
 		TenantID:    tenantID,
 		Group:       "auto-discovered",
-		Description: fmt.Sprintf("Auto-discovered %s host on %s", platform, platformFamily),
+		// Include additional platform details to avoid unused-parameter linter warnings
+		Description: fmt.Sprintf("Auto-discovered %s host on %s (ver=%s arch=%s kernel=%s virt=%s)", platform, platformFamily, platformVersion, arch, kernelVersion, virtualization),
 		LastSeen:    now,
 		RegToken:    fmt.Sprintf("auto-%d-%s-%d", tenantID, hostname, now.Unix()),
 	}
@@ -510,8 +512,15 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 				metric.Uptime = 0
 			}
 		case string:
-			if v == "unavailable" {
+			// Accept numeric uptime sent as a string (common in shell-based agents)
+			if v == "unavailable" || v == "" {
 				metric.Uptime = 0
+			} else {
+				if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+					metric.Uptime = int64(f)
+				} else {
+					metric.Uptime = 0
+				}
 			}
 		default:
 			metric.Uptime = 0

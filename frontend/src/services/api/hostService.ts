@@ -69,13 +69,14 @@ const hostService = {
   // Get all hosts
   getAllHosts: async (): Promise<Host[]> => {
     try {
-      const cacheKey = 'hosts-all';
-      const cached = cache.get<Host[]>(cacheKey);
-      if (cached) return cached;
+  const cacheKey = 'hosts-all';
+  const cached = cache.get<Host[]>(cacheKey);
+  if (cached) return cached;
 
       const response: any = await apiClient.get('/hosts');
       const hosts = Array.isArray(response) ? response : (response.data || []);
-      cache.set(cacheKey, hosts, 120000);
+  // cache host list briefly to avoid excessive API calls during navigation
+  cache.set(cacheKey, hosts, 30000);
       return hosts;
     } catch (error: any) {
       const apiError = handleApiError(error);
@@ -138,12 +139,13 @@ const hostService = {
   // Get latest metrics for host
   getLatestMetrics: async (id: number): Promise<any> => {
     try {
-      const cacheKey = `metrics-latest-${id}`;
-      const cached = cache.get(cacheKey);
-      if (cached) return cached;
+  const cacheKey = `metrics-latest-${id}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
 
       const response: any = await apiClient.get(`/hosts/${id}/metrics/latest`);
-      cache.set(cacheKey, response, 30000);
+  // Keep latest metrics cache short so dashboards refresh quickly
+  cache.set(cacheKey, response, 5000);
       return response;
     } catch (error: any) {
       console.error('Failed to fetch latest metrics:', error);
