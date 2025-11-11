@@ -40,6 +40,15 @@ const Modal: React.FC<ModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Emergency close: always-visible small button so user can dismiss stuck modals/backdrops */}
+      <button
+        aria-label="Close modal"
+        onClick={onClose}
+        className="fixed top-4 right-4 z-60 bg-white/90 text-gray-700 rounded-full p-2 shadow-lg hover:bg-white"
+        title="Close modal"
+      >
+        <X className="w-4 h-4" />
+      </button>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"

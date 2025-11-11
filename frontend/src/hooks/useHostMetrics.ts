@@ -19,20 +19,25 @@ export interface MetricData {
 }
 
 const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
-  const [metrics, setMetrics] = useState<MetricData | null>(null);
-  const [series, setSeries] = useState<MetricData[]>([]);
+  // Initialize from localStorage to avoid UI blinking when websocket briefly disconnects
+  const cachedMetric = typeof window !== 'undefined' ? localStorage.getItem(`host_${hostId}_last_metric`) : null;
+  const cachedSeries = typeof window !== 'undefined' ? localStorage.getItem(`host_${hostId}_series`) : null;
+  const [metrics, setMetrics] = useState<MetricData | null>(cachedMetric ? JSON.parse(cachedMetric) : null);
+  const [series, setSeries] = useState<MetricData[]>(cachedSeries ? JSON.parse(cachedSeries) : []);
   const [lastSeq, setLastSeq] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(cachedMetric ? false : true);
   const [error, setError] = useState<string>('');
 
   const fetchLatest = async (forceFresh = false) => {
     try {
       setError('');
       
-      // Clear cache if forcing fresh data
+      // If forcing fresh, clear cache first
       if (forceFresh && hostId) {
-        localStorage.removeItem(`host_${hostId}_last_metric`);
-        localStorage.removeItem(`host_${hostId}_series`);
+        try {
+          localStorage.removeItem(`host_${hostId}_last_metric`);
+          localStorage.removeItem(`host_${hostId}_series`);
+        } catch (e) {}
       }
       
       const res = await hostService.getLatestMetrics(hostId as number);
@@ -63,12 +68,8 @@ const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
 
   useEffect(() => {
     if (!hostId) return;
-
-    // Clear old cache and fetch fresh data
-    localStorage.removeItem(`host_${hostId}_last_metric`);
-    localStorage.removeItem(`host_${hostId}_series`);
-    
-    fetchLatest(true);
+    // Attempt to use cached metric (already applied during init). Fetch fresh data in background.
+    fetchLatest(false);
     fetchHistory();
 
     let interval: any;

@@ -373,6 +373,7 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		DiskTotal   float64   `json:"disk_total"`
 		DiskUsed    float64   `json:"disk_used"`
 		Uptime      int64     `json:"uptime"`
+		CPUUsage    float64   `json:"cpu_usage"`
 		Timestamp   time.Time `json:"timestamp"`
 	}
 	// best-effort fetch - non-fatal
@@ -397,6 +398,14 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 	}
 	if hm.Uptime != 0 {
 		result["uptime"] = hm.Uptime
+	}
+
+	// If timeseries metrics did not supply a recent cpu_usage or it is zero,
+	// fall back to the latest snapshot stored in host_metrics (if present).
+	if hm.CPUUsage > 0 {
+		if existing, ok := result["cpu_usage"].(float64); !ok || existing == 0 {
+			result["cpu_usage"] = hm.CPUUsage
+		}
 	}
 	if hm.Timestamp.After(latestTimestamp) {
 		latestTimestamp = hm.Timestamp
@@ -676,6 +685,31 @@ func GetAllHostsLatestMetrics(c *fiber.Ctx) error {
 		if existingTs, ok := m["timestamp"].(time.Time); !ok || r.Timestamp.After(existingTs) {
 			m["timestamp"] = r.Timestamp
 		}
+	}
+
+	// If cpu_usage is missing or zero after merging recent timeseries rows,
+	// try one more fallback per-host: query the latest non-zero cpu_usage from the
+	// metrics table (last 10 minutes) and use it.
+	for hid, m := range resultMap {
+		if v, exists := m["cpu_usage"]; !exists || v == 0 {
+			var lastCPU struct {
+				Value     float64   `db:"value"`
+				Timestamp time.Time `db:"timestamp"`
+			}
+			err := postgres.DB.Raw(`
+				SELECT value, timestamp FROM metrics
+				WHERE host_id = ? AND name = 'cpu_usage' AND value > 0
+				AND timestamp > NOW() - INTERVAL '10 minutes'
+				ORDER BY timestamp DESC LIMIT 1
+			`, hid).Scan(&lastCPU).Error
+			if err == nil && lastCPU.Value > 0 {
+				m["cpu_usage"] = lastCPU.Value
+				if ts, ok := m["timestamp"].(time.Time); !ok || lastCPU.Timestamp.After(ts) {
+					m["timestamp"] = lastCPU.Timestamp
+				}
+			}
+		}
+		resultMap[hid] = m
 	}
 
 	// Convert to slice of host metrics

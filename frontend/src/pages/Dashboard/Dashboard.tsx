@@ -844,9 +844,9 @@ const Dashboard: React.FC = () => {
                               className="transition-all duration-1000"
                             />
                           </svg>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-bold text-gray-700">{cpuUsage.toFixed(0)}%</span>
-                          </div>
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-xs font-bold text-gray-700">{typeof cpuUsage === 'number' && cpuUsage !== 0 ? `${cpuUsage.toFixed(0)}%` : (metrics ? 'N/A' : '—')}</span>
+                              </div>
                         </div>
                         <p className="text-xs font-medium text-gray-600">CPU</p>
                       </div>
@@ -872,7 +872,7 @@ const Dashboard: React.FC = () => {
                             />
                           </svg>
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-bold text-gray-700">{memoryUsage.toFixed(0)}%</span>
+                            <span className="text-xs font-bold text-gray-700">{typeof memoryUsage === 'number' ? `${memoryUsage.toFixed(0)}%` : 'N/A'}</span>
                           </div>
                         </div>
                         <p className="text-xs font-medium text-gray-600">RAM</p>
@@ -899,7 +899,7 @@ const Dashboard: React.FC = () => {
                             />
                           </svg>
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-bold text-gray-700">{diskUsage.toFixed(0)}%</span>
+                            <span className="text-xs font-bold text-gray-700">{typeof diskUsage === 'number' ? `${diskUsage.toFixed(0)}%` : 'N/A'}</span>
                           </div>
                         </div>
                         <p className="text-xs font-medium text-gray-600">Disk</p>

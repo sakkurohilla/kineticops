@@ -10,6 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import Card from '../common/Card';
+// Removed SimpleAnalytics per user request: simplify hosts tab to original 3-card summary
 import useHostMetrics from '../../hooks/useHostMetrics';
 import {
   ResponsiveContainer,
@@ -42,17 +43,21 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const { metrics, series, loading, error, refetch } = useHostMetrics(hostId, autoRefresh);
   const m = metrics as MetricData | null;
-  const cpu = m?.cpu_usage ?? 0;
-  const memory = m?.memory_usage ?? 0;
-  const memory_used = m?.memory_used ?? 0;
-  const memory_total = m?.memory_total ?? 0;
-  const disk = m?.disk_usage ?? 0;
-  const disk_used = m?.disk_used ?? 0;
-  const disk_total = m?.disk_total ?? 0;
-  const uptimeVal = m?.uptime ?? 0;
+  // Use undefined-ish defaults so we can show N/A when data is missing
+  const cpu = m?.cpu_usage;
+  const memory = m?.memory_usage;
+  // backend stores memory totals in MB (not bytes) for host_metrics snapshots
+  const memory_used = m?.memory_used ?? 0; // MB
+  const memory_total = m?.memory_total ?? 0; // MB
+  const disk = m?.disk_usage;
+  // backend stores disk totals in GB (host_metrics snapshot conversion)
+  const disk_used = m?.disk_used ?? 0; // GB
+  const disk_total = m?.disk_total ?? 0; // GB
+  const uptimeVal = m?.uptime ?? null;
   const loadAvg = m?.load_average ?? '';
-  const netIn = m?.network_in ?? 0;
-  const netOut = m?.network_out ?? 0;
+  // network values are assumed to be bytes; convert to MB when rendering
+  const netIn = m?.network_in ?? null;
+  const netOut = m?.network_out ?? null;
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
@@ -115,6 +120,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
 
   return (
     <div className="space-y-6">
+
       {/* Header with Refresh */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Real-time Metrics</h2>
@@ -150,8 +156,8 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <div className="flex items-start justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">CPU Usage</p>
-              <p className={`text-3xl font-bold ${getUsageColor(cpu)}`}>
-                {cpu.toFixed(1)}%
+          <p className={`text-3xl font-bold ${getUsageColor(cpu ?? 0)}`}>
+            {typeof cpu === 'number' ? `${cpu.toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -159,10 +165,10 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
             </div>
           </div>
           {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(cpu)}`}
-              style={{ width: `${Math.min(cpu, 100)}%` }}
+              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(cpu ?? 0)}`}
+              style={{ width: `${Math.min(cpu ?? 0, 100)}%` }}
             ></div>
           </div>
           {/* Sparkline */}
@@ -182,8 +188,8 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <div className="flex items-start justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">Memory Usage</p>
-              <p className={`text-3xl font-bold ${getUsageColor(memory)}`}>
-                {memory.toFixed(1)}%
+              <p className={`text-3xl font-bold ${getUsageColor(memory ?? 0)}`}>
+                {typeof memory === 'number' ? `${memory.toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -191,9 +197,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(memory)}`}
-              style={{ width: `${Math.min(memory, 100)}%` }}
+              <div
+              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(memory ?? 0)}`}
+              style={{ width: `${Math.min(memory ?? 0, 100)}%` }}
             ></div>
           </div>
           <p className="text-xs text-gray-500">
@@ -215,8 +221,8 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <div className="flex items-start justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">Disk Usage</p>
-              <p className={`text-3xl font-bold ${getUsageColor(disk)}`}>
-                {disk.toFixed(1)}%
+              <p className={`text-3xl font-bold ${getUsageColor(disk ?? 0)}`}>
+                {typeof disk === 'number' ? `${disk.toFixed(1)}%` : 'N/A'}
               </p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -224,9 +230,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
             </div>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(disk)}`}
-              style={{ width: `${Math.min(disk, 100)}%` }}
+              <div
+              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(disk ?? 0)}`}
+              style={{ width: `${Math.min(disk ?? 0, 100)}%` }}
             ></div>
           </div>
           <p className="text-xs text-gray-500">
@@ -249,7 +255,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
             <div>
               <p className="text-sm font-medium text-gray-600 mb-1">Uptime</p>
               <p className="text-3xl font-bold text-blue-600">
-                {formatUptime(uptimeVal)}
+                {uptimeVal !== null ? formatUptime(uptimeVal) : 'N/A'}
               </p>
             </div>
             <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
@@ -290,7 +296,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
               <p className="text-sm font-medium text-green-900">Incoming</p>
             </div>
             <p className="text-2xl font-bold text-green-600">
-              {netIn.toFixed(2)} MB
+              {netIn !== null ? `${netIn.toFixed(2)} MB` : 'N/A'}
             </p>
             <p className="text-xs text-green-700 mt-1">Total received</p>
           </div>
@@ -301,7 +307,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
               <p className="text-sm font-medium text-blue-900">Outgoing</p>
             </div>
             <p className="text-2xl font-bold text-blue-600">
-              {netOut.toFixed(2)} MB
+              {netOut !== null ? `${netOut.toFixed(2)} MB` : 'N/A'}
             </p>
             <p className="text-xs text-blue-700 mt-1">Total sent</p>
           </div>
@@ -317,19 +323,19 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">System Health</h3>
             <div className="space-y-2">
-              {cpu < 70 && memory < 70 && disk < 70 ? (
+              {typeof cpu === 'number' && typeof memory === 'number' && typeof disk === 'number' && cpu < 70 && memory < 70 && disk < 70 ? (
                 <p className="text-sm text-green-700 font-medium">
                   ✓ All systems operating normally
                 </p>
               ) : (
                 <>
-                  {cpu >= 90 && (
+                  {typeof cpu === 'number' && cpu >= 90 && (
                     <p className="text-sm text-red-700 font-medium">⚠ High CPU usage detected</p>
                   )}
-                  {memory >= 90 && (
+                  {typeof memory === 'number' && memory >= 90 && (
                     <p className="text-sm text-red-700 font-medium">⚠ High memory usage detected</p>
                   )}
-                  {disk >= 90 && (
+                  {typeof disk === 'number' && disk >= 90 && (
                     <p className="text-sm text-red-700 font-medium">⚠ Low disk space warning</p>
                   )}
                 </>
