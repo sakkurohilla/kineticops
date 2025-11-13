@@ -32,7 +32,7 @@ func ServeInstallScript(c *fiber.Ctx) error {
 	host := fmt.Sprintf("%s://%s", scheme, requestHost)
 
 	script := fmt.Sprintf(`#!/bin/bash
-set -e
+set -euo pipefail
 
 KINETICOPS_HOST="%s"
 INSTALL_DIR="/opt/kineticops-agent"
@@ -40,81 +40,121 @@ CONFIG_DIR="/etc/kineticops-agent"
 SERVICE_NAME="kineticops-agent"
 INSTALLATION_TOKEN="%s"
 
-echo "🚀 Installing KineticOps Agent..."
+PROMTAIL_USER=${PROMTAIL_USER:-promtail}
+PROMTAIL_BIN=${PROMTAIL_BIN:-/usr/local/bin/promtail}
+PROMTAIL_POS_DIR=/var/lib/promtail
+PROMTAIL_CONFIG_DST="/etc/promtail/promtail.yaml"
+PROMTAIL_SYSTEMD="/etc/systemd/system/promtail.service"
 
-# Check if running as root
+echo "🚀 Installing KineticOps agents (kineticops-agent + promtail)..."
+
+# Ensure script runs as root
 if [[ $EUID -ne 0 ]]; then
-   echo "❌ This script must be run as root (use sudo)"
-   exit 1
+	echo "❌ Please run as root (use sudo)"
+	exit 1
 fi
 
-# Detect OS and architecture
+# Detect OS/ARCH
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
-
 case $ARCH in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) echo "❌ Unsupported architecture: $ARCH"; exit 1 ;;
+	x86_64) ARCH="amd64" ;;
+	aarch64|arm64) ARCH="arm64" ;;
+	*) echo "❌ Unsupported arch: $ARCH"; exit 1 ;;
 esac
 
-echo "✅ Detected OS: $OS, Architecture: $ARCH"
+echo "✅ Detected OS: $OS, ARCH: $ARCH"
 
-# Create directories
+# Create directories for agent
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
 mkdir -p "/var/log/kineticops-agent"
 
-# Download agent binary from your backend
-echo "📥 Downloading agent binary..."
+echo "📥 Downloading kineticops-agent binary..."
 if command -v curl >/dev/null 2>&1; then
-    curl -sSL "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -o "$INSTALL_DIR/kineticops-agent"
+	curl -sSL "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -o "$INSTALL_DIR/kineticops-agent"
 elif command -v wget >/dev/null 2>&1; then
-    wget -q "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -O "$INSTALL_DIR/kineticops-agent"
+	wget -q "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -O "$INSTALL_DIR/kineticops-agent"
 else
-    echo "❌ Neither curl nor wget found. Please install one of them."
-    exit 1
+	echo "❌ curl or wget required to download agent binary"
+	exit 1
 fi
-
 chmod +x "$INSTALL_DIR/kineticops-agent"
 
-# Create configuration file
-echo "⚙️  Creating configuration..."
-cat > "$CONFIG_DIR/config.yaml" << EOF
+# Bootstrap request to backend to get loki_url and agent token
+echo "🔐 Requesting agent bootstrap from backend to obtain Loki URL and agent token..."
+BOOT_RESP=$(mktemp)
+BOOT_PAYLOAD="{\"hostname\": \"$(hostname)\"}"
+if [[ -n "${CREATE_HOST:-}" && -n "${REG_SECRET:-}" ]]; then
+	BOOT_PAYLOAD="{\"hostname\": \"$(hostname)\", \"create_if_missing\": true, \"reg_secret\": \"${REG_SECRET}\"}"
+fi
+if command -v curl >/dev/null 2>&1; then
+	if curl -sS -X POST -H "Content-Type: application/json" -d "$BOOT_PAYLOAD" "$KINETICOPS_HOST/api/v1/agents/bootstrap" -o "$BOOT_RESP"; then
+		# parse JSON (jq preferred, python fallback)
+		parse_field(){
+			field=$1; file=$2
+			if command -v jq >/dev/null 2>&1; then
+				jq -r ".${field} // empty" "$file" || true
+			elif command -v python3 >/dev/null 2>&1; then
+				python3 - <<PY
+import json,sys
+try:
+	obj=json.load(open('$file'))
+	print(obj.get('$field',''))
+except:
+	sys.exit(0)
+PY
+			else
+				grep -oP '"'"${field}""'\s*:\s*"\K[^"]+' "$file" 2>/dev/null || true
+			fi
+		}
+		LOKI_URL=$(parse_field loki_url "$BOOT_RESP")
+		AGENT_TOKEN=$(parse_field token "$BOOT_RESP")
+	else
+		echo "⚠️  Bootstrap request failed; proceeding with install but Promtail will need manual config"
+	fi
+else
+	echo "⚠️  curl not available; cannot call bootstrap endpoint. Promtail will need manual LOKI_URL/TOKEN"
+fi
+rm -f "$BOOT_RESP"
+
+# Create kineticops-agent config using agent token if provided, otherwise fall back to installation token
+AGENT_AUTH_TOKEN=${AGENT_TOKEN:-$INSTALLATION_TOKEN}
+echo "⚙️  Writing agent config to $CONFIG_DIR/config.yaml"
+cat > "$CONFIG_DIR/config.yaml" <<EOF
 agent:
-  name: "kineticops-agent"
-  hostname: "$(hostname)"
-  period: 30s
+	name: "kineticops-agent"
+	hostname: "$(hostname)"
+	period: 30s
 
 output:
-  kineticops:
-    hosts: ["$KINETICOPS_HOST"]
-    token: "$INSTALLATION_TOKEN"
-    timeout: 30s
-    max_retry: 3
+	kineticops:
+		hosts: ["$KINETICOPS_HOST"]
+		token: "$AGENT_AUTH_TOKEN"
+		timeout: 30s
+		max_retry: 3
 
 modules:
-  system:
-    enabled: true
-    period: 30s
-    cpu:
-      enabled: true
-    memory:
-      enabled: true
-    network:
-      enabled: true
-    filesystem:
-      enabled: true
+	system:
+		enabled: true
+		period: 30s
+		cpu:
+			enabled: true
+		memory:
+			enabled: true
+		network:
+			enabled: true
+		filesystem:
+			enabled: true
 
 logging:
-  level: "info"
-  to_file: true
-  file: "/var/log/kineticops-agent/agent.log"
+	level: "info"
+	to_file: true
+	file: "/var/log/kineticops-agent/agent.log"
 EOF
 
-# Create systemd service
-echo "🔧 Creating systemd service..."
-cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
+# Create systemd service for kineticops-agent
+cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
 Description=KineticOps Monitoring Agent
 After=network.target
@@ -130,28 +170,76 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# Enable and start service
-echo "🚀 Starting service..."
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl start "$SERVICE_NAME"
+echo "� Installing Promtail (for Loki collection)..."
+# Create promtail dirs
+mkdir -p "$PROMTAIL_POS_DIR"
+mkdir -p "$(dirname $PROMTAIL_CONFIG_DST)"
 
-# Check status
-sleep 2
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-    echo "✅ KineticOps Agent installed and started successfully!"
-    echo "📊 Service status: $(systemctl is-active $SERVICE_NAME)"
-    echo "📝 View logs: journalctl -u $SERVICE_NAME -f"
-    echo "⚙️  Config file: $CONFIG_DIR/config.yaml"
-else
-    echo "❌ Service failed to start. Check logs: journalctl -u $SERVICE_NAME"
-    exit 1
+# Try to extract promtail binary from Docker image if not present
+if [[ ! -x "$PROMTAIL_BIN" ]]; then
+	if command -v docker >/dev/null 2>&1; then
+		CONTAINER_ID=$(docker create grafana/promtail:latest /bin/true)
+		if docker cp "$CONTAINER_ID":/usr/bin/promtail "$PROMTAIL_BIN" 2>/dev/null || docker cp "$CONTAINER_ID":/bin/promtail "$PROMTAIL_BIN" 2>/dev/null; then
+			chmod +x "$PROMTAIL_BIN"
+		else
+			echo "⚠️  Could not extract promtail binary from image; please install promtail manually"
+		fi
+		docker rm "$CONTAINER_ID" >/dev/null || true
+	else
+		echo "⚠️  Docker not available to extract promtail. Please install promtail binary manually at $PROMTAIL_BIN"
+	fi
 fi
 
+# Write a minimal Promtail config; if LOKI_URL present from bootstrap, embed it
+echo "⚙️  Writing Promtail config to $PROMTAIL_CONFIG_DST"
+cat > "$PROMTAIL_CONFIG_DST" <<EOF
+server:
+	http_listen_port: 9080
+	grpc_listen_port: 0
+
+positions:
+	filename: "$PROMTAIL_POS_DIR/positions.yaml"
+
+clients:
+	- url: "${LOKI_URL:-http://loki:3100/loki/api/v1/push}"
+EOF
+
+if [[ -n "${AGENT_TOKEN:-}" ]]; then
+	cat >> "$PROMTAIL_CONFIG_DST" <<EOF
+		headers:
+			Authorization: "Bearer ${AGENT_TOKEN}"
+EOF
+fi
+
+# Create simple promtail systemd unit
+cat > "$PROMTAIL_SYSTEMD" <<EOF
+[Unit]
+Description=Promtail log collector
+After=network.target
+
+[Service]
+User=$PROMTAIL_USER
+ExecStart=$PROMTAIL_BIN -config.file=$PROMTAIL_CONFIG_DST
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Set ownership and start services
+chown -R root:root "$INSTALL_DIR" || true
+chmod +x "$INSTALL_DIR/kineticops-agent" || true
+systemctl daemon-reload
+systemctl enable --now "$SERVICE_NAME" || systemctl restart "$SERVICE_NAME" || true
+systemctl enable --now promtail || systemctl restart promtail || true
+
 echo ""
-echo "🎉 Installation completed successfully!"
-echo "📈 Your host should appear in the KineticOps dashboard within 30 seconds."
-echo "🌐 Dashboard: $KINETICOPS_HOST"
+echo "✅ Installation finished. Services status:"
+systemctl is-active --quiet "$SERVICE_NAME" && echo "- $SERVICE_NAME: running" || echo "- $SERVICE_NAME: not running"
+systemctl is-active --quiet promtail && echo "- promtail: running" || echo "- promtail: not running"
+
+echo "Config locations: $CONFIG_DIR/config.yaml and $PROMTAIL_CONFIG_DST"
+echo "If Promtail did not start, install promtail binary at $PROMTAIL_BIN or ensure docker is available to extract it."
 `, host, token)
 
 	c.Set("Content-Type", "text/plain")

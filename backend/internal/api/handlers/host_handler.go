@@ -126,23 +126,28 @@ func DeleteHost(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
 	}
 
-	// EXPIRE ALL TOKENS for this tenant - prevent agent reconnection
+	// EXPIRE installation tokens for this tenant to prevent reuse of install tokens
 	postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
 		"used":       true,
 		"expires_at": time.Now().Add(-1 * time.Hour), // Expire 1 hour ago
 	})
 
-	// Delete all related data first
+	// Revoke and clear any agent tokens associated with this host to ensure
+	// agents cannot reconnect using previously issued credentials.
+	// Set revoked=true, revoked_at and clear the token for auditability.
+	postgres.DB.Exec("UPDATE agents SET revoked = TRUE, revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE host_id = ?", id)
+
+	// Delete agent-related child records
+	postgres.DB.Exec("DELETE FROM agent_services WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+	postgres.DB.Exec("DELETE FROM agent_installation_logs WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+
+	// Delete timeseries and snapshot data for the host
 	postgres.DB.Exec("DELETE FROM host_metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id)
 	postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id)
 
-	// Also delete agent-specific records to ensure no orphaned agent rows remain
-	// (agents table typically references hosts ON DELETE CASCADE, but some DBs
-	// or migrations may not enforce cascade; delete explicitly for safety.)
-	postgres.DB.Exec("DELETE FROM agent_services WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
-	postgres.DB.Exec("DELETE FROM agent_installation_logs WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+	// Finally delete any agent rows (optional - tokens already cleared)
 	postgres.DB.Exec("DELETE FROM agents WHERE host_id = ?", id)
 
 	// Delete the host
