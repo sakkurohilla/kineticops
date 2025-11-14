@@ -26,7 +26,7 @@ func ServeInstallScript(c *fiber.Ctx) error {
 
 	// Prefer more specific artifact names (kineticops-agent-<os>-<arch>) and
 	// perform GPG verification (preferred) then fall back to SHA256.
-	inner := fmt.Sprintf(`#!/bin/sh
+	inner := fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
 KINETICOPS_HOST="%s"
@@ -183,7 +183,7 @@ echo "Installed agent to $BIN_PATH"
 `, host, token, c.Query("target_os"))
 
 	encoded := base64.StdEncoding.EncodeToString([]byte(inner))
-	wrapper := fmt.Sprintf(`#!/bin/sh
+	wrapper := fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 cat <<'BASE64' | base64 -d > /tmp/kineticops_install.sh
 %s
