@@ -73,14 +73,12 @@ fi
 try_names() {
 	os_part="$1"
 	arch_part="$2"
-	target="$3"
-	if [ -n "$target" ]; then
-		echo "kineticops-agent-$target-$os_part-$arch_part"
-		echo "kineticops-agent_$target_${os_part}_${arch_part}"
-	fi
-	echo "kineticops-agent-$os_part-$arch_part"
+	# Prefer the short 'agent-<os>-<arch>' artifact names that we publish
 	echo "agent-$os_part-$arch_part"
 	echo "agent_${os_part}_${arch_part}"
+	# Backwards-compatible long name variants
+	echo "kineticops-agent-$os_part-$arch_part"
+	echo "kineticops-agent_${os_part}_${arch_part}"
 }
 
 DL=""
@@ -118,7 +116,7 @@ download() {
 verify_with_gpg() {
 	# Fetch public key and signature, import key to temporary GNUPGHOME and verify
 	pub_url="$KINETICOPS_HOST/api/v1/install/file/public.key"
-	sig_url="$KINETICOPS_HOST/api/v1/install/$1.asc"
+	sig_url="$KINETICOPS_HOST/api/v1/install/file/$1.asc"
 	tmpdir=$(mktemp -d)
 	export GNUPGHOME="$tmpdir"
 	if command -v curl >/dev/null 2>&1; then
@@ -144,7 +142,7 @@ verify_with_gpg() {
 }
 
 checksum_ok() {
-	sum_url="$KINETICOPS_HOST/api/v1/install/$1.sha256"
+	sum_url="$KINETICOPS_HOST/api/v1/install/file/$1.sha256"
 	expected=$(curl -sSL "$sum_url" || true)
 	if [ -z "$expected" ]; then
 		# No checksum published -> fail safe
