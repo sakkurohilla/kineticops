@@ -180,14 +180,27 @@ chmod +x "$BIN_PATH"
 echo "Installed agent to $BIN_PATH"
 `, host, token, c.Query("target_os"))
 
-	encoded := base64.StdEncoding.EncodeToString([]byte(inner))
-	wrapper := fmt.Sprintf(`#!/usr/bin/env bash
+		encoded := base64.StdEncoding.EncodeToString([]byte(inner))
+		// Emit a POSIX-compatible wrapper that writes the inner installer to /tmp
+		// and prefers to run it under bash with pipefail when bash exists. This
+		// keeps strict behavior on systems with bash while remaining compatible
+		// with /bin/sh (dash) when bash is unavailable.
+		wrapper := fmt.Sprintf(`#!/bin/sh
 set -euo
+
+# Write inner installer (base64) to temporary file
 cat <<'BASE64' | base64 -d > /tmp/kineticops_install.sh
 %s
 BASE64
 chmod +x /tmp/kineticops_install.sh
-exec /tmp/kineticops_install.sh "$@"
+
+# If bash is available, run the inner installer under bash with pipefail for
+# stricter failure handling. Otherwise execute the installer directly.
+if command -v bash >/dev/null 2>&1; then
+	exec bash -c 'set -euo pipefail; exec /tmp/kineticops_install.sh "$@"' -- "$@"
+else
+	exec /tmp/kineticops_install.sh "$@"
+fi
 `, encoded)
 
 	c.Set("Content-Type", "text/plain; charset=utf-8")
