@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
@@ -69,7 +71,11 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && rerr != sql.ErrTxDone {
+			logging.Warnf("transaction rollback error: %v", rerr)
+		}
+	}()
 
 	// Update agent heartbeat
 	_, err = tx.Exec(`
@@ -92,9 +98,12 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		if heartbeat != nil && heartbeat.Metadata.Hostname != "" {
 			var tombstones int
 			// count deleted_hosts entries in last 7 days for this hostname
-			_ = r.db.Get(&tombstones, "SELECT count(*) FROM deleted_hosts WHERE hostname = $1 AND deleted_at > NOW() - INTERVAL '7 days'", heartbeat.Metadata.Hostname)
+			if terr := r.db.Get(&tombstones, "SELECT count(*) FROM deleted_hosts WHERE hostname = $1 AND deleted_at > NOW() - INTERVAL '7 days'", heartbeat.Metadata.Hostname); terr != nil {
+				logging.Warnf("failed to check deleted_hosts tombstones for hostname=%s: %v", heartbeat.Metadata.Hostname, terr)
+				tombstones = 0
+			}
 			if tombstones > 0 {
-				fmt.Printf("[AGENT] Refusing heartbeat from token=%s hostname=%s: host recently deleted\n", token, heartbeat.Metadata.Hostname)
+				logging.Warnf("Refusing heartbeat from token=%s hostname=%s: host recently deleted", token, heartbeat.Metadata.Hostname)
 				return fmt.Errorf("token not recognized and host %s was recently deleted", heartbeat.Metadata.Hostname)
 			}
 		}
@@ -102,14 +111,15 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		return err
 	}
 
+	// Normalize nil heartbeat to avoid repeated nil checks below
+	if heartbeat == nil {
+		heartbeat = &models.AgentHeartbeat{}
+	}
+
 	// Compute server-side disk usage percent when disk bytes are provided.
 	diskUsagePct := heartbeat.DiskUsage
-	if heartbeat != nil && heartbeat.DiskTotalBytes > 0 {
-		// use provided byte counts to compute a canonical percent on the server
-		diskUsagePct = 0.0
-		if heartbeat.DiskTotalBytes > 0 {
-			diskUsagePct = (float64(heartbeat.DiskUsedBytes) / float64(heartbeat.DiskTotalBytes)) * 100.0
-		}
+	if heartbeat.DiskTotalBytes > 0 {
+		diskUsagePct = (float64(heartbeat.DiskUsedBytes) / float64(heartbeat.DiskTotalBytes)) * 100.0
 	}
 
 	// Update host metrics - use upsert to avoid duplicate-key errors when a row already exists
@@ -177,26 +187,37 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 
 	// disk_usage is now computed server-side in the upsert SQL (from disk bytes when provided)
 
-	// Broadcast a lightweight metric update for realtime UI updates
+	// Broadcast a lightweight metric update for realtime UI updates.
+	// Use locals to avoid potential nil-pointer analysis issues.
+	cpuUsage := 0.0
+	memoryUsage := 0.0
+	diskTotal := int64(0)
+	diskUsed := int64(0)
+	uptime := int64(0)
+	if heartbeat != nil {
+		cpuUsage = heartbeat.CPUUsage
+		memoryUsage = heartbeat.MemoryUsage
+		diskTotal = heartbeat.DiskTotalBytes
+		diskUsed = heartbeat.DiskUsedBytes
+		if heartbeat.Metadata.Uptime > 0 {
+			uptime = heartbeat.Metadata.Uptime
+		}
+	}
+
 	payload := map[string]interface{}{
 		"type":         "metric",
 		"host_id":      hostID,
-		"cpu_usage":    heartbeat.CPUUsage,
-		"memory_usage": heartbeat.MemoryUsage,
+		"cpu_usage":    cpuUsage,
+		"memory_usage": memoryUsage,
 		// disk_usage is the server-canonical percent (computed from bytes if available)
 		"disk_usage": diskUsagePct,
-		"disk_total": heartbeat.DiskTotalBytes,
-		"disk_used":  heartbeat.DiskUsedBytes,
-		"uptime":     0,
+		"disk_total": diskTotal,
+		"disk_used":  diskUsed,
+		"uptime":     uptime,
 		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 	}
-
-	// If the agent included uptime in metadata, prefer that value (seconds)
-	if heartbeat != nil && heartbeat.Metadata.Uptime > 0 {
-		payload["uptime"] = heartbeat.Metadata.Uptime
-	}
 	if b, jerr := json.Marshal(payload); jerr == nil {
-		fmt.Printf("[WS BROADCAST] host=%d heartbeat\n", hostID)
+		logging.Infof("[WS BROADCAST] host=%d heartbeat", hostID)
 		if gh := ws.GetGlobalHub(); gh != nil {
 			gh.RememberMessage(b)
 		}
@@ -246,7 +267,7 @@ func (r *AgentRepository) UpdateInstallLog(id int, status, logs, errorMsg string
 	query := `
 		UPDATE agent_installation_logs 
 		SET status = $1, logs = $2, error_message = $3, completed_at = CURRENT_TIMESTAMP
-		WHERE id = $1`
+		WHERE id = $4`
 	_, err := r.db.Exec(query, status, logs, errorMsg, id)
 	return err
 }

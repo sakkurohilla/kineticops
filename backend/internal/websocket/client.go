@@ -1,11 +1,12 @@
 package websocket
 
 import (
-	"log"
+	"context"
 	"sync"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 )
 
@@ -53,7 +54,7 @@ func (c *Client) ReadPump() {
 	defer func() {
 		// recover to avoid goroutine panics bringing down process
 		if r := recover(); r != nil {
-			log.Printf("[WS CLIENT] panic in ReadPump user=%d: %v", c.userID, r)
+			logging.Errorf("[WS CLIENT] panic in ReadPump user=%d: %v", c.userID, r)
 		}
 		// ensure unregister and close
 		select {
@@ -70,7 +71,9 @@ func (c *Client) ReadPump() {
 	// try to set read limit if supported by underlying conn
 	// (fasthttp/websocket supports SetReadLimit)
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	if err := c.conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		logging.Warnf("[WS CLIENT] SetReadDeadline error user=%d: %v", c.userID, err)
+	}
 	c.conn.SetPongHandler(func(appData string) error {
 		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
@@ -80,7 +83,7 @@ func (c *Client) ReadPump() {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
 			// log read error for diagnostics
-			log.Printf("[WS CLIENT] read error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
+			logging.Warnf("[WS CLIENT] read error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
 			break
 		}
 		// No need to process incoming for now.
@@ -98,7 +101,7 @@ func (c *Client) WritePump() {
 	defer func() {
 		ticker.Stop()
 		if r := recover(); r != nil {
-			log.Printf("[WS CLIENT] panic in WritePump user=%d: %v", c.userID, r)
+			logging.Errorf("[WS CLIENT] panic in WritePump user=%d: %v", c.userID, r)
 		}
 		_ = c.conn.Close()
 	}()
@@ -114,8 +117,8 @@ func (c *Client) WritePump() {
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				// log write error
-				log.Printf("[WS CLIENT] write error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
-				telemetry.IncWSSendErrors(nil, 1)
+				logging.Errorf("[WS CLIENT] write error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
+				telemetry.IncWSSendErrors(context.TODO(), 1)
 				telemetry.IncClientDisconnect()
 				// If write fails, unregister and close connection
 				select {
@@ -129,7 +132,7 @@ func (c *Client) WritePump() {
 			// send ping
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				log.Printf("[WS CLIENT] ping write error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
+				logging.Errorf("[WS CLIENT] ping write error user=%d remote=%v: %v", c.userID, c.conn.RemoteAddr(), err)
 				select {
 				case c.hub.unregister <- c:
 				default:

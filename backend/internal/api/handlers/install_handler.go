@@ -1,9 +1,9 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -11,268 +11,257 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
 
+// ServeInstallScript returns a minimal bootstrapper that decodes a base64
+// encoded inner installer and executes it. Keeping the inner payload small
+// avoids heredoc/quoting issues when piping to sh on target hosts.
 func ServeInstallScript(c *fiber.Ctx) error {
+	// token may be empty; installer will prompt interactively if not provided.
 	token := c.Query("token")
-	if token == "" {
-		return c.Status(400).SendString("Token required: add ?token=your_token")
-	}
 
-	// Get the backend host from request - use actual server IP/hostname
 	scheme := "http"
 	if c.Get("X-Forwarded-Proto") == "https" || c.Protocol() == "https" {
 		scheme = "https"
 	}
+	host := fmt.Sprintf("%s://%s", scheme, c.Get("Host"))
 
-	// Get the actual host from the request header, but replace localhost with actual IP
-	requestHost := c.Get("Host")
-	if requestHost == "localhost:8080" || requestHost == "127.0.0.1:8080" {
-		// Try to get the actual network IP
-		requestHost = "192.168.2.54:8080" // Actual server IP
-	}
-	host := fmt.Sprintf("%s://%s", scheme, requestHost)
-
-	script := fmt.Sprintf(`#!/bin/bash
+	// Prefer more specific artifact names (kineticops-agent-<os>-<arch>) and
+	// perform GPG verification (preferred) then fall back to SHA256.
+	inner := fmt.Sprintf(`#!/bin/sh
 set -euo pipefail
 
 KINETICOPS_HOST="%s"
-INSTALL_DIR="/opt/kineticops-agent"
-CONFIG_DIR="/etc/kineticops-agent"
-SERVICE_NAME="kineticops-agent"
 INSTALLATION_TOKEN="%s"
+TARGET_OS="%s"
+INSTALL_DIR="/opt/kineticops-agent"
 
-PROMTAIL_USER=${PROMTAIL_USER:-promtail}
-PROMTAIL_BIN=${PROMTAIL_BIN:-/usr/local/bin/promtail}
-PROMTAIL_POS_DIR=/var/lib/promtail
-PROMTAIL_CONFIG_DST="/etc/promtail/promtail.yaml"
-PROMTAIL_SYSTEMD="/etc/systemd/system/promtail.service"
+mkdir -p "$INSTALL_DIR" /var/log/kineticops-agent
 
-echo "🚀 Installing KineticOps agents (kineticops-agent + promtail)..."
-
-# Ensure script runs as root
-if [[ $EUID -ne 0 ]]; then
-	echo "❌ Please run as root (use sudo)"
-	exit 1
-fi
-
-# Detect OS/ARCH
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
-case $ARCH in
-	x86_64) ARCH="amd64" ;;
-	aarch64|arm64) ARCH="arm64" ;;
-	*) echo "❌ Unsupported arch: $ARCH"; exit 1 ;;
+case "$ARCH" in
+	x86_64) ARCH=amd64 ;;
+	aarch64|arm64) ARCH=arm64 ;;
+	*) echo "Unsupported arch: $ARCH"; exit 1 ;;
 esac
 
-echo "✅ Detected OS: $OS, ARCH: $ARCH"
+# If no token was provided in the URL, prompt the user interactively.
+if [ -z "$INSTALLATION_TOKEN" ]; then
+	echo "No installation token provided. Please enter your installation token."
+	printf "Token: "
+	read -r INSTALLATION_TOKEN
+	if [ -z "$INSTALLATION_TOKEN" ]; then
+		echo "No token provided; aborting."
+		exit 1
+	fi
+fi
 
-# Create directories for agent
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$CONFIG_DIR"
-mkdir -p "/var/log/kineticops-agent"
+# Prompt for target OS type when not supplied.
+if [ -z "$TARGET_OS" ]; then
+	echo "Which OS are you installing for?"
+	echo "1) ubuntu"
+	echo "2) centos"
+	echo "3) other"
+	printf "Choose [1-3]: "
+	read -r choice
+	case "$choice" in
+		1) TARGET_OS=ubuntu ;;
+		2) TARGET_OS=centos ;;
+		*) TARGET_OS=other ;;
+	esac
+fi
 
-echo "📥 Downloading kineticops-agent binary..."
-if command -v curl >/dev/null 2>&1; then
-	curl -sSL "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -o "$INSTALL_DIR/kineticops-agent"
-elif command -v wget >/dev/null 2>&1; then
-	wget -q "$KINETICOPS_HOST/api/v1/install/agent-$OS-$ARCH" -O "$INSTALL_DIR/kineticops-agent"
-else
-	echo "❌ curl or wget required to download agent binary"
+try_names() {
+	os_part="$1"
+	arch_part="$2"
+	target="$3"
+	if [ -n "$target" ]; then
+		echo "kineticops-agent-$target-$os_part-$arch_part"
+		echo "kineticops-agent_$target_${os_part}_${arch_part}"
+	fi
+	echo "kineticops-agent-$os_part-$arch_part"
+	echo "agent-$os_part-$arch_part"
+	echo "agent_${os_part}_${arch_part}"
+}
+
+DL=""
+for name in $(try_names "$OS" "$ARCH" "$TARGET_OS"); do
+	url="$KINETICOPS_HOST/api/v1/install/$name"
+	if command -v curl >/dev/null 2>&1; then
+		if curl -sfS --head "$url" >/dev/null 2>&1; then
+			DL="$name"
+			break
+		fi
+	elif command -v wget >/dev/null 2>&1; then
+		if wget -q --spider "$url" >/dev/null 2>&1; then
+			DL="$name"
+			break
+		fi
+	fi
+done
+
+if [ -z "$DL" ]; then
+	echo "No suitable agent binary available for $OS/$ARCH"
 	exit 1
 fi
-chmod +x "$INSTALL_DIR/kineticops-agent"
 
-# Bootstrap request to backend to get loki_url and agent token
-echo "🔐 Requesting agent bootstrap from backend to obtain Loki URL and agent token..."
-BOOT_RESP=$(mktemp)
-BOOT_PAYLOAD="{\"hostname\": \"$(hostname)\"}"
-if [[ -n "${CREATE_HOST:-}" && -n "${REG_SECRET:-}" ]]; then
-	BOOT_PAYLOAD="{\"hostname\": \"$(hostname)\", \"create_if_missing\": true, \"reg_secret\": \"${REG_SECRET}\"}"
-fi
-if command -v curl >/dev/null 2>&1; then
-	if curl -sS -X POST -H "Content-Type: application/json" -d "$BOOT_PAYLOAD" "$KINETICOPS_HOST/api/v1/agents/bootstrap" -o "$BOOT_RESP"; then
-		# parse JSON (jq preferred, python fallback)
-		parse_field(){
-			field=$1; file=$2
-			if command -v jq >/dev/null 2>&1; then
-				jq -r ".${field} // empty" "$file" || true
-			elif command -v python3 >/dev/null 2>&1; then
-				python3 - <<PY
-import json,sys
-try:
-	obj=json.load(open('$file'))
-	print(obj.get('$field',''))
-except:
-	sys.exit(0)
-PY
-			else
-				grep -oP '"'"${field}""'\s*:\s*"\K[^"]+' "$file" 2>/dev/null || true
-			fi
-		}
-		LOKI_URL=$(parse_field loki_url "$BOOT_RESP")
-		AGENT_TOKEN=$(parse_field token "$BOOT_RESP")
+BIN_PATH="$INSTALL_DIR/kineticops-agent"
+
+download() {
+	url="$1"
+	if command -v curl >/dev/null 2>&1; then
+		curl -sSL "$url" -o "$BIN_PATH"
 	else
-		echo "⚠️  Bootstrap request failed; proceeding with install but Promtail will need manual config"
+		wget -q "$url" -O "$BIN_PATH"
+	fi
+}
+
+verify_with_gpg() {
+	# Fetch public key and signature, import key to temporary GNUPGHOME and verify
+	pub_url="$KINETICOPS_HOST/api/v1/install/file/public.key"
+	sig_url="$KINETICOPS_HOST/api/v1/install/$1.asc"
+	tmpdir=$(mktemp -d)
+	export GNUPGHOME="$tmpdir"
+	if command -v curl >/dev/null 2>&1; then
+		curl -sSL "$pub_url" -o "$tmpdir/public.key" || true
+		curl -sSL "$sig_url" -o "$BIN_PATH.asc" || true
+	else
+		wget -q "$pub_url" -O "$tmpdir/public.key" || true
+		wget -q "$sig_url" -O "$BIN_PATH.asc" || true
+	fi
+	if [ -f "$tmpdir/public.key" ]; then
+		gpg --import "$tmpdir/public.key" >/dev/null 2>&1 || true
+	else
+		return 1
+	fi
+	if [ -f "$BIN_PATH.asc" ]; then
+		if gpg --verify "$BIN_PATH.asc" "$BIN_PATH" >/dev/null 2>&1; then
+			rm -rf "$tmpdir" "$BIN_PATH.asc"
+			return 0
+		fi
+	fi
+	rm -rf "$tmpdir" "$BIN_PATH.asc" || true
+	return 1
+}
+
+checksum_ok() {
+	sum_url="$KINETICOPS_HOST/api/v1/install/$1.sha256"
+	expected=$(curl -sSL "$sum_url" || true)
+	if [ -z "$expected" ]; then
+		# No checksum published -> fail safe
+		echo "Checksum not available for $1"
+		return 1
+	fi
+	actual=$(sha256sum "$BIN_PATH" 2>/dev/null | awk '{print $1}' || true)
+	if [ "$actual" = "$expected" ]; then
+		return 0
+	fi
+	return 1
+}
+
+download "$KINETICOPS_HOST/api/v1/install/$DL"
+# Prefer GPG verification if gpg is available and signatures are published
+if command -v gpg >/dev/null 2>&1; then
+	if verify_with_gpg "$DL"; then
+		echo "GPG signature verified for $DL"
+	elif checksum_ok "$DL"; then
+		echo "GPG verification failed or not available; checksum OK for $DL"
+	else
+		echo "Verification failed for $DL"
+		exit 1
 	fi
 else
-	echo "⚠️  curl not available; cannot call bootstrap endpoint. Promtail will need manual LOKI_URL/TOKEN"
-fi
-rm -f "$BOOT_RESP"
-
-# Create kineticops-agent config using agent token if provided, otherwise fall back to installation token
-AGENT_AUTH_TOKEN=${AGENT_TOKEN:-$INSTALLATION_TOKEN}
-echo "⚙️  Writing agent config to $CONFIG_DIR/config.yaml"
-cat > "$CONFIG_DIR/config.yaml" <<EOF
-agent:
-	name: "kineticops-agent"
-	hostname: "$(hostname)"
-	period: 30s
-
-output:
-	kineticops:
-		hosts: ["$KINETICOPS_HOST"]
-		token: "$AGENT_AUTH_TOKEN"
-		timeout: 30s
-		max_retry: 3
-
-modules:
-	system:
-		enabled: true
-		period: 30s
-		cpu:
-			enabled: true
-		memory:
-			enabled: true
-		network:
-			enabled: true
-		filesystem:
-			enabled: true
-
-logging:
-	level: "info"
-	to_file: true
-	file: "/var/log/kineticops-agent/agent.log"
-EOF
-
-# Create systemd service for kineticops-agent
-cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
-[Unit]
-Description=KineticOps Monitoring Agent
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=$INSTALL_DIR/kineticops-agent -c $CONFIG_DIR/config.yaml
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-echo "� Installing Promtail (for Loki collection)..."
-# Create promtail dirs
-mkdir -p "$PROMTAIL_POS_DIR"
-mkdir -p "$(dirname $PROMTAIL_CONFIG_DST)"
-
-# Try to extract promtail binary from Docker image if not present
-if [[ ! -x "$PROMTAIL_BIN" ]]; then
-	if command -v docker >/dev/null 2>&1; then
-		CONTAINER_ID=$(docker create grafana/promtail:latest /bin/true)
-		if docker cp "$CONTAINER_ID":/usr/bin/promtail "$PROMTAIL_BIN" 2>/dev/null || docker cp "$CONTAINER_ID":/bin/promtail "$PROMTAIL_BIN" 2>/dev/null; then
-			chmod +x "$PROMTAIL_BIN"
-		else
-			echo "⚠️  Could not extract promtail binary from image; please install promtail manually"
-		fi
-		docker rm "$CONTAINER_ID" >/dev/null || true
+	if checksum_ok "$DL"; then
+		echo "Checksum OK for $DL"
 	else
-		echo "⚠️  Docker not available to extract promtail. Please install promtail binary manually at $PROMTAIL_BIN"
+		echo "Checksum not available or mismatch for $DL"
+		exit 1
 	fi
 fi
 
-# Write a minimal Promtail config; if LOKI_URL present from bootstrap, embed it
-echo "⚙️  Writing Promtail config to $PROMTAIL_CONFIG_DST"
-cat > "$PROMTAIL_CONFIG_DST" <<EOF
-server:
-	http_listen_port: 9080
-	grpc_listen_port: 0
+chmod +x "$BIN_PATH"
+echo "Installed agent to $BIN_PATH"
+`, host, token, c.Query("target_os"))
 
-positions:
-	filename: "$PROMTAIL_POS_DIR/positions.yaml"
+	encoded := base64.StdEncoding.EncodeToString([]byte(inner))
+	wrapper := fmt.Sprintf(`#!/bin/sh
+set -euo pipefail
+cat <<'BASE64' | base64 -d > /tmp/kineticops_install.sh
+%s
+BASE64
+chmod +x /tmp/kineticops_install.sh
+exec /tmp/kineticops_install.sh "$@"
+`, encoded)
 
-clients:
-	- url: "${LOKI_URL:-http://loki:3100/loki/api/v1/push}"
-EOF
-
-if [[ -n "${AGENT_TOKEN:-}" ]]; then
-	cat >> "$PROMTAIL_CONFIG_DST" <<EOF
-		headers:
-			Authorization: "Bearer ${AGENT_TOKEN}"
-EOF
-fi
-
-# Create simple promtail systemd unit
-cat > "$PROMTAIL_SYSTEMD" <<EOF
-[Unit]
-Description=Promtail log collector
-After=network.target
-
-[Service]
-User=$PROMTAIL_USER
-ExecStart=$PROMTAIL_BIN -config.file=$PROMTAIL_CONFIG_DST
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Set ownership and start services
-chown -R root:root "$INSTALL_DIR" || true
-chmod +x "$INSTALL_DIR/kineticops-agent" || true
-systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME" || systemctl restart "$SERVICE_NAME" || true
-systemctl enable --now promtail || systemctl restart promtail || true
-
-echo ""
-echo "✅ Installation finished. Services status:"
-systemctl is-active --quiet "$SERVICE_NAME" && echo "- $SERVICE_NAME: running" || echo "- $SERVICE_NAME: not running"
-systemctl is-active --quiet promtail && echo "- promtail: running" || echo "- promtail: not running"
-
-echo "Config locations: $CONFIG_DIR/config.yaml and $PROMTAIL_CONFIG_DST"
-echo "If Promtail did not start, install promtail binary at $PROMTAIL_BIN or ensure docker is available to extract it."
-`, host, token)
-
-	c.Set("Content-Type", "text/plain")
-	return c.SendString(script)
+	c.Set("Content-Type", "text/plain; charset=utf-8")
+	return c.SendString(wrapper)
 }
 
+// ServeAgentBinary is a placeholder that returns 404 for agent binaries.
+// Implement actual binary serving from build artifacts if/when available.
 func ServeAgentBinary(c *fiber.Ctx) error {
-	osType := c.Params("os")
-	arch := c.Params("arch")
-
-	// Look for pre-built agent binary
-	binaryPath := filepath.Join("/opt/kineticops/agent", fmt.Sprintf("kineticops-agent-%s-%s", osType, arch))
-
-	// If not found, try to serve the local built binary
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		// Fallback to local agent binary (for development)
-		localBinary := "/home/akash/kineticops/agent/kineticops-agent"
-		if _, err := os.Stat(localBinary); err == nil {
-			return c.SendFile(localBinary)
-		}
-		return c.Status(404).SendString("Agent binary not found. Please build the agent first.")
+	osParam := c.Params("os")
+	archParam := c.Params("arch")
+	// Look for a built artifact in backend/build named agent-<os>-<arch> or agent_<os>_<arch>
+	// e.g., backend/build/agent-linux-amd64 or backend/build/agent_linux_amd64
+	paths := []string{
+		fmt.Sprintf("build/agent-%s-%s", osParam, archParam),
+		fmt.Sprintf("build/agent_%s_%s", osParam, archParam),
+		fmt.Sprintf("build/kineticops-agent-%s-%s", osParam, archParam),
+		fmt.Sprintf("build/kineticops-agent_%s_%s", osParam, archParam),
 	}
-
-	return c.SendFile(binaryPath)
+	// Also check common absolute locations inside containers where the server may run
+	absPaths := []string{
+		fmt.Sprintf("/build/agent-%s-%s", osParam, archParam),
+		fmt.Sprintf("/build/agent_%s_%s", osParam, archParam),
+		fmt.Sprintf("/usr/local/bin/build/agent-%s-%s", osParam, archParam),
+		fmt.Sprintf("/usr/local/bin/build/agent_%s_%s", osParam, archParam),
+		fmt.Sprintf("/usr/local/bin/kineticops-agent-%s-%s", osParam, archParam),
+		fmt.Sprintf("/app/build/agent-%s-%s", osParam, archParam),
+	}
+	for _, p := range paths {
+		// serve if file exists
+		if _, err := os.Stat(p); err == nil {
+			return c.SendFile(p, true)
+		}
+	}
+	for _, p := range absPaths {
+		if _, err := os.Stat(p); err == nil {
+			return c.SendFile(p, true)
+		}
+	}
+	return c.Status(404).SendString(fmt.Sprintf("Agent binary for %s/%s not available", osParam, archParam))
 }
 
+// ServeArtifact serves any file located in the build/ directory by name.
+// This is used for serving checksum files like agent-... .sha256 alongside
+// binaries.
+func ServeArtifact(c *fiber.Ctx) error {
+	name := c.Params("name")
+	if name == "" {
+		return c.Status(400).SendString("artifact name required")
+	}
+	// look in build/ and common absolute locations
+	candidates := []string{
+		fmt.Sprintf("build/%s", name),
+		fmt.Sprintf("/build/%s", name),
+		fmt.Sprintf("/usr/local/bin/build/%s", name),
+		fmt.Sprintf("/app/build/%s", name),
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return c.SendFile(p, true)
+		}
+	}
+	return c.Status(404).SendString("artifact not found")
+}
+
+// GenerateInstallationToken creates and stores a short-lived installation token
+// used by installers to bootstrap agents.
 func GenerateInstallationToken(c *fiber.Ctx) error {
 	userID := c.Locals("user_id")
 	if userID == nil {
-		return c.Status(401).JSON(fiber.Map{"error": "Unauthorized - no user_id"})
+		return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"})
 	}
-
-	// Convert userID to int64 safely
 	var uid int64
 	switch v := userID.(type) {
 	case int64:
@@ -285,41 +274,47 @@ func GenerateInstallationToken(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"error": fmt.Sprintf("Invalid user_id type: %T", userID)})
 	}
 
-	// Generate a simple token for now
-	token := fmt.Sprintf("install_%d_%d", uid, c.Context().Time().Unix())
+	// Allow client to request a token scoped to a target OS (ubuntu/centos/other)
+	var body struct {
+		TargetOS string `json:"target_os"`
+	}
+	// Best-effort parse JSON body; fall back to query param
+	_ = c.BodyParser(&body)
+	if body.TargetOS == "" {
+		body.TargetOS = c.Query("target_os")
+	}
 
-	// Store the token in database
+	token := fmt.Sprintf("install_%d_%d", uid, c.Context().Time().Unix())
 	installToken := models.InstallationToken{
 		Token:     token,
 		UserID:    uint(uid),
 		TenantID:  uint(uid),
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		Used:      false,
+		TargetOS:  body.TargetOS,
 	}
 	if err := postgres.DB.Create(&installToken).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create installation token"})
 	}
 
-	// Get the backend host - use actual server IP/hostname
 	scheme := "http"
 	if c.Get("X-Forwarded-Proto") == "https" || c.Protocol() == "https" {
 		scheme = "https"
 	}
-
-	// Get the actual host from the request header, but replace localhost with actual IP
 	requestHost := c.Get("Host")
-	if requestHost == "localhost:8080" || requestHost == "127.0.0.1:8080" {
-		// Try to get the actual network IP
-		requestHost = "192.168.2.54:8080" // Actual server IP
+	if requestHost == "" {
+		requestHost = "localhost:8080"
 	}
 	host := fmt.Sprintf("%s://%s", scheme, requestHost)
-
-	command := fmt.Sprintf("curl -sSL %s/api/v1/install/agent.sh?token=%s | sudo bash", host, token)
-
+	cmd := fmt.Sprintf("curl -sSL %s/api/v1/install/agent.sh?token=%s", host, token)
+	if installToken.TargetOS != "" {
+		cmd = fmt.Sprintf("%s&target_os=%s", cmd, installToken.TargetOS)
+	}
+	cmd = fmt.Sprintf("%s | sudo bash", cmd)
 	return c.JSON(fiber.Map{
 		"token":        token,
-		"command":      command,
-		"expires_in":   86400, // 24 hours
+		"command":      cmd,
+		"expires_in":   86400,
 		"instructions": "Run this command on your target server as root",
 	})
 }

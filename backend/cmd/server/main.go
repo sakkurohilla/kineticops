@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -14,6 +15,7 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	kafkaevents "github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/middleware"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
@@ -23,6 +25,10 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 	"github.com/sakkurohilla/kineticops/backend/internal/workers"
+
+	// Import timezone package early to set process-local timezone (time.Local)
+	// to Asia/Kolkata via its init() function.
+	_ "github.com/sakkurohilla/kineticops/backend/internal/timezone"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -34,12 +40,12 @@ var mongoClient *mongo.Client
 func initDBs(cfg *config.Config) {
 	// PostgreSQL
 	if err := postgres.Init(); err != nil {
-		log.Fatalf("PostgreSQL connection error: %v", err)
+		logging.Errorf("PostgreSQL connection error: %v", err)
 	}
 
 	// Redis
 	if err := redisrepo.Init(); err != nil {
-		log.Fatalf("Redis connection error: %v", err)
+		logging.Errorf("Redis connection error: %v", err)
 	}
 
 	// MongoDB (optional, for logs)
@@ -47,7 +53,7 @@ func initDBs(cfg *config.Config) {
 	defer cancel()
 	var err error
 	if cfg.MongoURI == "" {
-		log.Println("[WARN] MongoDB URI not configured; skipping MongoDB initialization")
+		logging.Warnf("[WARN] MongoDB URI not configured; skipping MongoDB initialization")
 	} else {
 		mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoURI))
 		if err != nil {
@@ -63,15 +69,15 @@ func initDBs(cfg *config.Config) {
 					masked = masked[:at+1] + "[hidden]"
 				}
 			}
-			log.Printf("[WARN] MongoDB connection error for URI=%s: %v", masked, err)
+			logging.Warnf("[WARN] MongoDB connection error for URI=%s: %v", masked, err)
 			return
 		}
 		if pingErr := mongoClient.Ping(ctx, nil); pingErr != nil {
-			log.Printf("[WARN] MongoDB ping error: %v", pingErr)
+			logging.Warnf("[WARN] MongoDB ping error: %v", pingErr)
 			return
 		}
 		models.LogCollection = mongoClient.Database("kineticops").Collection("logs")
-		log.Println("MongoDB (logs) connected.")
+		logging.Infof("MongoDB (logs) connected.")
 
 		// Ensure indexes for efficient log search and retention
 		go func() {
@@ -81,48 +87,54 @@ func initDBs(cfg *config.Config) {
 			// Text index for fast full-text search across message and full_text
 			textIndex := mongo.IndexModel{
 				Keys:    bson.D{{Key: "full_text", Value: "text"}, {Key: "message", Value: "text"}},
-				Options: options.Index().SetBackground(true).SetName("idx_logs_fulltext"),
+				Options: options.Index().SetName("idx_logs_fulltext"),
 			}
 
 			// Compound index for tenant/host/time queries
 			compoundIdx := mongo.IndexModel{
 				Keys:    bson.D{{Key: "tenant_id", Value: 1}, {Key: "host_id", Value: 1}, {Key: "timestamp", Value: -1}},
-				Options: options.Index().SetBackground(true).SetName("idx_logs_tenant_host_time"),
+				Options: options.Index().SetName("idx_logs_tenant_host_time"),
 			}
 
 			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, textIndex); err != nil {
-				log.Printf("[WARN] failed to create text index on logs: %v", err)
+				logging.Warnf("[WARN] failed to create text index on logs: %v", err)
 			} else {
-				log.Println("[INFO] created/ensured text index on logs")
+				logging.Infof("[INFO] created/ensured text index on logs")
 			}
 
 			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, compoundIdx); err != nil {
-				log.Printf("[WARN] failed to create compound index on logs: %v", err)
+				logging.Warnf("[WARN] failed to create compound index on logs: %v", err)
 			} else {
-				log.Println("[INFO] created/ensured compound index on logs")
+				logging.Infof("[INFO] created/ensured compound index on logs")
 			}
 
 			// Create TTL index to enforce log retention (30 days by default)
 			ttlIdx := mongo.IndexModel{
 				Keys:    bson.D{{Key: "timestamp", Value: 1}},
-				Options: options.Index().SetExpireAfterSeconds(60 * 60 * 24 * 30).SetBackground(true).SetName("idx_logs_ttl_30d"),
+				Options: options.Index().SetExpireAfterSeconds(60 * 60 * 24 * 30).SetName("idx_logs_ttl_30d"),
 			}
 
 			if _, err := models.LogCollection.Indexes().CreateOne(ctxIdx, ttlIdx); err != nil {
-				log.Printf("[WARN] failed to create TTL index on logs: %v", err)
+				logging.Warnf("[WARN] failed to create TTL index on logs: %v", err)
 			} else {
-				log.Println("[INFO] created/ensured TTL index on logs (30d)")
+				logging.Infof("[INFO] created/ensured TTL index on logs (30d)")
 			}
 		}()
 	}
 
-	log.Println("All DBs initialized.")
+	logging.Infof("All DBs initialized.")
 }
 
 func main() {
 	cfg := config.Load()
-	fmt.Println("[INFO] Starting KineticOps Server...")
-	fmt.Println("[DEBUG] JWTSecret loaded:", cfg.JWTSecret != "")
+
+	// Ensure timezone is set as early as possible via blank import of
+	// backend/internal/timezone (see backend/internal/timezone/timezone.go).
+	// That package's init() sets time.Local = Asia/Kolkata.
+	_ = cfg
+
+	logging.Infof("[INFO] Starting KineticOps Server...")
+	logging.Infof("[DEBUG] JWTSecret loaded: %v", cfg.JWTSecret != "")
 
 	initDBs(cfg)
 
@@ -136,7 +148,6 @@ func main() {
 
 	// Initialize handlers with services
 	handlers.InitAgentHandlers(agentService)
-	handlers.InitHostAgentService(agentService)
 	handlers.InitWorkflowHandlers(workflowService)
 
 	// Initialize telemetry (OpenTelemetry) - returns shutdown func
@@ -193,7 +204,7 @@ func main() {
 	for i := 0; i < 3; i++ {
 		if _, err := kafkaevents.InitProducer(brokers, topic); err != nil {
 			producerInitErr = err
-			log.Printf("Redpanda producer init attempt %d failed: %v", i+1, err)
+			logging.Warnf("Redpanda producer init attempt %d failed: %v", i+1, err)
 			time.Sleep(time.Duration(i+1) * time.Second)
 			continue
 		}
@@ -201,9 +212,9 @@ func main() {
 		break
 	}
 	if producerInitErr != nil {
-		log.Printf("[WARN] Redpanda/Kafka producer initialization failed after retries: %v", producerInitErr)
+		logging.Warnf("[WARN] Redpanda/Kafka producer initialization failed after retries: %v", producerInitErr)
 	} else {
-		log.Println("Redpanda producer initialized")
+		logging.Infof("Redpanda producer initialized")
 	}
 
 	// Start a reingest consumer that listens for failed metric batches and retries insertion
@@ -252,7 +263,7 @@ func main() {
 
 	// Kafka consumer to process agent events and broadcast to WebSocket clients
 	kafkaevents.StartConsumer(brokers, topic, func(msg []byte) {
-		fmt.Println("[DEBUG] Processing Kafka message:", string(msg))
+		logging.Infof("[DEBUG] Processing Kafka message: %s", string(msg))
 		// Broadcast as metric update
 		wsHub.RememberMessage(msg)
 		wsHub.Broadcast(msg)
@@ -305,14 +316,26 @@ func main() {
 		return c.SendFile("../frontend/dist/index.html")
 	})
 
-	log.Printf("✅ Server started successfully on port %s", cfg.AppPort)
-	log.Printf("📊 Health check: http://localhost:%s/health", cfg.AppPort)
-	log.Printf("🔌 API Base: http://localhost:%s/api/v1", cfg.AppPort)
-	log.Printf("🌍 Network: http://0.0.0.0:%s", cfg.AppPort)
-	log.Printf("⚙️  Metric Collector: Running every 60s")
+	logging.Infof("✅ Server started successfully on port %s", cfg.AppPort)
+	logging.Infof("📊 Health check: http://localhost:%s/health", cfg.AppPort)
+	logging.Infof("🔌 API Base: http://localhost:%s/api/v1", cfg.AppPort)
+	logging.Infof("🌍 Network: http://0.0.0.0:%s", cfg.AppPort)
+	logging.Infof("⚙️  Metric Collector: Running every 60s")
+
+	// Watch for SIGHUP to reload configuration at runtime without restart.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGHUP)
+		for {
+			<-sig
+			logging.Infof("Received SIGHUP, reloading configuration...")
+			config.Reload()
+			logging.Infof("Configuration reload complete.")
+		}
+	}()
 
 	// Listen on all interfaces (0.0.0.0)
 	if err := app.Listen("0.0.0.0:" + cfg.AppPort); err != nil {
-		log.Fatal(err)
+		logging.Errorf("server Listen error: %v", err)
 	}
 }

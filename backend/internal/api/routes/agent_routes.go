@@ -16,6 +16,9 @@ func RegisterAgentRoutes(app *fiber.App) {
 	api.Post("/metrics/bulk", middleware.AgentRateLimit(), handlers.BulkIngestMetrics)   // High-throughput bulk ingestion (COPY)
 	api.Post("/logs/collect", middleware.AgentRateLimit(), handlers.ReceiveAgentData)    // Alias for compatibility
 
+	// Bootstrap endpoint for installer to request per-host Loki URL and token
+	api.Post("/agents/bootstrap", handlers.BootstrapAgent)
+
 	// Admin agent management endpoints (require user auth)
 	agents := app.Group("/api/v1/agents", middleware.AuthRequired())
 	agents.Post(":id/revoke", handlers.RevokeAgent)

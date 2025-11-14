@@ -52,10 +52,12 @@ services:
       - redpanda
     env_file:
       - ./backend/.env
-    # No volume mount in production composition: the container runs the
-    # compiled binary from the image. For local iterative development you
-    # can re-enable a volume mount, but be aware that the container will
-    # then try to run the source (requires Go inside the image).
+    # Local development: mount the host build artifacts so the running
+    # backend process can serve agent binaries from `./backend/build`.
+    # In production images you should build artifacts into the image
+    # instead; this mount is intended for dev only.
+    volumes:
+      - ./backend/build:/usr/local/bin/build:ro
 
   migrator:
     image: golang:1.25
@@ -68,6 +70,37 @@ services:
     environment:
       - MIGRATE_DSN=host=postgres port=5432 user=akash password=akash dbname=kineticops sslmode=disable
 
+  loki:
+    image: grafana/loki:2.7.3
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+
+  grafana:
+    image: grafana/grafana:10.0.8
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    # Host port changed to 3001 to avoid conflict with local dev servers.
+    ports:
+      - "3001:3000"
+    depends_on:
+      - loki
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  promtail:
+    image: grafana/promtail:2.7.3
+    volumes:
+      - /var/log:/var/log:ro
+      - ./config/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - loki
+
 volumes:
   pgdata:
   mongodata:
+  loki_data:
+  grafana_data:

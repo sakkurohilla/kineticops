@@ -2,11 +2,12 @@ package redisrepo
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/spf13/viper"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 )
 
 var Client *redis.Client
@@ -24,7 +25,7 @@ func Init() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := Client.Ping(ctx).Err(); err != nil {
 			lastErr = err
-			log.Printf("Redis ping attempt %d to %s failed: %v", i+1, viper.GetString("REDIS_ADDR"), err)
+			logging.Warnf("Redis ping attempt %d to %s failed: %v", i+1, viper.GetString("REDIS_ADDR"), err)
 			cancel()
 			time.Sleep(time.Duration(i+1) * time.Second)
 			continue
@@ -34,7 +35,7 @@ func Init() error {
 		break
 	}
 	if lastErr != nil {
-		log.Printf("Redis connection failed after retries to %s: %v", viper.GetString("REDIS_ADDR"), lastErr)
+		logging.Errorf("Redis connection failed after retries to %s: %v", viper.GetString("REDIS_ADDR"), lastErr)
 		return lastErr
 	}
 	return nil

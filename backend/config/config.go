@@ -7,8 +7,9 @@ import (
 	"github.com/spf13/viper"
 )
 
-var loadOnce sync.Once
+var mu sync.Mutex
 
+// Config captures runtime configuration loaded from environment variables.
 type Config struct {
 	PostgresHost     string
 	PostgresPort     string
@@ -25,23 +26,24 @@ type Config struct {
 }
 
 func Load() *Config {
-	// Initialize viper and environment only once to avoid concurrent map writes
-	// when Load() is called from multiple goroutines (for example request
-	// handlers). Use sync.Once to ensure viper.SetDefault is executed a single
-	// time.
-	loadOnce.Do(func() {
-		// Try loading repository-local backend/.env first (used by scripts), then fall
-		// back to a top-level .env if present. Both are optional; environment
-		// variables will still be picked up via AutomaticEnv().
-		_ = godotenv.Load("backend/.env")
-		_ = godotenv.Load(".env")
-		viper.AutomaticEnv()
+	// Guard viper usage with a mutex to avoid concurrent map writes when called
+	// from multiple goroutines. We intentionally re-run godotenv.Load so a
+	// SIGHUP-triggered Reload can update environment-backed settings.
+	mu.Lock()
+	defer mu.Unlock()
 
-		// sensible defaults
-		viper.SetDefault("APP_PORT", "8080")
-		viper.SetDefault("POSTGRES_PORT", "5432")
-		viper.SetDefault("REDIS_ADDR", "localhost:6379")
-	})
+	// Try loading repository-local backend/.env first (used by scripts), then fall
+	// back to a top-level .env if present. Both are optional; environment
+	// variables will still be picked up via AutomaticEnv().
+	_ = godotenv.Load("backend/.env")
+	_ = godotenv.Load(".env")
+	viper.AutomaticEnv()
+
+	// sensible defaults
+	viper.SetDefault("APP_PORT", "8080")
+	viper.SetDefault("POSTGRES_PORT", "5432")
+	viper.SetDefault("REDIS_ADDR", "localhost:6379")
+
 	return &Config{
 		PostgresHost:     viper.GetString("POSTGRES_HOST"),
 		PostgresPort:     viper.GetString("POSTGRES_PORT"),
@@ -56,4 +58,16 @@ func Load() *Config {
 		JWTSecret:        viper.GetString("JWT_SECRET"),
 		AgentToken:       viper.GetString("AGENT_TOKEN"),
 	}
+}
+
+// Reload re-reads environment files and updates viper's environment mapping.
+// Call this when the process receives SIGHUP to pick up runtime configuration
+// changes without restarting the whole process.
+func Reload() {
+	mu.Lock()
+	defer mu.Unlock()
+	// Re-load environment files and refresh viper's AutomaticEnv mapping.
+	_ = godotenv.Load("backend/.env")
+	_ = godotenv.Load(".env")
+	viper.AutomaticEnv()
 }

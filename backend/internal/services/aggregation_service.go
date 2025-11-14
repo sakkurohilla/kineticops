@@ -1,5 +1,6 @@
 package services
 
+//nolint:staticcheck // intentional usage of deprecated package for compatibility; see repository/postgres/connection.go
 import (
 	"fmt"
 	"time"

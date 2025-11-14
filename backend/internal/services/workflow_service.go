@@ -2,10 +2,10 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
@@ -78,7 +78,9 @@ func (s *WorkflowService) ValidateSession(token string) (*models.WorkflowSession
 	}
 
 	// Update last activity
-	s.workflowRepo.UpdateSession(token)
+	if err := s.workflowRepo.UpdateSession(token); err != nil {
+		logging.Warnf("failed to update workflow session last-activity for token=%s: %v", token, err)
+	}
 
 	return session, nil
 }
@@ -150,7 +152,9 @@ func (s *WorkflowService) ControlService(serviceID int, action models.ControlAct
 		controlLog.ErrorMessage = err.Error()
 	}
 
-	s.workflowRepo.CreateControlLog(controlLog)
+	if err := s.workflowRepo.CreateControlLog(controlLog); err != nil {
+		logging.Warnf("failed to write service control log for service=%d host=%d: %v", serviceID, session.HostID, err)
+	}
 
 	return &models.ServiceControlResponse{
 		Success: err == nil,
@@ -167,7 +171,7 @@ func (s *WorkflowService) ControlService(serviceID int, action models.ControlAct
 func (s *WorkflowService) ExecuteRemoteCommand(hostID int, command string, sessionToken string) (string, error) {
 	// This would use cached SSH credentials from session
 	// Execute actual SSH command
-	log.Printf("Executing command on host %d: %s", hostID, command)
+	logging.Infof("Executing command on host %d: %s", hostID, command)
 	// TODO: Implement actual SSH command execution
 	return "", fmt.Errorf("SSH command execution not implemented")
 }
@@ -221,7 +225,7 @@ func (s *WorkflowService) testSSHConnection(req *models.WorkflowSessionRequest) 
 	host, err := s.hostRepo.GetByID(req.HostID)
 	if err != nil {
 		// For development: allow workflow without existing host
-		log.Printf("[WARN] Host %d not found, skipping SSH test: %v", req.HostID, err)
+		logging.Warnf("[WARN] Host %d not found, skipping SSH test: %v", req.HostID, err)
 		return nil
 	}
 

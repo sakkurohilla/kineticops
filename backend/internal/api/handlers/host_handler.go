@@ -8,16 +8,11 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
-
-var hostAgentService *services.AgentService
-
-func InitHostAgentService(as *services.AgentService) {
-	hostAgentService = as
-}
 
 // CreateHost creates a new host
 func CreateHost(c *fiber.Ctx) error {
@@ -127,28 +122,46 @@ func DeleteHost(c *fiber.Ctx) error {
 	}
 
 	// EXPIRE installation tokens for this tenant to prevent reuse of install tokens
-	postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
+	if res := postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
 		"used":       true,
 		"expires_at": time.Now().Add(-1 * time.Hour), // Expire 1 hour ago
-	})
+	}); res.Error != nil {
+		logging.Warnf("failed to expire installation tokens for tenant=%d: %v", host.TenantID, res.Error)
+	}
 
 	// Revoke and clear any agent tokens associated with this host to ensure
 	// agents cannot reconnect using previously issued credentials.
 	// Set revoked=true, revoked_at and clear the token for auditability.
-	postgres.DB.Exec("UPDATE agents SET revoked = TRUE, revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE host_id = ?", id)
+	if res := postgres.DB.Exec("UPDATE agents SET revoked = TRUE, revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to revoke agents for host_id=%d: %v", id, res.Error)
+	}
 
 	// Delete agent-related child records
-	postgres.DB.Exec("DELETE FROM agent_services WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
-	postgres.DB.Exec("DELETE FROM agent_installation_logs WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id)
+	if res := postgres.DB.Exec("DELETE FROM agent_services WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id); res.Error != nil {
+		logging.Warnf("failed to delete agent_services for host_id=%d: %v", id, res.Error)
+	}
+	if res := postgres.DB.Exec("DELETE FROM agent_installation_logs WHERE agent_id IN (SELECT id FROM agents WHERE host_id = ?)", id); res.Error != nil {
+		logging.Warnf("failed to delete agent_installation_logs for host_id=%d: %v", id, res.Error)
+	}
 
 	// Delete timeseries and snapshot data for the host
-	postgres.DB.Exec("DELETE FROM host_metrics WHERE host_id = ?", id)
-	postgres.DB.Exec("DELETE FROM metrics WHERE host_id = ?", id)
-	postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id)
-	postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id)
+	if res := postgres.DB.Exec("DELETE FROM host_metrics WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to delete host_metrics for host_id=%d: %v", id, res.Error)
+	}
+	if res := postgres.DB.Exec("DELETE FROM metrics WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to delete metrics for host_id=%d: %v", id, res.Error)
+	}
+	if res := postgres.DB.Exec("DELETE FROM timeseries_metrics WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to delete timeseries_metrics for host_id=%d: %v", id, res.Error)
+	}
+	if res := postgres.DB.Exec("DELETE FROM logs WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to delete logs for host_id=%d: %v", id, res.Error)
+	}
 
 	// Finally delete any agent rows (optional - tokens already cleared)
-	postgres.DB.Exec("DELETE FROM agents WHERE host_id = ?", id)
+	if res := postgres.DB.Exec("DELETE FROM agents WHERE host_id = ?", id); res.Error != nil {
+		logging.Warnf("failed to delete agents for host_id=%d: %v", id, res.Error)
+	}
 
 	// Delete the host
 	err = postgres.DeleteHost(postgres.DB, id)
@@ -157,7 +170,9 @@ func DeleteHost(c *fiber.Ctx) error {
 	}
 
 	// Record tombstone to prevent immediate auto-recreation by agents
-	postgres.DB.Exec("INSERT INTO deleted_hosts (hostname, tenant_id, deleted_at) VALUES (?, ?, CURRENT_TIMESTAMP)", host.Hostname, host.TenantID)
+	if res := postgres.DB.Exec("INSERT INTO deleted_hosts (hostname, tenant_id, deleted_at) VALUES (?, ?, CURRENT_TIMESTAMP)", host.Hostname, host.TenantID); res.Error != nil {
+		logging.Warnf("failed to insert deleted_host tombstone for hostname=%s tenant=%d: %v", host.Hostname, host.TenantID, res.Error)
+	}
 
 	return c.JSON(fiber.Map{
 		"msg":  "Host deleted and all tokens expired",
@@ -305,9 +320,7 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		ORDER BY timestamp DESC
 	`, hostID, host.TenantID).Scan(&allMetrics).Error
 
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch metrics"})
-	}
+	// `err` was already checked after the DB scan above; no additional check needed here.
 
 	// Process metrics with special disk_usage handling
 	metricMap := make(map[string]struct {
@@ -601,17 +614,31 @@ func GetAllHostsLatestMetrics(c *fiber.Ctx) error {
 	}
 	snapQuery += ` ORDER BY host_id, timestamp DESC`
 
-	if err := postgres.DB.Raw(snapQuery, hostIDs).Scan(&snaps).Error; err != nil {
-		// non-fatal - continue with empty snapshots
-		snaps = []struct {
-			HostID      int64     `json:"host_id"`
-			MemoryTotal float64   `json:"memory_total"`
-			MemoryUsed  float64   `json:"memory_used"`
-			DiskTotal   float64   `json:"disk_total"`
-			DiskUsed    float64   `json:"disk_used"`
-			Uptime      int64     `json:"uptime"`
-			Timestamp   time.Time `json:"timestamp"`
-		}{}
+	if len(hostIDs) > 0 {
+		if err := postgres.DB.Raw(snapQuery, hostIDs).Scan(&snaps).Error; err != nil {
+			// non-fatal - continue with empty snapshots
+			snaps = []struct {
+				HostID      int64     `json:"host_id"`
+				MemoryTotal float64   `json:"memory_total"`
+				MemoryUsed  float64   `json:"memory_used"`
+				DiskTotal   float64   `json:"disk_total"`
+				DiskUsed    float64   `json:"disk_used"`
+				Uptime      int64     `json:"uptime"`
+				Timestamp   time.Time `json:"timestamp"`
+			}{}
+		}
+	} else {
+		if err := postgres.DB.Raw(snapQuery).Scan(&snaps).Error; err != nil {
+			snaps = []struct {
+				HostID      int64     `json:"host_id"`
+				MemoryTotal float64   `json:"memory_total"`
+				MemoryUsed  float64   `json:"memory_used"`
+				DiskTotal   float64   `json:"disk_total"`
+				DiskUsed    float64   `json:"disk_used"`
+				Uptime      int64     `json:"uptime"`
+				Timestamp   time.Time `json:"timestamp"`
+			}{}
+		}
 	}
 
 	// map host_id -> snapshot
@@ -645,13 +672,24 @@ func GetAllHostsLatestMetrics(c *fiber.Ctx) error {
 	}
 	metricsQuery += ` ) SELECT host_id, name, value, timestamp FROM recent WHERE rn = 1`
 
-	if err := postgres.DB.Raw(metricsQuery, hostIDs).Scan(&rows).Error; err != nil {
-		rows = []struct {
-			HostID    int64     `json:"host_id"`
-			Name      string    `json:"name"`
-			Value     float64   `json:"value"`
-			Timestamp time.Time `json:"timestamp"`
-		}{}
+	if len(hostIDs) > 0 {
+		if err := postgres.DB.Raw(metricsQuery, hostIDs).Scan(&rows).Error; err != nil {
+			rows = []struct {
+				HostID    int64     `json:"host_id"`
+				Name      string    `json:"name"`
+				Value     float64   `json:"value"`
+				Timestamp time.Time `json:"timestamp"`
+			}{}
+		}
+	} else {
+		if err := postgres.DB.Raw(metricsQuery).Scan(&rows).Error; err != nil {
+			rows = []struct {
+				HostID    int64     `json:"host_id"`
+				Name      string    `json:"name"`
+				Value     float64   `json:"value"`
+				Timestamp time.Time `json:"timestamp"`
+			}{}
+		}
 	}
 
 	// assemble per-host map
@@ -749,7 +787,9 @@ func CollectHostNow(c *fiber.Ctx) error {
 	metric, err := services.CollectHostMetrics(host)
 	if err != nil {
 		// mark host offline and return error
-		services.UpdateHostStatus(host.ID, "offline")
+		if uerr := services.UpdateHostStatus(host.ID, "offline"); uerr != nil {
+			logging.Warnf("failed to mark host %d offline after collect error: %v", host.ID, uerr)
+		}
 		return c.Status(500).JSON(fiber.Map{"error": "collect failed", "detail": err.Error()})
 	}
 
@@ -757,7 +797,9 @@ func CollectHostNow(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "save failed", "detail": err.Error()})
 	}
 
-	services.UpdateHostStatus(host.ID, "online")
+	if uerr := services.UpdateHostStatus(host.ID, "online"); uerr != nil {
+		logging.Warnf("failed to mark host %d online after collect: %v", host.ID, uerr)
+	}
 
 	return c.JSON(fiber.Map{"success": true, "metric": metric})
 }
@@ -798,7 +840,9 @@ func CleanupFailedHost(hostname string) {
 	if err == nil {
 		for _, h := range hosts {
 			if h.Hostname == hostname && (h.AgentStatus == "installing" || h.AgentStatus == "failed") {
-				postgres.DeleteHost(postgres.DB, h.ID)
+				if derr := postgres.DeleteHost(postgres.DB, h.ID); derr != nil {
+					logging.Warnf("failed to cleanup failed host %s (id=%d): %v", h.Hostname, h.ID, derr)
+				}
 				break
 			}
 		}

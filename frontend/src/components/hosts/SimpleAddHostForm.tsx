@@ -15,6 +15,7 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
     ip: '',
     description: '',
   });
+  const [targetOS, setTargetOS] = useState('ubuntu');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,6 +26,10 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     setError('');
+  };
+
+  const handleOSChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setTargetOS(e.target.value);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,7 +50,7 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
 
     try {
       // Generate installation token from your backend
-      const tokenData = await apiClient.post('/install/token', {}) as any;
+  const tokenData = await apiClient.post('/install/token', { target_os: targetOS }) as any;
       setSuccess(true);
       setInstallCommand(tokenData.command);
       
@@ -204,6 +209,19 @@ const SimpleAddHostForm: React.FC<SimpleAddHostFormProps> = ({ onClose, onSucces
               rows={3}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Target OS</label>
+            <select
+              value={targetOS}
+              onChange={handleOSChange}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="ubuntu">Ubuntu (recommended)</option>
+              <option value="centos">CentOS / RHEL</option>
+              <option value="other">Other</option>
+            </select>
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

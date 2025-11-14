@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
 )
 
@@ -24,7 +24,7 @@ func IngestTelegraf(c *fiber.Ctx) error {
 	var raw interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		// If the payload isn't JSON array/object, try to parse as single line
-		log.Printf("[TELEGRAF] invalid json payload: %v", err)
+		logging.Warnf("[TELEGRAF] invalid json payload: %v", err)
 		return c.Status(400).JSON(fiber.Map{"error": "invalid json"})
 	}
 
@@ -124,7 +124,7 @@ func IngestTelegraf(c *fiber.Ctx) error {
 
 			// best-effort save via existing pipeline
 			if err := services.SaveHostMetrics(hm); err != nil {
-				log.Printf("[TELEGRAF] failed to save host metrics for host %d: %v", hostID, err)
+				logging.Errorf("[TELEGRAF] failed to save host metrics for host %d: %v", hostID, err)
 			}
 			return
 		}
@@ -153,7 +153,7 @@ func IngestTelegraf(c *fiber.Ctx) error {
 					if h, err := services.GetHostByID(hid, 0); err == nil && h != nil {
 						tenantID = h.TenantID
 					} else {
-						log.Printf("[TELEGRAF] unable to resolve tenant for host %d: %v", hid, err)
+						logging.Warnf("[TELEGRAF] unable to resolve tenant for host %d: %v", hid, err)
 						continue
 					}
 				} else {
@@ -162,7 +162,7 @@ func IngestTelegraf(c *fiber.Ctx) error {
 				}
 
 				if err := services.CollectMetric(hid, tenantID, k, f, nil); err != nil {
-					log.Printf("[TELEGRAF] failed to collect metric %s for host %d: %v", k, hid, err)
+					logging.Errorf("[TELEGRAF] failed to collect metric %s for host %d: %v", k, hid, err)
 				}
 			}
 		}

@@ -12,6 +12,7 @@ type InstallationToken struct {
 	ExpiresAt time.Time  `json:"expires_at" gorm:"not null"`
 	Used      bool       `json:"used" gorm:"default:false"`
 	UsedAt    *time.Time `json:"used_at,omitempty"`
+	TargetOS  string     `json:"target_os,omitempty" gorm:"size:32"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 

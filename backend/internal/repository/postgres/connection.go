@@ -2,11 +2,11 @@ package postgres
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/spf13/viper"
 	"gorm.io/driver/postgres"
@@ -47,13 +47,13 @@ func Init() error {
 			break
 		}
 		lastErr = err
-		log.Printf("Postgres connection attempt %d failed: %v", i+1, err)
+		logging.Warnf("Postgres connection attempt %d failed: %v", i+1, err)
 		time.Sleep(time.Duration(i+1) * time.Second)
 	}
 	if lastErr != nil {
 		// Provide guidance to operator: echo masked connection details
-		log.Printf("Postgres connection failed after retries: %v", lastErr)
-		log.Printf("Postgres DSN host=%s port=%s user=%s db=%s", host, port, user, dbname)
+		logging.Errorf("Postgres connection failed after retries: %v", lastErr)
+		logging.Errorf("Postgres DSN host=%s port=%s user=%s db=%s", host, port, user, dbname)
 		return lastErr
 	}
 
@@ -72,46 +72,59 @@ func Init() error {
 
 	// Auto-migrate core models including alerts/rules so API endpoints don't 500
 	// when those tables are missing in the target database.
-	if migrateErr := DB.AutoMigrate(&models.Host{}, &models.Metric{}, &models.HostMetric{}, &models.Alert{}, &models.AlertRule{}, &models.InstallationToken{}); migrateErr != nil {
-		log.Printf("Postgres auto-migrate warning: %v", migrateErr)
-		// do not fail startup on migrate error, but return the original err (nil or previous)
-	} else {
-		// Check which tables were created or already existed
-		nowHost := DB.Migrator().HasTable(&models.Host{})
-		nowMetric := DB.Migrator().HasTable(&models.Metric{})
-		nowHostMetric := DB.Migrator().HasTable(&models.HostMetric{})
-		nowAlert := DB.Migrator().HasTable(&models.Alert{})
-		nowAlertRule := DB.Migrator().HasTable(&models.AlertRule{})
+	// Run safe idempotent adjustments before AutoMigrate to avoid noisy errors
+	// when GORM attempts to change constraints. Specifically ensure the old
+	// unique constraint on host_metrics is dropped if present.
+	if err := DB.Exec(`ALTER TABLE host_metrics DROP CONSTRAINT IF EXISTS "uni_host_metrics_host_id";`).Error; err != nil {
+		// Do not fail startup for this; log at debug level via Printf
+		logging.Warnf("Postgres: safe drop constraint attempt returned: %v", err)
+	}
 
-		if !hasHost && nowHost {
-			log.Println("Postgres auto-migrate: created table 'hosts'")
-		} else if nowHost {
-			log.Println("Postgres: table 'hosts' exists")
-		}
+	// Note: host_metrics schema is managed via SQL migrations to avoid
+	// destructive changes that GORM may attempt (it can issue DROP CONSTRAINT
+	// without IF EXISTS). Exclude HostMetric from AutoMigrate and let the
+	// SQL migration files handle any constraint changes safely.
+	// NOTE: GORM AutoMigrate is intentionally disabled here to avoid it
+	// issuing DDL that may be destructive or non-idempotent in existing
+	// deployments (for example, DROP CONSTRAINT without IF EXISTS). The
+	// project uses explicit SQL migration files under backend/migrations
+	// to manage schema changes safely. We'll only verify that expected
+	// tables exist and log their presence.
 
-		if !hasMetric && nowMetric {
-			log.Println("Postgres auto-migrate: created table 'metrics'")
-		} else if nowMetric {
-			log.Println("Postgres: table 'metrics' exists")
-		}
+	nowHost := DB.Migrator().HasTable(&models.Host{})
+	nowMetric := DB.Migrator().HasTable(&models.Metric{})
+	nowHostMetric := DB.Migrator().HasTable(&models.HostMetric{})
+	nowAlert := DB.Migrator().HasTable(&models.Alert{})
+	nowAlertRule := DB.Migrator().HasTable(&models.AlertRule{})
 
-		if !hasHostMetric && nowHostMetric {
-			log.Println("Postgres auto-migrate: created table 'host_metrics'")
-		} else if nowHostMetric {
-			log.Println("Postgres: table 'host_metrics' exists")
-		}
+	if !hasHost && nowHost {
+		logging.Infof("Postgres: table 'hosts' was created (migration tool should have run)")
+	} else if nowHost {
+		logging.Infof("Postgres: table 'hosts' exists")
+	}
 
-		if !hasAlert && nowAlert {
-			log.Println("Postgres auto-migrate: created table 'alerts'")
-		} else if nowAlert {
-			log.Println("Postgres: table 'alerts' exists")
-		}
+	if !hasMetric && nowMetric {
+		logging.Infof("Postgres: table 'metrics' was created (migration tool should have run)")
+	} else if nowMetric {
+		logging.Infof("Postgres: table 'metrics' exists")
+	}
 
-		if !hasAlertRule && nowAlertRule {
-			log.Println("Postgres auto-migrate: created table 'alert_rules'")
-		} else if nowAlertRule {
-			log.Println("Postgres: table 'alert_rules' exists")
-		}
+	if !hasHostMetric && nowHostMetric {
+		logging.Infof("Postgres: table 'host_metrics' was created (migration tool should have run)")
+	} else if nowHostMetric {
+		logging.Infof("Postgres: table 'host_metrics' exists")
+	}
+
+	if !hasAlert && nowAlert {
+		logging.Infof("Postgres: table 'alerts' was created (migration tool should have run)")
+	} else if nowAlert {
+		logging.Infof("Postgres: table 'alerts' exists")
+	}
+
+	if !hasAlertRule && nowAlertRule {
+		logging.Infof("Postgres: table 'alert_rules' was created (migration tool should have run)")
+	} else if nowAlertRule {
+		logging.Infof("Postgres: table 'alert_rules' exists")
 	}
 
 	// Initialize sqlx connection for agent service
@@ -126,10 +139,10 @@ func Init() error {
 
 	SqlxDB, err = sqlx.Connect("postgres", sqlxDSN)
 	if err != nil {
-		log.Printf("Sqlx connection failed: %v", err)
+		logging.Errorf("Sqlx connection failed: %v", err)
 		return err
 	}
 
-	log.Println("PostgreSQL connected (GORM + sqlx)")
+	logging.Infof("PostgreSQL connected (GORM + sqlx)")
 	return err
 }

@@ -3,8 +3,10 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"gorm.io/gorm"
 )
@@ -225,7 +227,9 @@ func (s *EnhancedAlertService) evaluateCondition(condition *AlertCondition) {
 				Severity: condition.Severity,
 				OpenedAt: time.Now(),
 			}
-			s.CreateIncident(incident)
+			if cerr := s.CreateIncident(incident); cerr != nil {
+				logging.Errorf("failed to create incident for condition=%d: %v", condition.ID, cerr)
+			}
 
 			// Send notifications
 			s.sendNotifications(incident)
@@ -242,17 +246,25 @@ func (s *EnhancedAlertService) evaluateCondition(condition *AlertCondition) {
 	}
 }
 
-func (s *EnhancedAlertService) executeQuery(_query string, tenantID int64) (float64, error) {
-	// Simplified query execution - in production, implement full NRQL parser
-	// For now, support basic metric queries
-
-	// Example: "SELECT average(cpu_usage) FROM metrics WHERE host_id = 1"
-	// This is a simplified implementation
+func (s *EnhancedAlertService) executeQuery(query string, tenantID int64) (float64, error) {
+	// Simplified query execution - support a few basic metric names parsed
+	// out of the provided query string. This avoids an unused parameter
+	// while still keeping the implementation safe and constrained.
+	metric := "cpu_usage"
+	q := strings.ToLower(query)
+	switch {
+	case strings.Contains(q, "memory"):
+		metric = "memory_usage"
+	case strings.Contains(q, "disk"):
+		metric = "disk_usage"
+	case strings.Contains(q, "network"):
+		metric = "network_bytes"
+	case strings.Contains(q, "cpu"):
+		metric = "cpu_usage"
+	}
 
 	var result float64
-	err := postgres.DB.Raw("SELECT AVG(value) FROM metrics WHERE tenant_id = ? AND name = 'cpu_usage' AND timestamp > NOW() - INTERVAL '5 minutes'",
-		tenantID).Scan(&result).Error
-
+	err := postgres.DB.Raw("SELECT AVG(value) FROM metrics WHERE tenant_id = ? AND name = ? AND timestamp > NOW() - INTERVAL '5 minutes'", tenantID, metric).Scan(&result).Error
 	return result, err
 }
 
@@ -289,10 +301,11 @@ func (s *EnhancedAlertService) sendEmailNotification(channel *AlertChannel, inci
 		Recipients []string `json:"recipients"`
 		Subject    string   `json:"subject"`
 	}
-	json.Unmarshal([]byte(channel.Config), &config)
-
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		logging.Warnf("failed to parse email channel config for channel=%d: %v", channel.ID, err)
+	}
 	// Send email (implement with your email service)
-	fmt.Printf("EMAIL ALERT: %s - %s\n", incident.Title, incident.Description)
+	logging.Infof("EMAIL ALERT: %s - %s", incident.Title, incident.Description)
 }
 
 func (s *EnhancedAlertService) sendSlackNotification(channel *AlertChannel, incident *AlertIncident) {
@@ -301,10 +314,12 @@ func (s *EnhancedAlertService) sendSlackNotification(channel *AlertChannel, inci
 		WebhookURL string `json:"webhook_url"`
 		Channel    string `json:"channel"`
 	}
-	json.Unmarshal([]byte(channel.Config), &config)
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		logging.Warnf("failed to parse slack channel config for channel=%d: %v", channel.ID, err)
+	}
 
 	// Send Slack message (implement with Slack API)
-	fmt.Printf("SLACK ALERT: %s - %s\n", incident.Title, incident.Description)
+	logging.Infof("SLACK ALERT: %s - %s", incident.Title, incident.Description)
 }
 
 func (s *EnhancedAlertService) sendWebhookNotification(channel *AlertChannel, incident *AlertIncident) {
@@ -313,10 +328,12 @@ func (s *EnhancedAlertService) sendWebhookNotification(channel *AlertChannel, in
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
 	}
-	json.Unmarshal([]byte(channel.Config), &config)
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		logging.Warnf("failed to parse webhook channel config for channel=%d: %v", channel.ID, err)
+	}
 
 	// Send webhook (implement HTTP POST)
-	fmt.Printf("WEBHOOK ALERT: %s - %s\n", incident.Title, incident.Description)
+	logging.Infof("WEBHOOK ALERT: %s - %s", incident.Title, incident.Description)
 }
 
 func (s *EnhancedAlertService) sendPagerDutyNotification(channel *AlertChannel, incident *AlertIncident) {
@@ -325,10 +342,12 @@ func (s *EnhancedAlertService) sendPagerDutyNotification(channel *AlertChannel, 
 		IntegrationKey string `json:"integration_key"`
 		Severity       string `json:"severity"`
 	}
-	json.Unmarshal([]byte(channel.Config), &config)
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		logging.Warnf("failed to parse pagerduty channel config for channel=%d: %v", channel.ID, err)
+	}
 
 	// Send PagerDuty alert (implement with PagerDuty API)
-	fmt.Printf("PAGERDUTY ALERT: %s - %s\n", incident.Title, incident.Description)
+	logging.Infof("PAGERDUTY ALERT: %s - %s", incident.Title, incident.Description)
 }
 
 // Start the alert evaluation scheduler

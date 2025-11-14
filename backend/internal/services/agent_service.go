@@ -1,12 +1,13 @@
 package services
 
+//nolint:staticcheck // intentional usage of deprecated package for compatibility; see repository/postgres/connection.go
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
@@ -34,8 +35,11 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 			if h.Hostname == req.Hostname || h.IP == req.IP {
 				if h.AgentStatus == "installing" || h.AgentStatus == "failed" || h.AgentStatus == "" {
 					// Remove failed attempt
-					postgres.DeleteHost(postgres.DB, h.ID)
-					log.Printf("Cleaned up failed host creation attempt: %s (%s)", h.Hostname, h.IP)
+					if derr := postgres.DeleteHost(postgres.DB, h.ID); derr != nil {
+						logging.Warnf("failed to cleanup failed host %s (id=%d): %v", h.Hostname, h.ID, derr)
+					} else {
+						logging.Infof("Cleaned up failed host creation attempt: %s (%s)", h.Hostname, h.IP)
+					}
 				} else {
 					if h.Hostname == req.Hostname {
 						return nil, fmt.Errorf("host with hostname '%s' already exists", req.Hostname)
@@ -114,7 +118,9 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 		Status:      "started",
 		Logs:        "Installation initiated",
 	}
-	s.agentRepo.CreateInstallLog(installLog)
+	if err := s.agentRepo.CreateInstallLog(installLog); err != nil {
+		logging.Warnf("failed to create install log for agent %d: %v", installLog.AgentID, err)
+	}
 
 	response := &models.AgentSetupResponse{
 		HostID:      int(host.ID),
@@ -137,10 +143,12 @@ func (s *AgentService) SetupAgent(req *models.AgentSetupRequest) (*models.AgentS
 }
 
 func (s *AgentService) SetupAgentAutomatic(agent *models.Agent, req *models.AgentSetupRequest) {
-	log.Printf("Starting automatic setup for agent %d", agent.ID)
+	logging.Infof("Starting automatic setup for agent %d", agent.ID)
 
 	// Update status to installing
-	s.agentRepo.UpdateStatus(agent.ID, "installing", "Starting automatic installation...")
+	if err := s.agentRepo.UpdateStatus(agent.ID, "installing", "Starting automatic installation..."); err != nil {
+		logging.Warnf("failed to update agent %d status to installing: %v", agent.ID, err)
+	}
 
 	// Generate install script
 	script := s.GenerateInstallScript(agent.AgentToken)
@@ -154,14 +162,20 @@ func (s *AgentService) SetupAgentAutomatic(agent *models.Agent, req *models.Agen
 	}
 
 	if err != nil {
-		log.Printf("Automatic setup failed for agent %d: %v", agent.ID, err)
-		s.agentRepo.UpdateStatus(agent.ID, "failed", fmt.Sprintf("Installation failed: %v", err))
+		logging.Errorf("Automatic setup failed for agent %d: %v", agent.ID, err)
+		if uerr := s.agentRepo.UpdateStatus(agent.ID, "failed", fmt.Sprintf("Installation failed: %v", err)); uerr != nil {
+			logging.Errorf("failed to mark agent %d failed after SSH error: %v", agent.ID, uerr)
+		}
 		return
 	}
 
-	s.agentRepo.MarkInstalled(agent.ID)
-	s.agentRepo.UpdateStatus(agent.ID, "installed", "Agent installed successfully via SSH")
-	log.Printf("Automatic setup completed for agent %d", agent.ID)
+	if merr := s.agentRepo.MarkInstalled(agent.ID); merr != nil {
+		logging.Errorf("failed to mark agent %d installed: %v", agent.ID, merr)
+	}
+	if uerr := s.agentRepo.UpdateStatus(agent.ID, "installed", "Agent installed successfully via SSH"); uerr != nil {
+		logging.Errorf("failed to update agent %d status to installed: %v", agent.ID, uerr)
+	}
+	logging.Infof("Automatic setup completed for agent %d", agent.ID)
 }
 
 func (s *AgentService) GenerateAgentToken() (string, error) {

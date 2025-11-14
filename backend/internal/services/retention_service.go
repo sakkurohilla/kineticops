@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/mongodb"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
@@ -38,11 +39,10 @@ func (r *RetentionService) CleanupOldMetrics() error {
 		if result.Error != nil {
 			return fmt.Errorf("failed to cleanup old metrics: %w", result.Error)
 		}
-		fmt.Printf("[RETENTION] Fallback cleaned up %d old metric records\n", result.RowsAffected)
+		logging.Infof("Fallback cleaned up %d old metric records", result.RowsAffected)
 		return nil
 	}
-
-	fmt.Printf("[RETENTION] Dropped metrics older than %d days using Timescale drop_chunks\n", r.retentionDays)
+	logging.Infof("Dropped metrics older than %d days using Timescale drop_chunks", r.retentionDays)
 	return nil
 }
 
@@ -59,12 +59,12 @@ func (r *RetentionService) StartRetentionWorker() {
 	go func() {
 		for range ticker.C {
 			if err := r.CleanupOldMetrics(); err != nil {
-				fmt.Printf("[RETENTION] Error cleaning metrics: %v\n", err)
+				logging.Errorf("Error cleaning metrics: %v", err)
 			}
 			if err := r.CleanupOldLogs(); err != nil {
-				fmt.Printf("[RETENTION] Error cleaning logs: %v\n", err)
+				logging.Errorf("Error cleaning logs: %v", err)
 			}
 		}
 	}()
-	fmt.Println("[RETENTION] Started retention worker (24h cleanup cycle)")
+	logging.Infof("Started retention worker (24h cleanup cycle)")
 }

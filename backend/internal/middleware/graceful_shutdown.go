@@ -2,13 +2,13 @@ package middleware
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 )
 
 // GracefulShutdown handles the graceful shutdown of the server.
@@ -35,16 +35,16 @@ func (gs *GracefulShutdown) Shutdown(ctx context.Context) {
 
 		select {
 		case <-signalChan:
-			log.Println("Received shutdown signal. Gracefully shutting down...")
+			logging.Infof("Received shutdown signal. Gracefully shutting down...")
 		case <-ctx.Done():
-			log.Println("Context is done. Gracefully shutting down...")
+			logging.Infof("Context is done. Gracefully shutting down...")
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
 		if err := gs.app.ShutdownWithContext(shutdownCtx); err != nil {
-			log.Printf("Error during server shutdown: %v", err)
+			logging.Errorf("Error during server shutdown: %v", err)
 		}
 	}()
 }
@@ -52,5 +52,5 @@ func (gs *GracefulShutdown) Shutdown(ctx context.Context) {
 // Wait blocks until the shutdown process is complete.
 func (gs *GracefulShutdown) Wait() {
 	<-gs.shutdown
-	log.Println("Shutdown complete.")
+	logging.Infof("Shutdown complete.")
 }

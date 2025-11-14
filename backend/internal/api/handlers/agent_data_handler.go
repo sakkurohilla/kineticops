@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"github.com/sakkurohilla/kineticops/backend/internal/services"
@@ -34,7 +35,7 @@ func ReceiveAgentData(c *fiber.Ctx) error {
 
 	if err := c.BodyParser(&payload); err != nil {
 		// Log parse error for diagnostics (do not echo payload contents)
-		fmt.Printf("[ERROR] agent data parse error: %v\n", err)
+		logging.Warnf("agent data parse error: %v", err)
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON payload"})
 	}
 
@@ -76,7 +77,6 @@ func processEvent(event *AgentEvent, tenantID int64) bool {
 
 	// Extract all host information
 	primaryIP, _ := hostData["primary_ip"].(string)
-	allIPs, _ := hostData["ips"].([]interface{})
 	os, _ := hostData["os"].(string)
 	platform, _ := hostData["platform"].(string)
 	platformFamily, _ := hostData["platform_family"].(string)
@@ -85,26 +85,20 @@ func processEvent(event *AgentEvent, tenantID int64) bool {
 	kernelVersion, _ := hostData["kernel_version"].(string)
 	virtualization, _ := hostData["virtualization"].(string)
 
-	// Convert IPs to string slice
-	var ipStrings []string
-	for _, ip := range allIPs {
-		if ipStr, ok := ip.(string); ok {
-			ipStrings = append(ipStrings, ipStr)
-		}
-	}
-
 	host := findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
-		platformVersion, arch, kernelVersion, virtualization, ipStrings, tenantID)
+		platformVersion, arch, kernelVersion, virtualization, tenantID)
 	if host == nil {
 		return false
 	}
 
 	// Update host last seen and status
 	now := time.Now().UTC()
-	postgres.DB.Model(&models.Host{}).Where("id = ?", host.ID).Updates(map[string]interface{}{
+	if res := postgres.DB.Model(&models.Host{}).Where("id = ?", host.ID).Updates(map[string]interface{}{
 		"last_seen":    now,
 		"agent_status": "online",
-	})
+	}); res.Error != nil {
+		logging.Warnf("failed to update last_seen/agent_status for host=%d: %v", host.ID, res.Error)
+	}
 
 	// Process system metrics with validation
 	if event.System != nil {
@@ -173,7 +167,7 @@ func processAgentLog(event *AgentEvent, hostID, tenantID int64) {
 		}
 	}
 	// fallback to top-level event fields
-	if l.Meta == nil || len(l.Meta) == 0 {
+	if len(l.Meta) == 0 {
 		if evfields, ok := event.Event["fields"].(map[string]interface{}); ok {
 			for k, v := range evfields {
 				l.Meta[k] = fmt.Sprintf("%v", v)
@@ -182,8 +176,12 @@ func processAgentLog(event *AgentEvent, hostID, tenantID int64) {
 	}
 
 	// Persist via service (parses/enriches and inserts into MongoDB)
+	// Read HostID field here to avoid staticcheck reporting unused write when
+	// the field is consumed reflectively by downstream code (e.g. JSON/Mongo).
+	_ = l.HostID
 	if err := services.CollectLog(context.Background(), l); err != nil {
-		fmt.Printf("[WARN] failed to persist agent log for host=%d: %v\n", hostID, err)
+		// don't fail the whole pipeline for logging issues; record and continue
+		logging.Warnf("failed to persist agent log for host=%d: %v", hostID, err)
 		return
 	}
 
@@ -200,7 +198,7 @@ func processAgentLog(event *AgentEvent, hostID, tenantID int64) {
 
 func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 	platformVersion, arch, kernelVersion, virtualization string,
-	allIPs []string, tenantID int64) *models.Host {
+	tenantID int64) *models.Host {
 
 	var host models.Host
 
@@ -226,7 +224,9 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 			updates["os"] = os
 		}
 		if len(updates) > 0 {
-			postgres.DB.Model(&host).Updates(updates)
+			if res := postgres.DB.Model(&host).Updates(updates); res.Error != nil {
+				logging.Warnf("failed to update host info for host=%d: %v", host.ID, res.Error)
+			}
 		}
 		return &host
 	}
@@ -243,9 +243,11 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 	// Prevent re-creation if the host was recently deleted (tombstone exists)
 	var tombstoneCount int
 	// check deleted_hosts for entries in last 7 days
-	_ = postgres.DB.Raw("SELECT count(*) FROM deleted_hosts WHERE hostname = ? AND tenant_id = ? AND deleted_at > NOW() - INTERVAL '7 days'", hostname, tenantID).Scan(&tombstoneCount).Error
+	if terr := postgres.DB.Raw("SELECT count(*) FROM deleted_hosts WHERE hostname = ? AND tenant_id = ? AND deleted_at > NOW() - INTERVAL '7 days'", hostname, tenantID).Scan(&tombstoneCount).Error; terr != nil {
+		logging.Warnf("failed to check deleted_hosts tombstones for hostname=%s tenant=%d: %v", hostname, tenantID, terr)
+	}
 	if tombstoneCount > 0 {
-		fmt.Printf("[INFO] Skipping auto-creation for recently deleted host %s (tenant=%d)\n", hostname, tenantID)
+		logging.Infof("Skipping auto-creation for recently deleted host %s (tenant=%d)", hostname, tenantID)
 		return nil
 	}
 
@@ -265,6 +267,7 @@ func findOrCreateHost(hostname, primaryIP, os, platform, platformFamily,
 	}
 
 	if err := postgres.DB.Create(&host).Error; err != nil {
+		logging.Warnf("failed to create auto-discovered host %s tenant=%d: %v", hostname, tenantID, err)
 		return nil
 	}
 
@@ -333,14 +336,16 @@ func extractTenantID(c *fiber.Ctx) int64 {
 }
 
 func processSystemMetrics(hostID, tenantID int64, system map[string]interface{}, timestamp time.Time) {
-	metric := &models.HostMetric{HostID: hostID, Timestamp: timestamp}
+	metric := &models.HostMetric{Timestamp: timestamp}
 
 	// CPU metrics with validation
 	if cpu, ok := system["cpu"].(map[string]interface{}); ok {
 		if total, ok := cpu["total"].(map[string]interface{}); ok {
 			if pct, ok := total["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.CPUUsage = pct * 100
-				services.CollectMetric(hostID, tenantID, "cpu_usage", metric.CPUUsage, nil)
+				if err := services.CollectMetric(hostID, tenantID, "cpu_usage", metric.CPUUsage, nil); err != nil {
+					logging.Errorf("CollectMetric(cpu_usage) failed host=%d: %v", hostID, err)
+				}
 			}
 		}
 	}
@@ -380,7 +385,9 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			}
 			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.MemoryUsage = pct * 100
-				services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
+				if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
+					logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
+				}
 			}
 		}
 
@@ -397,7 +404,9 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			metric.MemoryTotal = totalBytes / (1024 * 1024) // MB (ensure set)
 			// compute percent
 			metric.MemoryUsage = (usedBytes / totalBytes) * 100
-			services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil)
+			if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
+				logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
+			}
 		}
 	}
 
@@ -409,11 +418,11 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 		// Skip if not root filesystem
 		if mountPoint != "/" {
-			fmt.Printf("[DEBUG] Skipping filesystem %s mounted at %s\n", deviceName, mountPoint)
+			logging.Infof("Skipping filesystem %s mounted at %s", deviceName, mountPoint)
 			return
 		}
 
-		fmt.Printf("[DEBUG] Processing root filesystem %s mounted at %s\n", deviceName, mountPoint)
+		logging.Infof("Processing root filesystem %s mounted at %s", deviceName, mountPoint)
 
 		if used, ok := fs["used"].(map[string]interface{}); ok {
 			// agent may provide pct (0..1 or 0..100) and/or raw bytes
@@ -438,7 +447,9 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			if usedBytes > 0 && totalBytes > 0 {
 				serverPct := (usedBytes / totalBytes) * 100.0
 				metric.DiskUsage = serverPct
-				services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
+				if err := services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil); err != nil {
+					logging.Errorf("CollectMetric(disk_usage) failed host=%d: %v", hostID, err)
+				}
 				// If agent also reported pct, normalize and compare
 				if agentPctVal >= 0 {
 					var agentPctPercent float64
@@ -448,10 +459,10 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 						agentPctPercent = agentPctVal
 					}
 					if math.Abs(agentPctPercent-serverPct) > 15.0 {
-						fmt.Printf("[WARN] Disk pct mismatch host=%d device=%s agent_pct=%.2f server_pct=%.2f\n", hostID, deviceName, agentPctPercent, serverPct)
+						logging.Warnf("Disk pct mismatch host=%d device=%s agent_pct=%.2f server_pct=%.2f", hostID, deviceName, agentPctPercent, serverPct)
 					}
 				}
-				fmt.Printf("[DEBUG] Root disk usage (bytes) for %s mounted at %s: %.2f%%\n", deviceName, mountPoint, metric.DiskUsage)
+				logging.Infof("Root disk usage (bytes) for %s mounted at %s: %.2f%%", deviceName, mountPoint, metric.DiskUsage)
 			} else {
 				// Fallback to agent-provided pct when bytes not available
 				if agentPctVal >= 0 {
@@ -462,8 +473,10 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 						agentPctPercent = agentPctVal
 					}
 					metric.DiskUsage = agentPctPercent
-					services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil)
-					fmt.Printf("[DEBUG] Root disk usage (agent pct) for %s mounted at %s: %.2f%%\n", deviceName, mountPoint, metric.DiskUsage)
+					if err := services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil); err != nil {
+						logging.Errorf("CollectMetric(disk_usage) failed host=%d: %v", hostID, err)
+					}
+					logging.Infof("Root disk usage (agent pct) for %s mounted at %s: %.2f%%", deviceName, mountPoint, metric.DiskUsage)
 				}
 			}
 		} else {
@@ -552,7 +565,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		metric.Uptime, metric.LoadAverage, metric.Timestamp).Error
 
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to store host metrics for host %d: %v\n", hostID, err)
+		logging.Errorf("Failed to store host metrics for host %d: %v", hostID, err)
 	}
 
 	// Broadcast the updated metrics to websocket clients for realtime dashboard updates

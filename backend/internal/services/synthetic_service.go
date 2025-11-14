@@ -2,10 +2,10 @@ package services
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 	"gorm.io/gorm"
@@ -301,7 +301,7 @@ func (s *SyntheticService) CheckAlerts(result *models.SyntheticResult) error {
 
 		if triggered {
 			// In production, send notification
-			fmt.Printf("ALERT: Monitor %d triggered alert %s\n", result.MonitorID, alert.Type)
+			logging.Infof("ALERT: Monitor %d triggered alert %s", result.MonitorID, alert.Type)
 		}
 	}
 
@@ -398,7 +398,9 @@ func (s *SyntheticService) runScheduledMonitors() {
 			go func(m models.SyntheticMonitor) {
 				result, err := s.ExecuteMonitor(&m)
 				if err == nil && result != nil {
-					s.CheckAlerts(result)
+					if cerr := s.CheckAlerts(result); cerr != nil {
+						logging.Warnf("CheckAlerts failed for monitor=%d: %v", result.MonitorID, cerr)
+					}
 				}
 			}(monitor)
 		}

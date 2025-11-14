@@ -15,7 +15,15 @@ RUN go build -o /kineticops-backend ./cmd/server
 
 # Runtime image
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Set container timezone to IST and install tzdata so the container OS timezone
+# matches the application-level `time.Local` (Asia/Kolkata). Use noninteractive
+# frontend to avoid interactive timezone prompts during image build.
+ENV TZ=Asia/Kolkata
+RUN apt-get update && \
+	DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates tzdata && \
+	ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+	rm -rf /var/lib/apt/lists/*
 
 # Create app user for safety (optional)
 RUN useradd -m appuser || true

@@ -17,4 +17,7 @@ func RegisterInstallRoutes(app *fiber.App) {
 
 	// Serve agent binary (public)
 	install.Get("/agent-:os-:arch", handlers.ServeAgentBinary)
+
+	// Serve arbitrary artifact by name (allows checksums like agent-... .sha256)
+	install.Get("/file/:name", handlers.ServeArtifact)
 }

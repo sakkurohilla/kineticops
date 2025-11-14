@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
 
@@ -24,7 +25,9 @@ func CleanupAllData(c *fiber.Ctx) error {
 	}
 
 	for _, table := range tables {
-		postgres.DB.Exec("TRUNCATE TABLE " + table + " RESTART IDENTITY CASCADE")
+		if res := postgres.DB.Exec("TRUNCATE TABLE " + table + " RESTART IDENTITY CASCADE"); res.Error != nil {
+			logging.Warnf("failed to truncate table %s: %v", table, res.Error)
+		}
 	}
 
 	return c.JSON(fiber.Map{

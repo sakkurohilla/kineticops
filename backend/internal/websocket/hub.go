@@ -3,10 +3,10 @@ package websocket
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"runtime"
 	"sync"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/telemetry"
 )
 
@@ -140,7 +140,7 @@ func (h *Hub) Run() {
 				telemetry.SetHubQueueLength(len(h.broadcastQueue))
 			default:
 				// queue full — drop message and log
-				log.Printf("[WS HUB] broadcast queue full, dropping message\n")
+				logging.Warnf("[WS HUB] broadcast queue full, dropping message")
 				telemetry.IncBroadcastQueueDrop()
 			}
 		}

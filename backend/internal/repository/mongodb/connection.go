@@ -2,12 +2,13 @@ package mongodb
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 )
 
 var Client *mongo.Client
@@ -23,11 +24,11 @@ func Init() error {
 	var err error
 	Client, err = mongo.Connect(ctx, clientOpts)
 	if err != nil {
-		log.Printf("MongoDB connection failed: %v", err)
+		logging.Errorf("MongoDB connection failed: %v", err)
 		return err
 	}
 	if err = Client.Ping(ctx, nil); err != nil {
-		log.Printf("MongoDB ping error: %v", err)
+		logging.Errorf("MongoDB ping error: %v", err)
 		return err
 	}
 	return nil

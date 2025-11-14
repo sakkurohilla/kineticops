@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	kafkaevents "github.com/sakkurohilla/kineticops/backend/internal/messaging/redpanda"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
@@ -78,7 +78,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if v, err := sshClient.CollectCPUUsage(); err != nil {
-			log.Printf("[WARN] Failed to collect CPU for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect CPU for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.CPUUsage = v
@@ -89,7 +89,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if used, total, perc, err := sshClient.CollectMemoryUsage(); err != nil {
-			log.Printf("[WARN] Failed to collect memory for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect memory for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.MemoryUsed = used
@@ -102,7 +102,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if used, total, perc, err := sshClient.CollectDiskUsage(); err != nil {
-			log.Printf("[WARN] Failed to collect disk for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect disk for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.DiskUsed = used
@@ -115,7 +115,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if in, out, err := sshClient.CollectNetworkStats(); err != nil {
-			log.Printf("[WARN] Failed to collect network for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect network for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.NetworkIn = in
@@ -127,7 +127,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if up, err := sshClient.CollectUptime(); err != nil {
-			log.Printf("[WARN] Failed to collect uptime for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect uptime for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.Uptime = up
@@ -138,7 +138,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	go func() {
 		defer wg.Done()
 		if l, err := sshClient.CollectLoadAverage(); err != nil {
-			log.Printf("[WARN] Failed to collect load average for host %d: %v", host.ID, err)
+			logging.Warnf("[WARN] Failed to collect load average for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.LoadAverage = l
@@ -194,7 +194,7 @@ func SaveHostMetrics(metric *HostMetric) error {
 	for _, mm := range metricsToSave {
 		if err := postgres.SaveMetric(postgres.DB, &mm); err != nil {
 			// don't fail the whole flow for metric mirroring; just log and continue
-			log.Printf("[WARN] failed to mirror metric %s for host %d: %v", mm.Name, dbm.HostID, err)
+			logging.Warnf("[WARN] failed to mirror metric %s for host %d: %v", mm.Name, dbm.HostID, err)
 		}
 	}
 
@@ -219,7 +219,7 @@ func SaveHostMetrics(metric *HostMetric) error {
 			gh.RememberMessage(b)
 		}
 		if err := kafkaevents.PublishEvent(b); err != nil {
-			log.Printf("[WARN] Failed to publish metric event: %v", err)
+			logging.Warnf("[WARN] Failed to publish metric event: %v", err)
 			// instrumentation
 			telemetry.IncWSSendErrors(context.Background(), 1)
 			// Fallback: broadcast directly to connected websocket clients so UI remains realtime
@@ -229,7 +229,7 @@ func SaveHostMetrics(metric *HostMetric) error {
 			telemetry.IncKafkaPublish(context.Background(), 1)
 		}
 	} else {
-		log.Printf("[WARN] Failed to marshal metric payload: %v", err)
+		logging.Warnf("[WARN] Failed to marshal metric payload: %v", err)
 	}
 
 	return nil

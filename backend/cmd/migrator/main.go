@@ -3,12 +3,11 @@ package main
 import (
 	"database/sql"
 	"flag"
-	"fmt"
-	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 
 	_ "github.com/lib/pq"
 )
@@ -26,13 +25,15 @@ func main() {
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatalf("failed to open db: %v", err)
+		logging.Errorf("failed to open db: %v", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
-		log.Fatalf("failed to read migrations dir %s: %v", dir, err)
+		logging.Errorf("failed to read migrations dir %s: %v", dir, err)
+		os.Exit(1)
 	}
 
 	for _, f := range files {
@@ -48,16 +49,18 @@ func main() {
 			continue
 		}
 		path := filepath.Join(dir, name)
-		fmt.Printf("Applying migration %s...\n", path)
-		content, err := ioutil.ReadFile(path)
+		logging.Infof("Applying migration %s...", path)
+		content, err := os.ReadFile(path)
 		if err != nil {
-			log.Fatalf("failed to read %s: %v", path, err)
+			logging.Errorf("failed to read %s: %v", path, err)
+			os.Exit(1)
 		}
 		if _, err := db.Exec(string(content)); err != nil {
-			log.Fatalf("migration %s failed: %v", path, err)
+			logging.Errorf("migration %s failed: %v", path, err)
+			os.Exit(1)
 		}
-		fmt.Printf("Applied %s\n", path)
+		logging.Infof("Applied %s", path)
 	}
 
-	fmt.Println("All migrations applied successfully")
+	logging.Infof("All migrations applied successfully")
 }

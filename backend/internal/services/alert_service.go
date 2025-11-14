@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
 )
@@ -58,7 +59,9 @@ func CheckAndTriggerAlerts(tenantID int64, metricName string, hostID int64, valu
 				TriggeredAt:      time.Now(),
 				NotificationSent: false,
 			}
-			postgres.CreateAlert(postgres.DB, alert)
+			if err := postgres.CreateAlert(postgres.DB, alert); err != nil {
+				logging.Errorf("failed to create alert rule=%d host=%d: %v", rule.ID, hostID, err)
+			}
 			if rule.NotificationWebhook != "" {
 				go sendAlertWebhook(rule.NotificationWebhook, alert)
 				alert.NotificationSent = true

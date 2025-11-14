@@ -2,8 +2,9 @@ package telemetry
 
 import (
 	"context"
-	"log"
 	"sync/atomic"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 )
 
 var seq uint64
@@ -32,10 +33,10 @@ func InitTelemetry() func() {
 	// Lightweight noop telemetry init. We use atomic counters and a
 	// monotonic sequence id to help ordering and basic metrics. In
 	// production this can be replaced with an OTLP/Prometheus exporter.
-	log.Println("[TELEMETRY] initialized (noop) - using in-memory counters")
+	logging.Infof("[TELEMETRY] initialized (noop) - using in-memory counters")
 	return func() {
 		// nothing to shutdown for noop telemetry
-		log.Println("[TELEMETRY] shutdown")
+		logging.Infof("[TELEMETRY] shutdown")
 	}
 }
 

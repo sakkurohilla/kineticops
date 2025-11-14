@@ -1,13 +1,14 @@
 package telemetry
 
 import (
-	"log"
 	"net/http"
 	"net/http/pprof"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 )
 
 var (
@@ -70,9 +71,9 @@ func StartPrometheusServer(addr string) {
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		log.Printf("[METRICS] starting Prometheus/pprof server on %s", addr)
+		logging.Infof("[METRICS] starting Prometheus/pprof server on %s", addr)
 		if err := server.ListenAndServe(); err != nil {
-			log.Printf("[METRICS] metrics server exited: %v", err)
+			logging.Errorf("[METRICS] metrics server exited: %v", err)
 		}
 	}()
 }
