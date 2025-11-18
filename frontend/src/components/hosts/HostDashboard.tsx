@@ -10,14 +10,15 @@ import {
   AlertCircle
 } from 'lucide-react';
 import Card from '../common/Card';
+import GlassCard from '../common/GlassCard';
 // Removed SimpleAnalytics per user request: simplify hosts tab to original 3-card summary
 import useHostMetrics from '../../hooks/useHostMetrics';
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   Tooltip,
+  AreaChart,
+  Area,
 } from 'recharts';
 
 interface HostDashboardProps {
@@ -52,7 +53,6 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   const disk = m?.disk_usage;
   // backend stores disk totals in GB (host_metrics snapshot conversion)
   const disk_used = m?.disk_used ?? 0; // GB
-  const disk_total = m?.disk_total ?? 0; // GB
   const uptimeVal = m?.uptime ?? null;
   const loadAvg = m?.load_average ?? '';
   // network values are already in MB from backend (host_metrics table)
@@ -67,18 +67,6 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
     if (days > 0) return `${days}d ${hours}h ${minutes}m`;
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
-  };
-
-  const getUsageColor = (percentage: number) => {
-    if (percentage >= 90) return 'text-red-600';
-    if (percentage >= 70) return 'text-orange-500';
-    return 'text-green-600';
-  };
-
-  const getUsageBg = (percentage: number) => {
-    if (percentage >= 90) return 'bg-red-600';
-    if (percentage >= 70) return 'bg-orange-500';
-    return 'bg-green-600';
   };
 
   if (loading) {
@@ -149,141 +137,271 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
         Last updated: {m?.timestamp ? new Date(m.timestamp).toLocaleString() : 'N/A'}
       </div>
 
-      {/* Metric Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* CPU Usage */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">CPU Usage</p>
-          <p className={`text-3xl font-bold ${getUsageColor(cpu ?? 0)}`}>
-            {typeof cpu === 'number' ? `${cpu.toFixed(1)}%` : 'N/A'}
-              </p>
+      {/* Metric Cards Grid - Glassmorphism Style */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        {/* CPU Usage - Glassmorphism Card */}
+        <GlassCard gradient="from-blue-500/20 to-cyan-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">CPU Usage</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
+                <Cpu className="w-5 h-5 text-white" />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Cpu className="w-6 h-6 text-blue-600" />
+            
+            {/* Circular Progress */}
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative w-32 h-32">
+                <svg className="transform -rotate-90 w-32 h-32">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    fill="none"
+                    className="text-gray-200"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="url(#cpuGradient)"
+                    strokeWidth="8"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 56}`}
+                    strokeDashoffset={`${2 * Math.PI * 56 * (1 - (cpu ?? 0) / 100)}`}
+                    className="transition-all duration-500"
+                  />
+                  <defs>
+                    <linearGradient id="cpuGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3B82F6" />
+                      <stop offset="100%" stopColor="#06B6D4" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {typeof cpu === 'number' ? `${cpu.toFixed(0)}%` : 'N/A'}
+                  </span>
+                  <span className="text-xs text-gray-500">Time</span>
+                </div>
+              </div>
             </div>
           </div>
-          {/* Progress Bar */}
-            <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(cpu ?? 0)}`}
-              style={{ width: `${Math.min(cpu ?? 0, 100)}%` }}
-            ></div>
-          </div>
-          {/* Sparkline */}
-          <div className="mt-3 h-16" style={{ minHeight: 48 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <XAxis dataKey="timestamp" hide />
-                <Tooltip formatter={(value: any) => [value, 'CPU']} />
-                <Line type="monotone" dataKey="cpu_usage" stroke="#1D4ED8" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        </GlassCard>
 
-        {/* Memory Usage */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">Memory Usage</p>
-              <p className={`text-3xl font-bold ${getUsageColor(memory ?? 0)}`}>
-                {typeof memory === 'number' ? `${memory.toFixed(1)}%` : 'N/A'}
-              </p>
+        {/* Memory Usage - Glassmorphism Card */}
+        <GlassCard gradient="from-emerald-500/20 to-teal-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Memory Usage</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
+                <Activity className="w-5 h-5 text-white" />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <Activity className="w-6 h-6 text-green-600" />
+            
+            {/* Area Chart */}
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={series.slice(-7)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="memoryGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#14B8A6" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="timestamp" hide />
+                  <Tooltip 
+                    contentStyle={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
+                    formatter={(value: any) => [`${value}%`, 'Memory']} 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="memory_usage" 
+                    stroke="#10B981" 
+                    strokeWidth={2}
+                    fill="url(#memoryGradient)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div className="mt-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">3 Day</p>
+                <p className="text-sm font-semibold text-gray-700">
+                  {typeof memory === 'number' ? `${memory.toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Available</p>
+                <p className="text-sm font-semibold text-emerald-600">
+                  {(memory_total - memory_used).toFixed(0)} MB
+                </p>
+              </div>
             </div>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-              <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(memory ?? 0)}`}
-              style={{ width: `${Math.min(memory ?? 0, 100)}%` }}
-            ></div>
-          </div>
-          <p className="text-xs text-gray-500">
-            {memory_used.toFixed(1)} MB / {memory_total.toFixed(1)} MB
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            <p className="text-xs text-green-600 font-medium">
-              Available: {(memory_total - memory_used).toFixed(1)} MB
-            </p>
-            <p className="text-xs text-blue-600 font-medium">
-              Free: {((memory_total - memory_used) * 0.3).toFixed(1)} MB
-            </p>
-          </div>
-          <div className="mt-3 h-16" style={{ minHeight: 48 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <XAxis dataKey="timestamp" hide />
-                <Tooltip formatter={(value: any) => [value, 'Mem']} />
-                <Line type="monotone" dataKey="memory_usage" stroke="#10B981" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        </GlassCard>
 
-        {/* Disk Usage */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">Disk Usage</p>
-              <p className={`text-3xl font-bold ${getUsageColor(disk ?? 0)}`}>
-                {typeof disk === 'number' ? `${disk.toFixed(1)}%` : 'N/A'}
-              </p>
+        {/* Disk Usage - Glassmorphism Card */}
+        <GlassCard gradient="from-purple-500/20 to-pink-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Disk Usage</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
+                <HardDrive className="w-5 h-5 text-white" />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <HardDrive className="w-6 h-6 text-purple-600" />
+            
+            {/* Circular Progress */}
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative w-32 h-32">
+                <svg className="transform -rotate-90 w-32 h-32">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="currentColor"
+                    strokeWidth="8"
+                    fill="none"
+                    className="text-gray-200"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="url(#diskGradient)"
+                    strokeWidth="8"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 56}`}
+                    strokeDashoffset={`${2 * Math.PI * 56 * (1 - (disk ?? 0) / 100)}`}
+                    className="transition-all duration-500"
+                  />
+                  <defs>
+                    <linearGradient id="diskGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#A855F7" />
+                      <stop offset="100%" stopColor="#EC4899" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {typeof disk === 'number' ? `${disk.toFixed(0)}%` : 'N/A'}
+                  </span>
+                  <span className="text-xs text-gray-500">{disk_used.toFixed(0)}GB</span>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-              <div
-              className={`h-2 rounded-full transition-all duration-500 ${getUsageBg(disk ?? 0)}`}
-              style={{ width: `${Math.min(disk ?? 0, 100)}%` }}
-            ></div>
-          </div>
-          <p className="text-xs text-gray-500">
-            {disk_used.toFixed(1)} GB / {disk_total.toFixed(1)} GB
-          </p>
-          <div className="mt-3 h-16" style={{ minHeight: 48 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <XAxis dataKey="timestamp" hide />
-                <Tooltip formatter={(value: any) => [value, 'Disk']} />
-                <Line type="monotone" dataKey="disk_usage" stroke="#7C3AED" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        </GlassCard>
 
-        {/* Uptime */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium text-gray-600 mb-1">Uptime</p>
-              <p className="text-3xl font-bold text-blue-600">
-                {uptimeVal !== null ? formatUptime(uptimeVal) : 'N/A'}
-              </p>
+        {/* Network I/O - Glassmorphism Card */}
+        <GlassCard gradient="from-orange-500/20 to-red-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Network I/O</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
+                <Network className="w-5 h-5 text-white" />
+              </div>
             </div>
-            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <Clock className="w-6 h-6 text-indigo-600" />
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-600">Incoming</span>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">{netIn.toFixed(1)} MB</span>
+              </div>
+              
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-500"
+                  style={{ width: `${Math.min((netIn / (netIn + netOut)) * 100 || 50, 100)}%` }}
+                />
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-gradient-to-r from-red-500 to-pink-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-600">Outgoing</span>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">{netOut.toFixed(1)} MB</span>
+              </div>
+              
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-red-500 to-pink-500 transition-all duration-500"
+                  style={{ width: `${Math.min((netOut / (netIn + netOut)) * 100 || 50, 100)}%` }}
+                />
+              </div>
             </div>
           </div>
-          <p className="text-xs text-gray-500">
-            Load: {loadAvg || 'N/A'}
-          </p>
-          <div className="mt-3 h-16" style={{ minHeight: 48 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <XAxis dataKey="timestamp" hide />
-                <Tooltip formatter={(value: any) => [value, 'Uptime']} />
-                <Line type="monotone" dataKey="uptime" stroke="#0EA5A4" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        </GlassCard>
       </div>
+
+      {/* System Information Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        {/* Uptime & Load Average */}
+        <GlassCard gradient="from-indigo-500/20 to-blue-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">System Uptime</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-3xl font-bold text-gray-900">
+                  {uptimeVal !== null ? formatUptime(uptimeVal) : 'N/A'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Load: {loadAvg || 'N/A'}</p>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* Analytics Summary */}
+        <GlassCard gradient="from-cyan-500/20 to-blue-500/20">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Performance Trend</h3>
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <div className="h-20">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={series.slice(-10)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="cpuTrendGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="timestamp" hide />
+                  <Tooltip 
+                    contentStyle={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '12px' }}
+                    formatter={(value: any) => [`${value}%`, 'CPU']} 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="cpu_usage" 
+                    stroke="#06B6D4" 
+                    strokeWidth={2}
+                    fill="url(#cpuTrendGradient)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+
 
       {/* Network Statistics */}
       <Card>

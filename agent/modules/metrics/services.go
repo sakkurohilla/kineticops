@@ -85,18 +85,12 @@ func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInf
 		})
 	}
 
-	// Filter: Show user services OR system services using >30% CPU/Memory
+	// Filter: Show ONLY user-installed services (no system services at all)
 	var activeServices []ServiceInfo
 	for _, svc := range serviceList {
-		// Always show user-installed services if active or failed
-		if svc.IsUserService && (svc.Status == "active" || svc.Status == "failed") {
+		// Only show user-installed services
+		if svc.IsUserService {
 			activeServices = append(activeServices, svc)
-			continue
-		}
-		// Show system services only if using >30% resources
-		if !svc.IsUserService && (svc.CPUPercent > 30.0 || svc.MemoryPercent > 30.0) {
-			activeServices = append(activeServices, svc)
-			continue
 		}
 	}
 
@@ -194,17 +188,35 @@ func getServiceProperties(name string, logger *utils.Logger) *ServiceProperties 
 
 // isUserInstalledService determines if a service is user-installed (not system default)
 func isUserInstalledService(name string) bool {
-	// Common system services to exclude
+	// Comprehensive list of system services to exclude
 	systemServices := map[string]bool{
+		// Core systemd services
 		"systemd-journald": true, "systemd-logind": true, "systemd-udevd": true,
 		"systemd-timesyncd": true, "systemd-resolved": true, "systemd-networkd": true,
+		"systemd-oomd": true, "systemd-tmpfiles-setup": true, "systemd-random-seed": true,
+		"systemd-sysctl": true, "systemd-modules-load": true, "systemd-update-utmp": true,
+
+		// Desktop environment services
+		"gnome-remote-desktop": true, "gnome-shell-calendar-server": true, "gnome-keyring-daemon": true,
+		"gnome-session-manager": true, "colord": true, "cups-browsed": true,
+
+		// Network and connectivity
+		"NetworkManager": true, "ModemManager": true, "avahi-daemon": true,
+		"wpa_supplicant": true, "bluetooth": true,
+
+		// System daemons
 		"dbus": true, "cron": true, "rsyslog": true, "ssh": true, "sshd": true,
-		"getty": true, "NetworkManager": true, "ModemManager": true,
 		"accounts-daemon": true, "polkit": true, "rtkit-daemon": true,
-		"systemd-oomd": true, "user": true, "session": true,
-		"avahi-daemon": true, "bluetooth": true, "cups": true,
-		"udisks2": true, "upower": true, "wpa_supplicant": true,
-		"packagekit": true, "snapd": true, "unattended-upgrades": true,
+		"udisks2": true, "upower": true, "packagekit": true,
+
+		// Update services
+		"snapd": true, "unattended-upgrades": true, "fwupd": true,
+
+		// Printing and hardware
+		"cups": true, "open-vm-tools": true, "vmtoolsd": true,
+
+		// Terminal and display
+		"getty": true, "user": true, "session": true,
 	}
 
 	// Check if it's a known system service
@@ -213,7 +225,11 @@ func isUserInstalledService(name string) bool {
 	}
 
 	// Check for system service patterns
-	if strings.HasPrefix(name, "systemd-") || strings.HasPrefix(name, "user@") {
+	if strings.HasPrefix(name, "systemd-") ||
+		strings.HasPrefix(name, "user@") ||
+		strings.HasPrefix(name, "gnome-") ||
+		strings.HasPrefix(name, "getty@") ||
+		strings.Contains(name, "session-") {
 		return false
 	}
 
