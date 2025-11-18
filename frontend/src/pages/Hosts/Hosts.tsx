@@ -102,51 +102,39 @@ const Hosts: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats - Clean Professional Style */}
+        {/* Stats - Simple Clean Style Matching Image 4 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Total Hosts</p>
-                <p className="text-2xl font-bold text-gray-900">{hosts.length}</p>
-              </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-md">
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Total Hosts</h3>
+              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
                 <Server className="w-5 h-5 text-white" />
               </div>
             </div>
+            <p className="text-4xl font-bold text-gray-900">{hosts.length}</p>
           </div>
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Online</p>
-                <p className="text-2xl font-bold text-gray-900">{hosts.filter(h => h.agent_status === 'online').length}</p>
-              </div>
-              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg" />
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Online</h3>
+              <div className="w-3 h-3 bg-emerald-500 rounded-full" />
             </div>
+            <p className="text-4xl font-bold text-gray-900">{hosts.filter(h => h.agent_status === 'online').length}</p>
           </div>
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500/10 to-pink-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Offline</p>
-                <p className="text-2xl font-bold text-gray-900">{hosts.filter(h => h.agent_status !== 'online').length}</p>
-              </div>
-              <div className="w-3 h-3 bg-red-500 rounded-full shadow-lg" />
+          <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Offline</h3>
+              <div className="w-3 h-3 bg-red-500 rounded-full" />
             </div>
+            <p className="text-4xl font-bold text-gray-900">{hosts.filter(h => h.agent_status !== 'online').length}</p>
           </div>
-          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Groups</p>
-                <p className="text-2xl font-bold text-gray-900">{groups.length - 1}</p>
-              </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-lg flex items-center justify-center shadow-md">
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">Groups</h3>
+              <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
                 <Users className="w-5 h-5 text-white" />
               </div>
             </div>
+            <p className="text-4xl font-bold text-gray-900">{groups.length - 1}</p>
           </div>
         </div>
 
