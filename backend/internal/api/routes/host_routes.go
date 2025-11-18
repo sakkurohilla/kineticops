@@ -31,4 +31,8 @@ func RegisterHostRoutes(app *fiber.App) {
 	hosts.Post("/with-agent", handlers.CreateHostWithAgent)
 	hosts.Get("/:id/services", handlers.GetHostServices)
 
+	// Process monitoring routes
+	hosts.Get("/:id/processes", handlers.GetHostProcesses)
+	hosts.Get("/processes/stats", handlers.GetAllHostsProcessStats)
+
 }

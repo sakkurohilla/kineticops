@@ -133,19 +133,8 @@ export function subscribe(handler: MessageHandler) {
   if (!ws) connect();
   return () => {
     subscribers.delete(handler);
-    // if no subscribers, close the socket after a longer idle delay (allow quick navigation without closing)
-      if (subscribers.size === 0 && ws) {
-        // keep socket alive for 5 minutes by default when there are no subscribers
-        // this prevents quick navigation or transient unmounts from closing the socket
-        // and causing reconnect churn.
-        window.setTimeout(() => {
-          if (subscribers.size === 0 && ws) {
-            ws?.close();
-            ws = null;
-            wsStatus.setWsStatus('disconnected');
-          }
-        }, 5 * 60 * 1000);
-      }
+    // Keep socket alive even with no subscribers - don't close it
+    // The backend sends pings every 30s to keep connection alive
   };
 }
 

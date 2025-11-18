@@ -1,151 +1,301 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, AlertTriangle, TrendingUp, Clock, Users, Zap } from 'lucide-react';
+import { Activity, Cpu, MemoryStick, Server, RefreshCw, ArrowUpDown } from 'lucide-react';
 import MainLayout from '../../components/layout/MainLayout';
 import Card from '../../components/common/Card';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import apiClient from '../../services/api/client';
+import useWebSocket from '../../hooks/useWebsocket';
 
-interface Application {
+interface ProcessMetric {
   id: number;
+  host_id: number;
+  pid: number;
   name: string;
-  type: string;
-  language: string;
-  framework: string;
+  username: string;
+  cpu_percent: number;
+  memory_percent: number;
+  memory_rss: number;
   status: string;
-  last_seen: string;
+  num_threads: number;
+  create_time: number;
+  timestamp: string;
 }
 
-interface TransactionStats {
-  avg_response_time: number;
-  throughput: number;
-  error_rate: number;
-  apdex: number;
-  total_requests: number;
-  error_count: number;
-}
-
-interface ErrorEvent {
+interface Host {
   id: number;
-  error_class: string;
-  error_message: string;
-  count: number;
-  last_seen: string;
-  resolved: boolean;
+  hostname: string;
+  status: string;
 }
+
+interface ServerAlert {
+  type: 'cpu' | 'memory' | 'disk' | 'unresponsive';
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  process?: string;
+  pid?: number;
+  value?: number;
+  threshold?: number;
+  timestamp: Date;
+}
+
+interface HostMetrics {
+  cpu_usage: number;
+  memory_usage: number;
+  memory_total: number;
+  memory_used: number;
+  memory_free: number;
+  disk_usage: number;
+  disk_total: number;
+  disk_used: number;
+}
+
+type SortOrder = 'asc' | 'desc';
 
 const APM: React.FC = () => {
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
-  const [transactionStats, setTransactionStats] = useState<TransactionStats | null>(null);
-  const [errors, setErrors] = useState<ErrorEvent[]>([]);
-  const [performanceData, setPerformanceData] = useState<any[]>([]);
+  const [hosts, setHosts] = useState<Host[]>([]);
+  const [selectedHost, setSelectedHost] = useState<Host | null>(null);
+  const [cpuProcesses, setCpuProcesses] = useState<ProcessMetric[]>([]);
+  const [memoryProcesses, setMemoryProcesses] = useState<ProcessMetric[]>([]);
+  const [serverAlerts, setServerAlerts] = useState<ServerAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('24h');
+  const [sortByCPU, setSortByCPU] = useState<SortOrder>('desc');
+  const [sortByMem, setSortByMem] = useState<SortOrder>('desc');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // WebSocket handler for real-time process updates
+  const handleWebSocketMessage = (data: any) => {
+    if (!selectedHost) return;
+    
+    if (data.type === 'processes' && data.host_id === selectedHost.id) {
+      const cpuProcs = data.processes?.top_cpu || [];
+      const memProcs = data.processes?.top_memory || [];
+      
+      if (cpuProcs.length > 0) {
+        setCpuProcesses(cpuProcs);
+      }
+      if (memProcs.length > 0) {
+        setMemoryProcesses(memProcs);
+      }
+      
+      // Generate alerts from WebSocket data
+      generateServerAlerts(cpuProcs, memProcs, null);
+    } else if (data.type === 'metric' && data.host_id === selectedHost.id) {
+      // WebSocket provides system metrics - use them for alerts
+      const systemMetrics: HostMetrics = {
+        cpu_usage: data.cpu_usage || 0,
+        memory_usage: data.memory_usage || 0,
+        memory_total: data.memory_total || 0,
+        memory_used: data.memory_used || 0,
+        memory_free: (data.memory_total || 0) - (data.memory_used || 0),
+        disk_usage: data.disk_usage || 0,
+        disk_total: data.disk_total || 0,
+        disk_used: data.disk_used || 0
+      };
+      // Generate alerts with system metrics
+      generateServerAlerts(cpuProcesses, memoryProcesses, systemMetrics);
+    }
+  };
+
+  useWebSocket(handleWebSocketMessage);
 
   useEffect(() => {
-    fetchApplications();
+    fetchHosts();
   }, []);
 
   useEffect(() => {
-    if (selectedApp) {
-      fetchApplicationData();
+    if (selectedHost) {
+      fetchProcesses();
     }
-  }, [selectedApp, timeRange]);
+  }, [selectedHost]);
 
-  const fetchApplications = async () => {
+  useEffect(() => {
+    if (!autoRefresh || !selectedHost) return;
+    
+    const interval = setInterval(() => {
+      fetchProcesses();
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, selectedHost]);
+
+  const fetchHosts = async () => {
     try {
-      const response = await apiClient.get('/apm/applications');
-      const data = response.data || [];
-      setApplications(data);
+      const response = await apiClient.get('/hosts');
+      const data = Array.isArray(response) ? response : (response?.data || []);
+      setHosts(data);
       if (data.length > 0) {
-        setSelectedApp(data[0]);
+        setSelectedHost(data[0]);
       }
     } catch (error) {
-      console.error('Failed to fetch applications:', error);
-      setApplications([]);
+      console.error('Failed to fetch hosts:', error);
+      setHosts([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchApplicationData = async () => {
-    if (!selectedApp) return;
+  const fetchProcesses = async () => {
+    if (!selectedHost) return;
 
     try {
-      const end = new Date();
-      const start = new Date();
-      
-      switch (timeRange) {
-        case '1h':
-          start.setHours(end.getHours() - 1);
-          break;
-        case '6h':
-          start.setHours(end.getHours() - 6);
-          break;
-        case '24h':
-          start.setDate(end.getDate() - 1);
-          break;
-        case '7d':
-          start.setDate(end.getDate() - 7);
-          break;
-        default:
-          start.setDate(end.getDate() - 1);
-      }
+      // Fetch host metrics
+      const metricsData: any = await apiClient.get(`/hosts/${selectedHost.id}/metrics/latest`);
 
-      // Fetch transaction stats
-      const statsResponse = await apiClient.get(`/apm/applications/${selectedApp.id}/transactions/stats?start=${start.toISOString()}&end=${end.toISOString()}`);
-      setTransactionStats(statsResponse.data || null);
+      // Fetch top 10 CPU processes
+      const cpuData: any = await apiClient.get(`/hosts/${selectedHost.id}/processes?sort=cpu&limit=10`);
+      setCpuProcesses(cpuData?.processes || []);
 
-      // Fetch errors
-      const errorsResponse = await apiClient.get(`/apm/applications/${selectedApp.id}/errors?start=${start.toISOString()}&end=${end.toISOString()}&limit=10`);
-      setErrors(errorsResponse.data || []);
+      // Fetch top 10 memory processes
+      const memData: any = await apiClient.get(`/hosts/${selectedHost.id}/processes?sort=memory&limit=10`);
+      setMemoryProcesses(memData?.processes || []);
 
-      // Fetch performance metrics
-      const metricsResponse = await apiClient.get(`/apm/applications/${selectedApp.id}/metrics?start=${start.toISOString()}&end=${end.toISOString()}`);
-      setPerformanceData(metricsResponse.data || []);
-
+      // Generate server health alerts
+      generateServerAlerts(cpuData?.processes || [], memData?.processes || [], metricsData);
     } catch (error) {
-      console.error('Failed to fetch application data:', error);
+      console.error('Failed to fetch process metrics:', error);
     }
   };
 
-  const createApplication = async () => {
-    const name = prompt('Application name:');
-    if (!name) return;
+  const generateServerAlerts = (cpuProcs: ProcessMetric[], memProcs: ProcessMetric[], metrics: HostMetrics | null) => {
+    const alerts: ServerAlert[] = [];
+    const now = new Date();
 
-    const type = prompt('Application type (web/api/worker):') || 'web';
-    const language = prompt('Programming language:') || 'javascript';
-
-    try {
-      const newApp = {
-        name,
-        type,
-        language,
-        framework: '',
-        host_id: 1 // Default host
-      };
-
-      const response = await apiClient.post('/apm/applications', newApp);
-      if (response.data) {
-        setApplications([...applications, response.data]);
-        setSelectedApp(response.data);
+    if (metrics) {
+      // Critical CPU Alert (>90%)
+      if (metrics.cpu_usage > 90) {
+        alerts.push({
+          type: 'unresponsive',
+          severity: 'critical',
+          message: `Server Unresponsive - Critical CPU Load`,
+          value: metrics.cpu_usage,
+          threshold: 90,
+          timestamp: now
+        });
+      } else if (metrics.cpu_usage > 80) {
+        alerts.push({
+          type: 'cpu',
+          severity: 'critical',
+          message: `Critical System CPU Usage`,
+          value: metrics.cpu_usage,
+          threshold: 80,
+          timestamp: now
+        });
       }
-    } catch (error) {
-      console.error('Failed to create application:', error);
-      alert('Failed to create application');
+
+      // Critical Memory Alert (>90%)
+      if (metrics.memory_usage > 90) {
+        alerts.push({
+          type: 'unresponsive',
+          severity: 'critical',
+          message: `Server Unresponsive - Out of Memory`,
+          value: metrics.memory_usage,
+          threshold: 90,
+          timestamp: now
+        });
+      } else if (metrics.memory_usage > 80) {
+        alerts.push({
+          type: 'memory',
+          severity: 'critical',
+          message: `Critical System Memory Usage`,
+          value: metrics.memory_usage,
+          threshold: 80,
+          timestamp: now
+        });
+      }
+
+      // Critical Disk Alert (>95%)
+      if (metrics.disk_usage > 95) {
+        alerts.push({
+          type: 'unresponsive',
+          severity: 'critical',
+          message: `Server Unresponsive - Disk Full`,
+          value: metrics.disk_usage,
+          threshold: 95,
+          timestamp: now
+        });
+      } else if (metrics.disk_usage > 85) {
+        alerts.push({
+          type: 'disk',
+          severity: 'warning',
+          message: `Critical Disk Space Usage`,
+          value: metrics.disk_usage,
+          threshold: 85,
+          timestamp: now
+        });
+      }
     }
+
+    // Critical CPU process alerts (>80% = critical, >50% = warning)
+    cpuProcs.filter(p => p.cpu_percent > 50).forEach(proc => {
+      alerts.push({
+        type: 'cpu',
+        severity: proc.cpu_percent > 80 ? 'critical' : 'warning',
+        message: proc.cpu_percent > 80 ? 'Critical Process CPU Usage' : 'High CPU Usage',
+        process: proc.name,
+        pid: proc.pid,
+        value: proc.cpu_percent,
+        threshold: proc.cpu_percent > 80 ? 80 : 50,
+        timestamp: now
+      });
+    });
+
+    // Critical Memory process alerts (>50% = critical, >30% = warning)
+    memProcs.filter(p => p.memory_percent > 30).forEach(proc => {
+      alerts.push({
+        type: 'memory',
+        severity: proc.memory_percent > 50 ? 'critical' : 'warning',
+        message: proc.memory_percent > 50 ? 'Critical Process Memory Usage' : 'High Memory Usage',
+        process: proc.name,
+        pid: proc.pid,
+        value: proc.memory_percent,
+        threshold: proc.memory_percent > 50 ? 50 : 30,
+        timestamp: now
+      });
+    });
+
+    setServerAlerts(alerts);
   };
 
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms.toFixed(0)}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
+  const formatMemory = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  const formatThroughput = (rpm: number) => {
-    if (rpm < 1) return `${(rpm * 60).toFixed(1)}/min`;
-    return `${rpm.toFixed(1)}/min`;
+  const getStatusBadge = (status: string) => {
+    const statusLower = status.toLowerCase();
+    
+    // Map status names to display
+    const statusMap: { [key: string]: { variant: 'success' | 'warning' | 'error' | 'info', text: string } } = {
+      'running': { variant: 'success', text: 'Running' },
+      'sleep': { variant: 'info', text: 'Sleep' },
+      'sleeping': { variant: 'info', text: 'Sleep' },
+      'idle': { variant: 'info', text: 'Idle' },
+      'stopped': { variant: 'error', text: 'Stopped' },
+      'zombie': { variant: 'warning', text: 'Zombie' },
+      'disk-sleep': { variant: 'info', text: 'D-Sleep' },
+    };
+    
+    const badge = statusMap[statusLower] || { variant: 'info', text: status };
+    return <Badge variant={badge.variant} size="sm">{badge.text}</Badge>;
+  };
+
+  const toggleSort = (table: 'cpu' | 'memory') => {
+    if (table === 'cpu') {
+      const newOrder = sortByCPU === 'desc' ? 'asc' : 'desc';
+      setSortByCPU(newOrder);
+      setCpuProcesses([...cpuProcesses].sort((a, b) => 
+        newOrder === 'desc' ? b.cpu_percent - a.cpu_percent : a.cpu_percent - b.cpu_percent
+      ));
+    } else {
+      const newOrder = sortByMem === 'desc' ? 'asc' : 'desc';
+      setSortByMem(newOrder);
+      setMemoryProcesses([...memoryProcesses].sort((a, b) => 
+        newOrder === 'desc' ? b.memory_percent - a.memory_percent : a.memory_percent - b.memory_percent
+      ));
+    }
   };
 
   if (loading) {
@@ -162,261 +312,409 @@ const APM: React.FC = () => {
     <MainLayout>
       <div className="p-6 lg:p-8">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                <Zap className="w-8 h-8 text-blue-600" />
-                Application Performance Monitoring
+              <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+                <Activity className="w-8 h-8 text-blue-600" />
+                Advanced Performance Monitoring
               </h1>
-              <p className="text-gray-600">Monitor application performance, errors, and user experience</p>
+              <p className="text-gray-600">Real-time process monitoring and system resource analysis</p>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Time Range Selector */}
-              <select
-                value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            <div className="flex items-center gap-3">
+              <Button
+                variant={autoRefresh ? 'primary' : 'outline'}
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                size="sm"
               >
-                <option value="1h">Last Hour</option>
-                <option value="6h">Last 6 Hours</option>
-                <option value="24h">Last 24 Hours</option>
-                <option value="7d">Last 7 Days</option>
-              </select>
-              <Button variant="primary" onClick={createApplication}>
-                Add Application
+                <RefreshCw className={`w-4 h-4 mr-2 ${autoRefresh ? 'animate-spin' : ''}`} />
+                {autoRefresh ? 'Auto Refresh ON' : 'Auto Refresh OFF'}
+              </Button>
+              <Button variant="outline" onClick={fetchProcesses} size="sm">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Now
               </Button>
             </div>
           </div>
 
-          {/* Application Selector */}
-          {applications.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {applications.map((app) => (
-                <button
-                  key={app.id}
-                  onClick={() => setSelectedApp(app)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedApp?.id === app.id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      app.status === 'healthy' ? 'bg-green-500' : 
-                      app.status === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
-                    }`}></div>
-                    {app.name}
-                    <Badge variant="info" size="sm">{app.language}</Badge>
-                  </div>
-                </button>
-              ))}
+          {/* Host Selector - Compact */}
+          {hosts.length > 0 && (
+            <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+              <Server className="w-5 h-5 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">Host:</span>
+              <select
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-900 shadow-sm hover:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                value={selectedHost?.id || ''}
+                onChange={(e) => {
+                  const host = hosts.find(h => h.id === Number(e.target.value));
+                  setSelectedHost(host || null);
+                }}
+              >
+                {hosts.map(host => (
+                  <option key={host.id} value={host.id}>
+                    {host.hostname}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>
 
-        {applications.length === 0 ? (
+        {hosts.length === 0 ? (
           // Empty State
           <Card>
             <div className="text-center py-12">
               <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Zap className="w-10 h-10 text-blue-600" />
+                <Server className="w-10 h-10 text-blue-600" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">No Applications Yet</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                Start monitoring your applications by adding your first application. Track performance, errors, and user experience.
+              <h3 className="text-xl font-bold text-gray-900 mb-2">No Hosts Connected</h3>
+              <p className="text-gray-600 mb-4 max-w-md mx-auto">
+                Connect a host with the KineticOps agent to start monitoring processes and system resources.
               </p>
-              <Button variant="primary" size="lg" onClick={createApplication}>
-                Add Your First Application
+              <Button variant="outline" onClick={fetchHosts} size="sm">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry Loading Hosts
               </Button>
             </div>
           </Card>
-        ) : selectedApp ? (
-          <>
-            {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        ) : selectedHost ? (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Main Content - 3 columns */}
+            <div className="lg:col-span-3 space-y-6">
+            {/* Process Tables */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {/* Top Processes by CPU */}
               <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Response Time</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {transactionStats ? formatDuration(transactionStats.avg_response_time) : '0ms'}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-blue-100 rounded-full">
-                    <Clock className="w-6 h-6 text-blue-600" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Throughput</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {transactionStats ? formatThroughput(transactionStats.throughput) : '0/min'}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-green-100 rounded-full">
-                    <TrendingUp className="w-6 h-6 text-green-600" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Error Rate</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {transactionStats ? `${transactionStats.error_rate.toFixed(2)}%` : '0%'}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-red-100 rounded-full">
-                    <AlertTriangle className="w-6 h-6 text-red-600" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Apdex Score</p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {transactionStats ? transactionStats.apdex.toFixed(2) : '0.00'}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-purple-100 rounded-full">
-                    <Users className="w-6 h-6 text-purple-600" />
-                  </div>
-                </div>
-              </Card>
-            </div>
-
-            {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* Response Time Chart */}
-              <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">Response Time</h3>
-                  <Badge variant="info" size="sm">ms</Badge>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={performanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="timestamp" />
-                      <YAxis />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="response_time" stroke="#3b82f6" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              {/* Throughput Chart */}
-              <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">Throughput</h3>
-                  <Badge variant="success" size="sm">req/min</Badge>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={performanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="timestamp" />
-                      <YAxis />
-                      <Tooltip />
-                      <Area type="monotone" dataKey="throughput" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              {/* Error Rate Chart */}
-              <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">Error Rate</h3>
-                  <Badge variant="error" size="sm">%</Badge>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={performanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="timestamp" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="error_rate" fill="#ef4444" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              {/* Apdex Chart */}
-              <Card>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">Apdex Score</h3>
-                  <Badge variant="info" size="sm">0-1</Badge>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={performanceData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="timestamp" />
-                      <YAxis domain={[0, 1]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="apdex" stroke="#8b5cf6" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-            </div>
-
-            {/* Recent Errors */}
-            <Card>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                  Recent Errors
-                </h3>
-                <Button variant="outline" size="sm">
-                  View All Errors
-                </Button>
-              </div>
-
-              {errors.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Activity className="w-8 h-8 text-green-600" />
-                  </div>
-                  <h4 className="text-lg font-bold text-gray-900 mb-2">No Errors Found</h4>
-                  <p className="text-gray-600">Your application is running smoothly with no recent errors.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {errors.map((error) => (
-                    <div key={error.id} className="flex items-start gap-4 p-4 bg-red-50 rounded-lg border border-red-200">
-                      <div className="p-2 bg-red-100 rounded-full">
-                        <AlertTriangle className="w-4 h-4 text-red-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium text-gray-900">{error.error_class}</h4>
-                          <Badge variant="error" size="sm">{error.count} occurrences</Badge>
-                          {error.resolved && <Badge variant="success" size="sm">Resolved</Badge>}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">{error.error_message}</p>
-                        <p className="text-xs text-gray-500">Last seen: {new Date(error.last_seen).toLocaleString()}</p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                      <Cpu className="w-5 h-5 text-blue-600" />
                     </div>
-                  ))}
+                    <span>Top Processes by CPU</span>
+                  </h3>
+                  <Badge variant="info" size="sm">Top 10</Badge>
                 </div>
-              )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[800px]">
+                    <thead>
+                      <tr className="border-b-2 border-gray-200 bg-gray-50">
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">PID</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">Process</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">User</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider cursor-pointer hover:text-blue-600"
+                            onClick={() => toggleSort('cpu')}>
+                          <div className="flex items-center gap-1">
+                            CPU%
+                            <ArrowUpDown className="w-3 h-3" />
+                          </div>
+                        </th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">Memory</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cpuProcesses.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-8 text-gray-500">
+                            No process data available
+                          </td>
+                        </tr>
+                      ) : (
+                        cpuProcesses.map((proc, idx) => (
+                          <tr key={`${proc.pid}-${idx}`} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
+                            <td className="py-2.5 px-2 font-mono text-xs text-gray-700 font-semibold truncate">{proc.pid}</td>
+                            <td className="py-2.5 px-2">
+                              <div className="font-medium text-gray-900 text-xs truncate" title={proc.name}>
+                                {proc.name}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2 text-gray-600 text-xs truncate">{proc.username}</td>
+                            <td className="py-2.5 px-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-2 shadow-inner">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${
+                                      proc.cpu_percent > 80 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                                      proc.cpu_percent > 50 ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' : 
+                                      'bg-gradient-to-r from-blue-500 to-blue-600'
+                                    }`}
+                                    style={{ width: `${Math.min(proc.cpu_percent, 100)}%` }}
+                                  ></div>
+                                </div>
+                                <span className="font-semibold text-gray-900 text-xs whitespace-nowrap">
+                                  {proc.cpu_percent.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2 text-xs text-gray-600 font-medium truncate">
+                              {formatMemory(proc.memory_rss)}
+                            </td>
+                            <td className="py-2.5 px-2">
+                              {getStatusBadge(proc.status)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              {/* Top Processes by Memory */}
+              <Card>
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                      <MemoryStick className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <span>Top Processes by Memory</span>
+                  </h3>
+                  <Badge variant="info" size="sm">Top 10</Badge>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[800px]">
+                    <thead>
+                      <tr className="border-b-2 border-gray-200 bg-gray-50">
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">PID</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">Process</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">User</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">CPU%</th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider cursor-pointer hover:text-purple-600"
+                            onClick={() => toggleSort('memory')}>
+                          <div className="flex items-center gap-1">
+                            Memory%
+                            <ArrowUpDown className="w-3 h-3" />
+                          </div>
+                        </th>
+                        <th className="text-left py-3 px-2 font-semibold text-gray-700 text-xs uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memoryProcesses.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-8 text-gray-500">
+                            No process data available
+                          </td>
+                        </tr>
+                      ) : (
+                        memoryProcesses.map((proc, idx) => (
+                          <tr key={`${proc.pid}-${idx}`} className="border-b border-gray-100 hover:bg-purple-50/50 transition-colors">
+                            <td className="py-2.5 px-2 font-mono text-xs text-gray-700 font-semibold truncate">{proc.pid}</td>
+                            <td className="py-2.5 px-2">
+                              <div className="font-medium text-gray-900 text-xs truncate" title={proc.name}>
+                                {proc.name}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-2 text-gray-600 text-xs truncate">{proc.username}</td>
+                            <td className="py-2.5 px-2 text-xs text-gray-600 font-medium truncate">
+                              {proc.cpu_percent.toFixed(1)}%
+                            </td>
+                            <td className="py-2.5 px-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-2 shadow-inner">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${
+                                      proc.memory_percent > 80 ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                                      proc.memory_percent > 50 ? 'bg-gradient-to-r from-yellow-500 to-yellow-600' : 
+                                      'bg-gradient-to-r from-purple-500 to-purple-600'
+                                    }`}
+                                    style={{ width: `${Math.min(proc.memory_percent, 100)}%` }}
+                                  ></div>
+                                </div>
+                                <span className="font-semibold text-gray-900 text-xs whitespace-nowrap">
+                                  {proc.memory_percent.toFixed(1)}%
+                                </span>
+                              </div>
+                              <span className="text-xs text-gray-500 font-medium mt-1 block truncate">{formatMemory(proc.memory_rss)}</span>
+                            </td>
+                            <td className="py-2.5 px-2">
+                              {getStatusBadge(proc.status)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+
+            {/* Process Summary */}
+            <Card>
+                <div className="flex items-center justify-between flex-wrap gap-4 lg:gap-6">
+                <div className="flex items-center gap-4 md:gap-6 lg:gap-8 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 md:p-3 bg-blue-50 rounded-xl">
+                      <Activity className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total</p>
+                      <p className="text-2xl md:text-3xl font-bold text-gray-900 mt-0.5 md:mt-1">
+                        {new Set([...cpuProcesses, ...memoryProcesses].map(p => p.pid)).size}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="h-12 md:h-16 w-px bg-gray-200"></div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-green-50 rounded-xl">
+                      <div className="w-6 h-6 flex items-center justify-center">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Running</p>
+                      <p className="text-3xl font-bold text-green-600 mt-1">
+                        {Array.from(new Set([...cpuProcesses, ...memoryProcesses].map(p => p.pid))).filter(pid => {
+                          const proc = [...cpuProcesses, ...memoryProcesses].find(p => p.pid === pid);
+                          const status = proc?.status.toLowerCase() || '';
+                          return proc && (status === 'running' || status === 'r');
+                        }).length}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="h-16 w-px bg-gray-200"></div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-blue-50 rounded-xl">
+                      <div className="w-6 h-6 flex items-center justify-center">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Sleeping</p>
+                      <p className="text-3xl font-bold text-blue-600 mt-1">
+                        {Array.from(new Set([...cpuProcesses, ...memoryProcesses].map(p => p.pid))).filter(pid => {
+                          const proc = [...cpuProcesses, ...memoryProcesses].find(p => p.pid === pid);
+                          const status = proc?.status.toLowerCase() || '';
+                          return proc && (status === 'sleep' || status === 'sleeping' || status === 'idle' || status === 's' || status === 'd' || status === 'i');
+                        }).length}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="h-16 w-px bg-gray-200"></div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-purple-50 rounded-xl">
+                      <div className="w-6 h-6 flex items-center justify-center text-purple-600 font-bold text-sm">
+                        T
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Total Threads</p>
+                      <p className="text-3xl font-bold text-purple-600 mt-1">
+                        {Array.from(new Set([...cpuProcesses, ...memoryProcesses].map(p => p.pid))).reduce((sum, pid) => {
+                          const proc = [...cpuProcesses, ...memoryProcesses].find(p => p.pid === pid);
+                          return sum + (proc?.num_threads || 0);
+                        }, 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500 font-medium">Last updated</p>
+                    <p className="text-sm font-semibold text-gray-700">{new Date().toLocaleTimeString()}</p>
+                  </div>
+                </div>
+              </div>
             </Card>
-          </>
+            </div>
+
+            {/* Trigger Alerts Sidebar - 1 column */}
+            <div className="lg:col-span-1">
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <div className="p-2 bg-red-50 rounded-lg">
+                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <span>System Alerts</span>
+                  </h3>
+                  <Badge variant={serverAlerts.length > 0 ? 'error' : 'success'} size="sm">
+                    {serverAlerts.length} Active
+                  </Badge>
+                </div>
+
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                  {/* Server Alerts */}
+                  {serverAlerts.map((alert, idx) => {
+                    const bgColor = alert.severity === 'critical' 
+                      ? (alert.type === 'unresponsive' ? 'bg-red-100 border-red-300' : 'bg-red-50 border-red-200')
+                      : (alert.type === 'disk' ? 'bg-orange-50 border-orange-200' : 'bg-yellow-50 border-yellow-200');
+                    const textColor = alert.severity === 'critical' ? 'text-red-900' : 'text-yellow-900';
+                    const dotColor = alert.severity === 'critical' 
+                      ? (alert.type === 'unresponsive' ? 'bg-red-600' : 'bg-red-500')
+                      : 'bg-yellow-500';
+
+                    return (
+                      <div key={`alert-${idx}`} className={`p-3 border rounded-lg ${bgColor} ${alert.type === 'unresponsive' ? 'ring-2 ring-red-500 shadow-lg' : ''}`}>
+                        <div className="flex items-start gap-2">
+                          <div className={`flex-shrink-0 w-2 h-2 ${dotColor} rounded-full mt-1.5 ${alert.type === 'unresponsive' ? 'animate-pulse' : ''}`}></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <p className={`text-xs font-semibold ${textColor} uppercase tracking-wide`}>
+                                {alert.type === 'unresponsive' ? '🚨 SERVER UNRESPONSIVE' : alert.message}
+                              </p>
+                              <span className="text-xs text-gray-500 whitespace-nowrap">
+                                {alert.timestamp.toLocaleTimeString()}
+                              </span>
+                            </div>
+                            {alert.process && (
+                              <p className="text-sm font-medium text-gray-900 truncate mt-1" title={alert.process}>
+                                {alert.process}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              {alert.pid && (
+                                <>
+                                  <span className="text-xs text-gray-600">PID: {alert.pid}</span>
+                                  <span className="text-xs text-gray-400">•</span>
+                                </>
+                              )}
+                              {alert.value !== undefined && (
+                                <span className={`text-xs font-bold ${alert.severity === 'critical' ? 'text-red-600' : 'text-yellow-600'}`}>
+                                  {alert.value.toFixed(1)}%
+                                </span>
+                              )}
+
+                            </div>
+                            {alert.type === 'unresponsive' && (
+                              <div className="mt-2 p-2 bg-white/50 rounded text-xs text-gray-700">
+                                <strong>Action Required:</strong> Server may be unresponsive. Check system resources immediately.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* No Alerts */}
+                  {serverAlerts.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 mb-1">All Systems Healthy</p>
+                      <p className="text-xs text-gray-500">No critical alerts detected</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
         ) : null}
       </div>
     </MainLayout>

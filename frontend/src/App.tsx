@@ -18,6 +18,7 @@ import Hosts from './pages/Hosts/Hosts';
 import HostDetails from './components/hosts/HostDetails';
 import Workflow from './pages/Workflow/Workflow';
 import APM from './pages/APM/APM';
+import Services from './pages/Services/Services';
 import Synthetics from './pages/Synthetics/Synthetics';
 
 const App: React.FC = () => {
@@ -104,6 +105,15 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <APM />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/services"
+            element={
+              <ProtectedRoute>
+                <Services />
               </ProtectedRoute>
             }
           />

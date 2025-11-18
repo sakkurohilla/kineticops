@@ -185,6 +185,24 @@ func (s *SystemModule) collectMetrics() error {
 		s.logger.Warn("Failed to collect network metrics")
 	}
 
+	// Collect process metrics
+	if processData := CollectProcessMetrics(s.logger); processData != nil {
+		systemData["processes"] = processData
+		metricsCollected++
+		s.logger.Info("Process metrics collected")
+	} else {
+		s.logger.Warn("Failed to collect process metrics")
+	}
+
+	// Collect service metrics
+	if serviceData := CollectServiceMetrics(s.logger); serviceData != nil {
+		systemData["services"] = serviceData
+		metricsCollected++
+		s.logger.Info("Service metrics collected")
+	} else {
+		s.logger.Warn("Failed to collect service metrics")
+	}
+
 	if loadData := s.getLoadMetrics(); loadData != nil {
 		systemData["load"] = loadData
 		metricsCollected++
@@ -193,7 +211,7 @@ func (s *SystemModule) collectMetrics() error {
 		s.logger.Warn("Failed to collect load metrics")
 	}
 
-	s.logger.Info("Metrics collection cycle completed successfully", "collected", metricsCollected, "total", 5)
+	s.logger.Info("Metrics collection cycle completed successfully", "collected", metricsCollected, "total", 6)
 	return s.pipeline.Send(event)
 }
 

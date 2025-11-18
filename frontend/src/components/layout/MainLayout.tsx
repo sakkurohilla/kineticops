@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import WsOverlay from '../common/WsOverlay';
@@ -8,13 +8,20 @@ interface MainLayoutProps {
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Sidebar - Fixed position, handled internally */}
-      <Sidebar />
+      <div
+        onMouseEnter={() => setIsSidebarExpanded(true)}
+        onMouseLeave={() => setIsSidebarExpanded(false)}
+      >
+        <Sidebar />
+      </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col ml-20 transition-all duration-300">
+      {/* Main Content Area - Shifts when sidebar expands */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
         {/* Header - Sticky */}
         <Header />
 

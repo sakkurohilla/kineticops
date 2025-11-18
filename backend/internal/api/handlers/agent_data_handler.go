@@ -432,10 +432,20 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			metric.MemoryUsage = pctFromAgent * 100
 		}
 
-		// Persist memory_usage metric (single canonical write)
+		// Persist memory metrics (usage percentage, total MB, used MB)
 		if metric.MemoryUsage >= 0 {
 			if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
 				logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
+			}
+		}
+		if metric.MemoryTotal > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "memory_total", metric.MemoryTotal, nil); err != nil {
+				logging.Errorf("CollectMetric(memory_total) failed host=%d: %v", hostID, err)
+			}
+		}
+		if metric.MemoryUsed > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "memory_used", metric.MemoryUsed, nil); err != nil {
+				logging.Errorf("CollectMetric(memory_used) failed host=%d: %v", hostID, err)
 			}
 		}
 	}
@@ -479,6 +489,17 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 				metric.DiskUsage = serverPct
 				if err := services.CollectMetric(hostID, tenantID, "disk_usage", metric.DiskUsage, nil); err != nil {
 					logging.Errorf("CollectMetric(disk_usage) failed host=%d: %v", hostID, err)
+				}
+				// Store disk_total and disk_used in GB
+				if metric.DiskTotal > 0 {
+					if err := services.CollectMetric(hostID, tenantID, "disk_total", metric.DiskTotal, nil); err != nil {
+						logging.Errorf("CollectMetric(disk_total) failed host=%d: %v", hostID, err)
+					}
+				}
+				if metric.DiskUsed > 0 {
+					if err := services.CollectMetric(hostID, tenantID, "disk_used", metric.DiskUsed, nil); err != nil {
+						logging.Errorf("CollectMetric(disk_used) failed host=%d: %v", hostID, err)
+					}
 				}
 				// If agent also reported pct, normalize and compare
 				if agentPctVal >= 0 {
@@ -611,6 +632,46 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		metric.Uptime = 0
 	}
 
+	// Process metrics handling
+	if processesData, ok := system["processes"].(map[string]interface{}); ok {
+		logging.Infof("[PROCESSES] Processing process metrics for host=%d", hostID)
+
+		// Handle top CPU processes
+		if topCPU, ok := processesData["top_cpu"].([]interface{}); ok && len(topCPU) > 0 {
+			logging.Infof("[PROCESSES] Storing %d top CPU processes", len(topCPU))
+			for _, procData := range topCPU {
+				if proc, ok := procData.(map[string]interface{}); ok {
+					pid, _ := proc["pid"].(float64)
+					name, _ := proc["name"].(string)
+					username, _ := proc["username"].(string)
+					cpuPercent, _ := proc["cpu_percent"].(float64)
+					memoryPercent, _ := proc["memory_percent"].(float64)
+					memoryRSS, _ := proc["memory_rss"].(float64)
+					status, _ := proc["status"].(string)
+					numThreads, _ := proc["num_threads"].(float64)
+					createTime, _ := proc["create_time"].(float64)
+
+					// Insert process metric
+					err := postgres.DB.Exec(`
+						INSERT INTO process_metrics (host_id, tenant_id, pid, name, username, cpu_percent, 
+							memory_percent, memory_rss, status, num_threads, create_time, timestamp)
+						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+					`, hostID, tenantID, int(pid), name, username, cpuPercent, memoryPercent,
+						int64(memoryRSS), status, int(numThreads), int64(createTime)).Error
+
+					if err != nil {
+						logging.Errorf("[PROCESSES] Failed to insert process metric: %v", err)
+					}
+				}
+			}
+		}
+
+		// Handle top memory processes (optional, can be same as CPU)
+		if topMemory, ok := processesData["top_memory"].([]interface{}); ok && len(topMemory) > 0 {
+			logging.Infof("[PROCESSES] Received %d top memory processes", len(topMemory))
+		}
+	}
+
 	// Store in host_metrics table with error handling
 	err := postgres.DB.Exec(`
 		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, 
@@ -660,5 +721,39 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		}
 		ws.BroadcastToClients(b)
 		telemetry.IncWSBroadcast(context.Background(), 1)
+	}
+
+	// Broadcast process metrics if available
+	if processesData, ok := system["processes"].(map[string]interface{}); ok {
+		processPayload := map[string]interface{}{
+			"type":      "processes",
+			"host_id":   hostID,
+			"processes": processesData,
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		if pb, perr := json.Marshal(processPayload); perr == nil {
+			if gh := ws.GetGlobalHub(); gh != nil {
+				gh.RememberMessage(pb)
+			}
+			ws.BroadcastToClients(pb)
+			telemetry.IncWSBroadcast(context.Background(), 1)
+		}
+	}
+
+	// Broadcast service metrics if available
+	if servicesData, ok := system["services"].(map[string]interface{}); ok {
+		servicePayload := map[string]interface{}{
+			"type":      "services",
+			"host_id":   hostID,
+			"services":  servicesData,
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		if sb, serr := json.Marshal(servicePayload); serr == nil {
+			if gh := ws.GetGlobalHub(); gh != nil {
+				gh.RememberMessage(sb)
+			}
+			ws.BroadcastToClients(sb)
+			telemetry.IncWSBroadcast(context.Background(), 1)
+		}
 	}
 }

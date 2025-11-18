@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Server, BarChart3, FileText, Bell, GitBranch, LogOut, Zap, Globe } from 'lucide-react';
+import { Home, Server, BarChart3, FileText, Bell, GitBranch, LogOut, Zap, Globe, Settings } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Sidebar: React.FC = () => {
@@ -12,7 +12,8 @@ const Sidebar: React.FC = () => {
   const menuItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard', path: '/dashboard' },
     { id: 'hosts', icon: Server, label: 'Hosts', path: '/hosts' },
-    { id: 'apm', icon: Zap, label: 'APM', path: '/apm' },
+    { id: 'apm', icon: Zap, label: 'Advanced Performance', path: '/apm' },
+    { id: 'services', icon: Settings, label: 'Services', path: '/services' },
     { id: 'synthetics', icon: Globe, label: 'Synthetics', path: '/synthetics' },
     { id: 'metrics', icon: BarChart3, label: 'Metrics', path: '/metrics' },
     { id: 'logs', icon: FileText, label: 'Logs', path: '/logs' },

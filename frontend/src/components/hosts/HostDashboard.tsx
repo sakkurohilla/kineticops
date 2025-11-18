@@ -55,9 +55,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   const disk_total = m?.disk_total ?? 0; // GB
   const uptimeVal = m?.uptime ?? null;
   const loadAvg = m?.load_average ?? '';
-  // network values are in bytes; convert to MB
-  const netIn = m?.network_in !== undefined && m.network_in !== null ? m.network_in / (1024 * 1024) : null;
-  const netOut = m?.network_out !== undefined && m.network_out !== null ? m.network_out / (1024 * 1024) : null;
+  // network values are already in MB from backend (host_metrics table)
+  const netIn = m?.network_in !== undefined && m.network_in !== null ? m.network_in : 0;
+  const netOut = m?.network_out !== undefined && m.network_out !== null ? m.network_out : 0;
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
@@ -204,6 +204,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           </div>
           <p className="text-xs text-gray-500">
             {memory_used.toFixed(1)} MB / {memory_total.toFixed(1)} MB
+          </p>
+          <p className="text-xs text-green-600 font-medium mt-1">
+            Available: {(memory_total - memory_used).toFixed(1)} MB
           </p>
           <div className="mt-3 h-16" style={{ minHeight: 48 }}>
             <ResponsiveContainer width="100%" height="100%">

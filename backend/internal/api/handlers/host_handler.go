@@ -400,49 +400,44 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 	}
 
 	// Convert UTC to IST for display
-	// Also include latest totals/used values from host_metrics table (if available)
+	// Fetch latest host_metrics snapshot which has properly converted values (MB for network, GB for disk)
 	var hm struct {
 		MemoryTotal float64   `json:"memory_total"`
 		MemoryUsed  float64   `json:"memory_used"`
 		DiskTotal   float64   `json:"disk_total"`
 		DiskUsed    float64   `json:"disk_used"`
+		NetworkIn   float64   `json:"network_in"`
+		NetworkOut  float64   `json:"network_out"`
 		Uptime      int64     `json:"uptime"`
 		CPUUsage    float64   `json:"cpu_usage"`
 		Timestamp   time.Time `json:"timestamp"`
 	}
-	// best-effort fetch - non-fatal
-	_ = postgres.DB.Raw(`
-		SELECT memory_total, memory_used, disk_total, disk_used, timestamp
+	// Fetch from host_metrics table which has converted values
+	err = postgres.DB.Raw(`
+		SELECT memory_total, memory_used, disk_total, disk_used, network_in, network_out, uptime, cpu_usage, timestamp
 		FROM host_metrics
 		WHERE host_id = ?
 		ORDER BY timestamp DESC
 		LIMIT 1
 	`, hostID).Scan(&hm).Error
-	if hm.MemoryTotal != 0 {
-		result["memory_total"] = hm.MemoryTotal
-	}
-	if hm.MemoryUsed != 0 {
-		result["memory_used"] = hm.MemoryUsed
-	}
-	if hm.DiskTotal != 0 {
-		result["disk_total"] = hm.DiskTotal
-	}
-	if hm.DiskUsed != 0 {
-		result["disk_used"] = hm.DiskUsed
-	}
-	if hm.Uptime != 0 {
-		result["uptime"] = hm.Uptime
-	}
 
-	// If timeseries metrics did not supply a recent cpu_usage or it is zero,
-	// fall back to the latest snapshot stored in host_metrics (if present).
-	if hm.CPUUsage > 0 {
-		if existing, ok := result["cpu_usage"].(float64); !ok || existing == 0 {
+	// Override with host_metrics values if available (these are already converted to proper units)
+	if err == nil && !hm.Timestamp.IsZero() {
+		result["memory_total"] = hm.MemoryTotal
+		result["memory_used"] = hm.MemoryUsed
+		result["disk_total"] = hm.DiskTotal
+		result["disk_used"] = hm.DiskUsed
+		result["network_in"] = hm.NetworkIn   // Already in MB
+		result["network_out"] = hm.NetworkOut // Already in MB
+		if hm.Uptime > 0 {
+			result["uptime"] = hm.Uptime
+		}
+		if hm.CPUUsage > 0 {
 			result["cpu_usage"] = hm.CPUUsage
 		}
-	}
-	if hm.Timestamp.After(latestTimestamp) {
-		latestTimestamp = hm.Timestamp
+		if hm.Timestamp.After(latestTimestamp) {
+			latestTimestamp = hm.Timestamp
+		}
 	}
 
 	// If no metrics were found in the metrics table, still return a result
