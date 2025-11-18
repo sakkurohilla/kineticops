@@ -35,17 +35,28 @@ function Services() {
 
   // WebSocket handler for real-time service updates
   const handleWebSocketMessage = (data: any) => {
-    if (!selectedHost) return;
+    console.log('[Services] WebSocket message received:', data.type, data);
     
-    if (data.type === 'services' && data.host_id === selectedHost.id) {
-      const cpuSvcs = data.services?.top_cpu || [];
-      const memSvcs = data.services?.top_memory || [];
+    if (!selectedHost) {
+      console.log('[Services] No host selected, ignoring message');
+      return;
+    }
+    
+    if (data.type === 'services') {
+      console.log('[Services] Services message for host:', data.host_id, 'selected:', selectedHost.id);
       
-      if (cpuSvcs.length > 0) {
-        setCpuServices(cpuSvcs);
-      }
-      if (memSvcs.length > 0) {
-        setMemoryServices(memSvcs);
+      if (data.host_id === selectedHost.id) {
+        const cpuSvcs = data.services?.top_cpu || [];
+        const memSvcs = data.services?.top_memory || [];
+        
+        console.log('[Services] Setting CPU services:', cpuSvcs.length, 'Memory services:', memSvcs.length);
+        
+        if (cpuSvcs.length > 0) {
+          setCpuServices(cpuSvcs);
+        }
+        if (memSvcs.length > 0) {
+          setMemoryServices(memSvcs);
+        }
       }
     }
   };

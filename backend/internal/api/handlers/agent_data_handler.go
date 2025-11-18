@@ -742,6 +742,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	// Broadcast service metrics if available
 	if servicesData, ok := system["services"].(map[string]interface{}); ok {
+		logging.Infof("[SERVICES] Received services data from agent for host=%d", hostID)
 		servicePayload := map[string]interface{}{
 			"type":      "services",
 			"host_id":   hostID,
@@ -749,11 +750,14 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
 		if sb, serr := json.Marshal(servicePayload); serr == nil {
+			logging.Infof("[SERVICES] Broadcasting services data for host=%d", hostID)
 			if gh := ws.GetGlobalHub(); gh != nil {
 				gh.RememberMessage(sb)
 			}
 			ws.BroadcastToClients(sb)
 			telemetry.IncWSBroadcast(context.Background(), 1)
+		} else {
+			logging.Errorf("[SERVICES] Failed to marshal services payload: %v", serr)
 		}
 	}
 }
