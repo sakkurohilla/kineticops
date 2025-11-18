@@ -437,31 +437,31 @@ const Dashboard: React.FC = () => {
     <MainLayout>
       <div className="p-6 space-y-6">
 
-        {/* Clean Professional Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Compact Professional Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total Hosts */}
           <div 
-            className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] hover:shadow-[0_12px_48px_0_rgba(31,38,135,0.25)] transform hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+            className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-lg border border-white/20 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 cursor-pointer"
             onClick={() => navigate('/hosts')}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">Total Hosts</h3>
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <Server className="w-5 h-5 text-white" />
+            <div className="relative z-10 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-medium text-gray-600">Total Hosts</h3>
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-md">
+                  <Server className="w-4 h-4 text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <p className="text-3xl font-bold text-gray-900">{stats.totalHosts}</p>
-                <div className="flex items-center gap-3 text-sm">
+              <div className="space-y-1">
+                <p className="text-2xl font-bold text-gray-900">{stats.totalHosts}</p>
+                <div className="flex items-center gap-2 text-xs">
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-green-500 rounded-full" />
-                    <span className="text-gray-600">{stats.onlineHosts} Online</span>
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                    <span className="text-gray-600">{stats.onlineHosts} On</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-red-500 rounded-full" />
-                    <span className="text-gray-600">{stats.offlineHosts} Offline</span>
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                    <span className="text-gray-600">{stats.offlineHosts} Off</span>
                   </div>
                 </div>
               </div>
@@ -469,22 +469,22 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* System Health */}
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] hover:shadow-[0_12px_48px_0_rgba(31,38,135,0.25)] transform hover:-translate-y-1 transition-all duration-300">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 backdrop-blur-lg border border-white/20 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">System Health</h3>
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <Shield className="w-5 h-5 text-white" />
+            <div className="relative z-10 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-medium text-gray-600">System Health</h3>
+                <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center shadow-md">
+                  <Shield className="w-4 h-4 text-white" />
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-3xl font-bold text-gray-900">
+                <p className="text-2xl font-bold text-gray-900">
                   {stats.totalHosts === 0 ? 'N/A' : `${stats.systemHealth}%`}
                 </p>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
                   <div 
-                    className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
+                    className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
                     style={{ width: `${stats.systemHealth}%` }}
                   />
                 </div>
@@ -494,27 +494,27 @@ const Dashboard: React.FC = () => {
 
           {/* Active Alerts */}
           <div 
-            className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500/10 to-red-500/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] hover:shadow-[0_12px_48px_0_rgba(31,38,135,0.25)] transform hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+            className="relative overflow-hidden rounded-xl bg-gradient-to-br from-orange-500/10 to-red-500/10 backdrop-blur-lg border border-white/20 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 cursor-pointer"
             onClick={() => navigate('/alerts')}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">Active Alerts</h3>
-                <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <AlertTriangle className="w-5 h-5 text-white" />
+            <div className="relative z-10 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-medium text-gray-600">Active Alerts</h3>
+                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center shadow-md">
+                  <AlertTriangle className="w-4 h-4 text-white" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <p className="text-3xl font-bold text-gray-900">{stats.criticalAlerts + stats.warningAlerts}</p>
-                <div className="flex items-center gap-3 text-sm">
+              <div className="space-y-1">
+                <p className="text-2xl font-bold text-gray-900">{stats.criticalAlerts + stats.warningAlerts}</p>
+                <div className="flex items-center gap-2 text-xs">
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-red-500 rounded-full" />
-                    <span className="text-gray-600">{stats.criticalAlerts} Critical</span>
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                    <span className="text-gray-600">{stats.criticalAlerts} Crit</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-yellow-500 rounded-full" />
-                    <span className="text-gray-600">{stats.warningAlerts} Warning</span>
+                    <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full" />
+                    <span className="text-gray-600">{stats.warningAlerts} Warn</span>
                   </div>
                 </div>
               </div>
@@ -522,17 +522,17 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Average CPU */}
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] hover:shadow-[0_12px_48px_0_rgba(31,38,135,0.25)] transform hover:-translate-y-1 transition-all duration-300">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-lg border border-white/20 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300">
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
-            <div className="relative z-10 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">Avg CPU</h3>
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
-                  <Cpu className="w-5 h-5 text-white" />
+            <div className="relative z-10 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-medium text-gray-600">Avg CPU</h3>
+                <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-lg flex items-center justify-center shadow-md">
+                  <Cpu className="w-4 h-4 text-white" />
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-3xl font-bold text-gray-900">{stats.avgCpuUsage.toFixed(1)}%</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.avgCpuUsage.toFixed(1)}%</p>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   {getTrendIcon(stats.avgCpuUsage, 50)}
                   <span>vs last period</span>

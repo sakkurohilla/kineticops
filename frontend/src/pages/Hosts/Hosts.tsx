@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
-import { Plus, Server, Search, RefreshCw, Users, Trash2 } from 'lucide-react';
+import { Plus, Server, Search, RefreshCw, Users } from 'lucide-react';
 import Button from '../../components/common/Button';
-import Badge from '../../components/common/Badge';
 import SimpleAddHostForm from '../../components/hosts/SimpleAddHostForm';
 import { useHosts } from '../../hooks/useHosts';
 // analytics moved to Dashboard
@@ -24,20 +23,6 @@ const Hosts: React.FC = () => {
     setRefreshing(true);
     await refetch();
     setTimeout(() => setRefreshing(false), 500);
-  };
-
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this host?')) {
-      return;
-    }
-
-    try {
-      await hostService.deleteHost(id);
-      refetch();
-    } catch (err: any) {
-      alert('Failed to delete host: ' + err.message);
-    }
   };
 
   // Fetch metrics for hosts
@@ -117,42 +102,50 @@ const Hosts: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg p-3 text-white">
-            <div className="flex items-center justify-between">
+        {/* Stats - Clean Professional Style */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-blue-100">Total Hosts</p>
-                <p className="text-xl font-bold">{hosts.length}</p>
+                <p className="text-xs font-medium text-gray-600 mb-1">Total Hosts</p>
+                <p className="text-2xl font-bold text-gray-900">{hosts.length}</p>
               </div>
-              <Server className="w-5 h-5" />
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center shadow-md">
+                <Server className="w-5 h-5 text-white" />
+              </div>
             </div>
           </div>
-          <div className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-lg p-3 text-white">
-            <div className="flex items-center justify-between">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-green-100">Online</p>
-                <p className="text-xl font-bold">{hosts.filter(h => h.agent_status === 'online').length}</p>
+                <p className="text-xs font-medium text-gray-600 mb-1">Online</p>
+                <p className="text-2xl font-bold text-gray-900">{hosts.filter(h => h.agent_status === 'online').length}</p>
               </div>
-              <div className="w-2 h-2 bg-green-300 rounded-full animate-pulse"></div>
+              <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg" />
             </div>
           </div>
-          <div className="bg-gradient-to-br from-red-500 to-red-700 rounded-lg p-3 text-white">
-            <div className="flex items-center justify-between">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-500/10 to-pink-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-red-100">Offline</p>
-                <p className="text-xl font-bold">{hosts.filter(h => h.agent_status !== 'online').length}</p>
+                <p className="text-xs font-medium text-gray-600 mb-1">Offline</p>
+                <p className="text-2xl font-bold text-gray-900">{hosts.filter(h => h.agent_status !== 'online').length}</p>
               </div>
-              <div className="w-2 h-2 bg-red-300 rounded-full"></div>
+              <div className="w-3 h-3 bg-red-500 rounded-full shadow-lg" />
             </div>
           </div>
-          <div className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-lg p-3 text-white">
-            <div className="flex items-center justify-between">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-lg border border-white/20 shadow-lg p-4">
+            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+            <div className="relative z-10 flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-purple-100">Groups</p>
-                <p className="text-xl font-bold">{groups.length - 1}</p>
+                <p className="text-xs font-medium text-gray-600 mb-1">Groups</p>
+                <p className="text-2xl font-bold text-gray-900">{groups.length - 1}</p>
               </div>
-              <Users className="w-5 h-5" />
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-indigo-500 rounded-lg flex items-center justify-center shadow-md">
+                <Users className="w-5 h-5 text-white" />
+              </div>
             </div>
           </div>
         </div>
@@ -218,12 +211,10 @@ const Hosts: React.FC = () => {
           </div>
         )}
 
-        {/* Hosts Grid - Dashboard Style with Analytics Sidebar */}
+        {/* Hosts Grid - Clean Professional Cards */}
         {!loading && !error && filteredHosts.length > 0 && (
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-3">
-                {filteredHosts.map((host) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredHosts.map((host) => {
               const metrics = hostMetrics[host.id];
               const cpuUsage = metrics?.cpu_usage || 0;
               const memoryUsage = metrics?.memory_usage || 0;
@@ -233,146 +224,129 @@ const Hosts: React.FC = () => {
               return (
                 <div 
                   key={host.id} 
-                  className="bg-gradient-to-br from-white to-gray-50 rounded-lg p-3 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100 group"
-                  onClick={() => setSelectedHostId(host.id)}
-                  onDoubleClick={() => navigate(`/hosts/${host.id}`)}
+                  className="relative overflow-hidden rounded-xl bg-white backdrop-blur-lg border border-gray-200 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer"
+                  onClick={() => navigate(`/hosts/${host.id}`)}
                 >
-                  {/* Host Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                        isOnline ? 'bg-gradient-to-br from-green-400 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
-                      }`}>
-                        <Server className="w-3 h-3 text-white" />
+                  <div className="p-4">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          isOnline ? 'bg-emerald-500' : 'bg-gray-400'
+                        }`}>
+                          <Server className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900 text-sm">{host.hostname || host.ip}</h3>
+                          <p className="text-xs text-gray-500">{host.ip}</p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-900 text-sm truncate">{host.hostname || host.ip}</h3>
-                        <p className="text-xs text-gray-500 truncate">{host.ip}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
                       <div className={`w-2 h-2 rounded-full ${
-                        isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-                      }`}></div>
-                      <button
-                        onClick={(e) => handleDelete(host.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all"
-                      >
-                        <Trash2 className="w-3 h-3 text-red-500" />
-                      </button>
+                        isOnline ? 'bg-emerald-500' : 'bg-gray-400'
+                      }`} />
                     </div>
-                  </div>
 
-                  {/* Group Badge */}
-                  <div className="mb-3">
-                    <Badge variant="info" size="sm">
-                      {host.group || 'default'}
-                    </Badge>
-                  </div>
-
-                  {/* Metrics Grid */}
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    {/* CPU Circle */}
-                    <div className="text-center">
-                      <div className="relative w-8 h-8 mx-auto mb-1">
-                        <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#e5e7eb"
-                            strokeWidth="2"
-                          />
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke={cpuUsage > 80 ? '#ef4444' : cpuUsage > 60 ? '#f59e0b' : '#10b981'}
-                            strokeWidth="2"
-                            strokeDasharray={`${cpuUsage}, 100`}
-                            strokeLinecap="round"
-                            className="transition-all duration-1000"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{cpuUsage.toFixed(0)}%</span>
-                        </div>
+                    {/* Group Badge */}
+                    {host.group && (
+                      <div className="mb-3">
+                        <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+                          {host.group}
+                        </span>
                       </div>
-                      <p className="text-xs font-medium text-gray-600">CPU</p>
-                    </div>
+                    )}
 
-                    {/* Memory Circle */}
-                    <div className="text-center">
-                      <div className="relative w-8 h-8 mx-auto mb-1">
-                        <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#e5e7eb"
-                            strokeWidth="2"
-                          />
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke={memoryUsage > 80 ? '#ef4444' : memoryUsage > 60 ? '#f59e0b' : '#3b82f6'}
-                            strokeWidth="2"
-                            strokeDasharray={`${memoryUsage}, 100`}
-                            strokeLinecap="round"
-                            className="transition-all duration-1000"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{memoryUsage.toFixed(0)}%</span>
+                    {/* Metrics - Circular Progress */}
+                    <div className="flex items-center justify-around mb-3">
+                      {/* CPU */}
+                      <div className="text-center">
+                        <div className="relative w-12 h-12 mx-auto">
+                          <svg className="transform -rotate-90 w-12 h-12">
+                            <circle cx="24" cy="24" r="20" stroke="#e5e7eb" strokeWidth="4" fill="none" />
+                            <circle 
+                              cx="24" cy="24" r="20" 
+                              stroke="#3b82f6" 
+                              strokeWidth="4" 
+                              fill="none"
+                              strokeDasharray={`${2 * Math.PI * 20}`}
+                              strokeDashoffset={`${2 * Math.PI * 20 * (1 - cpuUsage / 100)}`}
+                              strokeLinecap="round"
+                              className="transition-all duration-500"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-900">{cpuUsage.toFixed(0)}%</span>
+                          </div>
                         </div>
+                        <p className="text-xs text-gray-600 mt-1">CPU</p>
                       </div>
-                      <p className="text-xs font-medium text-gray-600">RAM</p>
-                    </div>
 
-                    {/* Disk Circle */}
-                    <div className="text-center">
-                      <div className="relative w-8 h-8 mx-auto mb-1">
-                        <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#e5e7eb"
-                            strokeWidth="2"
-                          />
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke={diskUsage > 80 ? '#ef4444' : diskUsage > 60 ? '#f59e0b' : '#8b5cf6'}
-                            strokeWidth="2"
-                            strokeDasharray={`${diskUsage}, 100`}
-                            strokeLinecap="round"
-                            className="transition-all duration-1000"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{diskUsage.toFixed(0)}%</span>
+                      {/* RAM */}
+                      <div className="text-center">
+                        <div className="relative w-12 h-12 mx-auto">
+                          <svg className="transform -rotate-90 w-12 h-12">
+                            <circle cx="24" cy="24" r="20" stroke="#e5e7eb" strokeWidth="4" fill="none" />
+                            <circle 
+                              cx="24" cy="24" r="20" 
+                              stroke="#10b981" 
+                              strokeWidth="4" 
+                              fill="none"
+                              strokeDasharray={`${2 * Math.PI * 20}`}
+                              strokeDashoffset={`${2 * Math.PI * 20 * (1 - memoryUsage / 100)}`}
+                              strokeLinecap="round"
+                              className="transition-all duration-500"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-900">{memoryUsage.toFixed(0)}%</span>
+                          </div>
                         </div>
+                        <p className="text-xs text-gray-600 mt-1">RAM</p>
                       </div>
-                      <p className="text-xs font-medium text-gray-600">Disk</p>
-                    </div>
-                  </div>
 
-                  {/* Status and Last Seen */}
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                    <Badge 
-                      variant={isOnline ? 'success' : 'error'}
-                      size="sm"
-                    >
-                      {host.agent_status || 'offline'}
-                    </Badge>
-                    <span className="text-xs text-gray-500">
-                      {host.last_seen ? formatTimestamp(host.last_seen).split(' ')[1] : 'Never'}
-                    </span>
+                      {/* Disk */}
+                      <div className="text-center">
+                        <div className="relative w-12 h-12 mx-auto">
+                          <svg className="transform -rotate-90 w-12 h-12">
+                            <circle cx="24" cy="24" r="20" stroke="#e5e7eb" strokeWidth="4" fill="none" />
+                            <circle 
+                              cx="24" cy="24" r="20" 
+                              stroke="#8b5cf6" 
+                              strokeWidth="4" 
+                              fill="none"
+                              strokeDasharray={`${2 * Math.PI * 20}`}
+                              strokeDashoffset={`${2 * Math.PI * 20 * (1 - diskUsage / 100)}`}
+                              strokeLinecap="round"
+                              className="transition-all duration-500"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-gray-900">{diskUsage.toFixed(0)}%</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">Disk</p>
+                      </div>
+                    </div>
+
+                    {/* Status Footer */}
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                        isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${
+                          isOnline ? 'bg-emerald-500' : 'bg-gray-500'
+                        }`} />
+                        {isOnline ? 'online' : 'offline'}
+                      </span>
+                      {metrics?.uptime && (
+                        <span className="text-xs text-gray-500">
+                          {formatTimestamp(metrics.uptime)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
-              </div>
-            </div>
-
-            {/* Right-side analytics removed (moved to Dashboard) */}
           </div>
         )}
         {/* No Search Results */}
