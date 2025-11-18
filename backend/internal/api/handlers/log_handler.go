@@ -78,6 +78,14 @@ func SearchLogs(c *fiber.Ctx) error {
 	if lvl := c.Query("level"); lvl != "" {
 		filters["level"] = lvl
 	}
+	// support filtering by service (maps to meta.service in Mongo)
+	if svc := c.Query("service"); svc != "" {
+		filters["meta.service"] = svc
+	}
+	// support filtering by source (maps to meta.source)
+	if src := c.Query("source"); src != "" {
+		filters["meta.source"] = src
+	}
 	start, _ := time.Parse(time.RFC3339, c.Query("start"))
 	end, _ := time.Parse(time.RFC3339, c.Query("end"))
 	if !start.IsZero() && !end.IsZero() {
@@ -96,13 +104,40 @@ func SearchLogs(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot search logs"})
 	}
+
+	// Ensure we always return an array (not null) so frontend consumers
+	// can safely access .length without runtime errors when no logs exist.
+	if logs == nil {
+		logs = make([]models.Log, 0)
+	}
+
 	// fetch total count for pagination
 	total, err := services.CountLogs(context.Background(), tid.(int64), filters, text)
 	if err != nil {
 		// non-fatal: return logs without total
 		return c.JSON(fiber.Map{"limit": limit, "skip": skip, "logs": logs})
 	}
+
 	return c.JSON(fiber.Map{"total": total, "limit": limit, "skip": skip, "logs": logs})
+}
+
+// GetLogSources returns distinct log sources and available levels for the tenant.
+func GetLogSources(c *fiber.Ctx) error {
+	tid := c.Locals("tenant_id")
+	if tid == nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Unauthenticated"})
+	}
+	sources, levels, err := services.GetLogSources(context.Background(), tid.(int64))
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Cannot fetch log sources"})
+	}
+	if sources == nil {
+		sources = []string{}
+	}
+	if levels == nil {
+		levels = []string{}
+	}
+	return c.JSON(fiber.Map{"sources": sources, "levels": levels})
 }
 
 // TriggerLogRetention runs the retention cleanup immediately. Admin-only.

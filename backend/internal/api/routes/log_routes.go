@@ -11,5 +11,6 @@ func RegisterLogRoutes(app *fiber.App) { // ← Was RegisterAlertRoutes
 	api := app.Group("/api/v1/logs", middleware.AgentOrUserAuth())
 	api.Post("/", handlers.CollectLog)
 	api.Get("/", handlers.SearchLogs)
+	api.Get("/sources", handlers.GetLogSources)
 	api.Post("/retention", handlers.TriggerLogRetention)
 }

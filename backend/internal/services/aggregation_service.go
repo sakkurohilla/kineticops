@@ -90,7 +90,6 @@ func (a *AggregationService) selectOptimalInterval(start, end time.Time) string 
 
 // buildTimeSeriesQuery creates optimized SQL for time series aggregation
 func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string {
-	// Select optimal table based on time range and interval
 	tableName := a.selectOptimalTable(query.StartTime, query.EndTime, query.Interval)
 	intervalSQL := a.getIntervalSQL(query.Interval)
 	functionSQL := a.getFunctionSQL(query.Function)
@@ -99,7 +98,7 @@ func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string
 		// Use raw data with aggregation
 		return fmt.Sprintf(`
 			SELECT 
-				date_trunc('%s', timestamp) as bucket,
+				time_bucket('%s', timestamp) as bucket,
 				%s(value) as aggregated_value
 			FROM %s 
 			WHERE host_id = $1 
@@ -110,19 +109,19 @@ func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string
 			ORDER BY bucket ASC
 		`, intervalSQL, functionSQL, tableName)
 	} else {
-		// Use pre-aggregated data
+		// Use TimescaleDB continuous aggregates (metrics_5m, metrics_1h, metrics_1d)
+		// These views have columns: bucket, host_id, tenant_id, name, value
 		return fmt.Sprintf(`
 			SELECT 
-				timestamp as bucket,
-				%s(value) as aggregated_value
+				bucket as bucket,
+				value as aggregated_value
 			FROM %s 
 			WHERE host_id = $1 
 				AND name = $2 
-				AND timestamp >= $3 
-				AND timestamp <= $4
-			GROUP BY timestamp 
-			ORDER BY timestamp ASC
-		`, functionSQL, tableName)
+				AND bucket >= $3 
+				AND bucket <= $4
+			ORDER BY bucket ASC
+		`, tableName)
 	}
 }
 
@@ -130,7 +129,7 @@ func (a *AggregationService) buildTimeSeriesQuery(query AggregationQuery) string
 func (a *AggregationService) selectOptimalTable(start, end time.Time, interval string) string {
 	duration := end.Sub(start)
 
-	// Use downsampled tables for longer ranges
+	// Use TimescaleDB continuous aggregates for longer ranges
 	switch {
 	case duration > 7*24*time.Hour && (interval == "1h" || interval == "1d"):
 		return "metrics_1h"
@@ -184,7 +183,19 @@ func (a *AggregationService) GetMetricsForDashboard(hostID int64, timeRange stri
 	end := time.Now()
 	start := a.parseTimeRange(timeRange, end)
 
-	metrics := []string{"cpu_usage", "memory_usage", "disk_usage"}
+	// Include all metric types: CPU, Memory, Disk, Network, Load
+	metrics := []string{
+		"cpu_usage",
+		"memory_usage",
+		"disk_usage",
+		"network_bytes",
+		"network_in_bytes",
+		"network_out_bytes",
+		"load_1min",
+		"load_5min",
+		"load_15min",
+		"uptime_seconds",
+	}
 	result := make(map[string][]TimeSeriesPoint)
 
 	for _, metric := range metrics {

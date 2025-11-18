@@ -88,7 +88,7 @@ func (s *SystemModule) Stop() error {
 func (s *SystemModule) collectMetrics() error {
 	timestamp := time.Now().UTC()
 	s.logger.Info("Starting metrics collection cycle", "timestamp", timestamp.Format(time.RFC3339))
-	
+
 	hostInfo, err := host.Info()
 	if err != nil {
 		s.logger.Error("Failed to get host info", "error", err)
@@ -111,16 +111,16 @@ func (s *SystemModule) collectMetrics() error {
 			"version": "1.0.0",
 		},
 		"host": map[string]interface{}{
-			"hostname":        hostInfo.Hostname,
-			"ips":             networkIPs,
-			"primary_ip":      networkIPs[0],
-			"os":              hostInfo.OS,
-			"platform":        hostInfo.Platform,
-			"platform_family": hostInfo.PlatformFamily,
+			"hostname":         hostInfo.Hostname,
+			"ips":              networkIPs,
+			"primary_ip":       networkIPs[0],
+			"os":               hostInfo.OS,
+			"platform":         hostInfo.Platform,
+			"platform_family":  hostInfo.PlatformFamily,
 			"platform_version": hostInfo.PlatformVersion,
-			"arch":            hostInfo.KernelArch,
-			"kernel_version":  hostInfo.KernelVersion,
-			"virtualization":  hostInfo.VirtualizationSystem,
+			"arch":             hostInfo.KernelArch,
+			"kernel_version":   hostInfo.KernelVersion,
+			"virtualization":   hostInfo.VirtualizationSystem,
 		},
 		"event": map[string]interface{}{
 			"kind":     "metric",
@@ -151,7 +151,7 @@ func (s *SystemModule) collectMetrics() error {
 
 	// Collect all metrics with error handling and logging
 	metricsCollected := 0
-	
+
 	if cpuData := s.getCPUMetrics(); cpuData != nil {
 		systemData["cpu"] = cpuData
 		metricsCollected++
@@ -208,10 +208,10 @@ func (s *SystemModule) getCPUMetrics() map[string]interface{} {
 		s.logger.Warn("No CPU data returned")
 		return nil
 	}
-	
+
 	usage := cpuPercent[0]
 	s.logger.Debug("CPU usage collected", "percent", usage)
-	
+
 	return map[string]interface{}{
 		"total": map[string]interface{}{
 			"pct": usage / 100.0,
@@ -226,9 +226,9 @@ func (s *SystemModule) getMemoryMetrics() map[string]interface{} {
 		s.logger.Error("Failed to get memory info", "error", err)
 		return nil
 	}
-	
+
 	s.logger.Debug("Memory info collected", "total", memInfo.Total, "used", memInfo.Used, "percent", memInfo.UsedPercent)
-	
+
 	return map[string]interface{}{
 		"total": float64(memInfo.Total),
 		"used": map[string]interface{}{
@@ -247,9 +247,9 @@ func (s *SystemModule) getDiskMetrics() map[string]interface{} {
 		s.logger.Error("Failed to get root filesystem usage", "error", err)
 		return nil
 	}
-	
+
 	s.logger.Debug("Disk usage collected", "total", usage.Total, "used", usage.Used, "percent", usage.UsedPercent)
-	
+
 	// Only return root filesystem data
 	return map[string]interface{}{
 		"device_name": "/dev/root",
@@ -262,8 +262,6 @@ func (s *SystemModule) getDiskMetrics() map[string]interface{} {
 		"free": float64(usage.Free),
 	}
 }
-
-
 
 // getNetworkMetrics returns primary network interface data
 func (s *SystemModule) getNetworkMetrics() map[string]interface{} {
@@ -305,7 +303,7 @@ func (s *SystemModule) getLoadMetrics() map[string]interface{} {
 // getAllNetworkIPs returns all network interface IP addresses
 func (s *SystemModule) getAllNetworkIPs() []string {
 	var ips []string
-	
+
 	// Get primary IP via route to external
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err == nil {
@@ -352,4 +350,3 @@ func (s *SystemModule) getAllNetworkIPs() []string {
 
 	return ips
 }
-

@@ -45,8 +45,15 @@ func CountLogs(ctx context.Context, tenantID int64, filters map[string]interface
 	return mongodb.CountLogs(ctx, tenantID, filters, text)
 }
 
+// (legacy) removed - use GetLogSources that returns (sources, levels, err)
+
 func EnforceLogRetention(days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	// Enforce retention in MongoDB
 	return mongodb.DeleteOldLogs(context.Background(), cutoff)
+}
+
+// GetLogSources is a service wrapper returning available sources and levels for the tenant.
+func GetLogSources(ctx context.Context, tenantID int64) ([]string, []string, error) {
+	return mongodb.GetLogSources(ctx, tenantID)
 }

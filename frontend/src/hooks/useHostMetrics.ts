@@ -19,13 +19,11 @@ export interface MetricData {
 }
 
 const useHostMetrics = (hostId: number | undefined, autoRefresh = true) => {
-  // Initialize from localStorage to avoid UI blinking when websocket briefly disconnects
-  const cachedMetric = typeof window !== 'undefined' ? localStorage.getItem(`host_${hostId}_last_metric`) : null;
-  const cachedSeries = typeof window !== 'undefined' ? localStorage.getItem(`host_${hostId}_series`) : null;
-  const [metrics, setMetrics] = useState<MetricData | null>(cachedMetric ? JSON.parse(cachedMetric) : null);
-  const [series, setSeries] = useState<MetricData[]>(cachedSeries ? JSON.parse(cachedSeries) : []);
+  // Don't use localStorage cache to avoid showing stale data that causes glitching
+  const [metrics, setMetrics] = useState<MetricData | null>(null);
+  const [series, setSeries] = useState<MetricData[]>([]);
   const [lastSeq, setLastSeq] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(cachedMetric ? false : true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
   const fetchLatest = async (forceFresh = false) => {

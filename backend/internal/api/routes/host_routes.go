@@ -29,5 +29,6 @@ func RegisterHostRoutes(app *fiber.App) {
 	hosts.Get("/:id/metrics/range", handlers.GetHostMetricsTimeRange)
 	hosts.Post("/test-ssh", handlers.TestSSHConnection)
 	hosts.Post("/with-agent", handlers.CreateHostWithAgent)
+	hosts.Get("/:id/services", handlers.GetHostServices)
 
 }

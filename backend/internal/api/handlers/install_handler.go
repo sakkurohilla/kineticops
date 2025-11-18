@@ -202,11 +202,11 @@ chmod +x "$BIN_PATH"
 # /opt/kineticops-agent/agent will work regardless of the exact binary name.
 ln -sf "$BIN_PATH" "$LINK_PATH" || { echo "Symlink failed"; exit 1; }
 echo "Installed agent to $BIN_PATH (symlinked to $LINK_PATH)"
-# Write a minimal agent configuration so the installed agent knows how to
-# reach this backend. Use an unquoted heredoc so shell variables are
-# expanded (KINETICOPS_HOST and INSTALLATION_TOKEN set earlier in the
-# script). Use spaces for indentation (YAML disallows tabs).
-cat > "$INSTALL_DIR/config.yaml" <<YAML
+	# Write a minimal agent configuration so the installed agent knows how to
+	# reach this backend. Use an unquoted heredoc so shell variables are
+	# expanded (KINETICOPS_HOST and INSTALLATION_TOKEN set earlier in the
+	# script). Use spaces for indentation (YAML disallows tabs).
+	cat > "$INSTALL_DIR/config.yaml" <<YAML
 output:
 	kineticops:
 		hosts:
@@ -353,15 +353,51 @@ func ServeAgentBinary(c *fiber.Ctx) error {
 	)
 
 	// Common absolute locations inside containers / typical deployments
+	// Note: docker-compose mounts ./backend/build -> /usr/local/bin/build
 	candidates = append(candidates,
 		filepath.Join("/app", "build", name),
 		filepath.Join("/build", name),
+		filepath.Join("/usr/local/bin", "build", name),
 		filepath.Join("/usr/local/bin", name),
 	)
 
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return c.SendFile(p)
+	// Build a list of name variants to attempt. Some installers probe
+	// distro-specific names (ubuntu/centos) while our build artifacts may
+	// be published with a generic 'linux' name. To be tolerant, try the
+	// original requested name first, then map common distro tokens to
+	// 'linux' and try those variants as well.
+	namesToTry := []string{name}
+	if strings.Contains(name, "ubuntu") || strings.Contains(name, "centos") {
+		mapped := strings.ReplaceAll(name, "ubuntu", "linux")
+		mapped = strings.ReplaceAll(mapped, "centos", "linux")
+		if mapped != name {
+			namesToTry = append(namesToTry, mapped)
+		}
+	}
+
+	// Check each candidate name and log the result for diagnostics. If SendFile
+	// fails we return an explicit 500 with the error so middleware logging
+	// contains the path and failure reason.
+	for _, tryName := range namesToTry {
+		for _, p := range candidates {
+			// replace the base name in the candidate path with the tryName
+			// when the candidate contains the original name; otherwise join
+			// with tryName appropriately. Simpler approach: if candidate ends
+			// with the original name, swap in tryName for the check; else
+			// just construct a path using tryName where appropriate.
+			pCheck := strings.Replace(p, name, tryName, 1)
+			fmt.Printf("install_handler: checking candidate path=%s\n", pCheck)
+			if fi, err := os.Stat(pCheck); err == nil {
+				fmt.Printf("install_handler: found file path=%s size=%d\n", pCheck, fi.Size())
+				if err := c.SendFile(pCheck); err != nil {
+					fmt.Printf("install_handler: SendFile error path=%s err=%v\n", pCheck, err)
+					return c.Status(500).SendString(fmt.Sprintf("internal error serving file %s: %v", tryName, err))
+				}
+				return nil
+			} else {
+				// Log the stat error (usually file not found or permission)
+				fmt.Printf("install_handler: os.Stat path=%s err=%v\n", pCheck, err)
+			}
 		}
 	}
 	return c.Status(404).SendString(fmt.Sprintf("Agent binary %s not available", name))
@@ -390,12 +426,62 @@ func ServeArtifact(c *fiber.Ctx) error {
 		filepath.Join("/build", name),
 		filepath.Join("/usr/local/bin", "build", name),
 	)
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return c.SendFile(p)
+	// Build a richer set of filename variants to try. Installers request
+	// different checksum/signature filenames (e.g. kineticops-agent-... or
+	// agent-...), use dashes or underscores, and may request ubuntu/centos
+	// while artifacts are published as linux. Generate variants that map
+	// across these conventions so checksum lookups succeed.
+	namesToTry := []string{name}
+	// map ubuntu/centos -> linux
+	if strings.Contains(name, "ubuntu") || strings.Contains(name, "centos") {
+		mapped := strings.ReplaceAll(name, "ubuntu", "linux")
+		mapped = strings.ReplaceAll(mapped, "centos", "linux")
+		if mapped != name {
+			namesToTry = append(namesToTry, mapped)
 		}
 	}
-	return c.Status(404).SendString("artifact not found")
+	// swap kineticops-agent <-> agent
+	if strings.Contains(name, "kineticops-agent") {
+		namesToTry = append(namesToTry, strings.ReplaceAll(name, "kineticops-agent", "agent"))
+	} else if strings.Contains(name, "agent-") || strings.Contains(name, "agent_") {
+		namesToTry = append(namesToTry, strings.ReplaceAll(name, "agent-", "kineticops-agent-"))
+		namesToTry = append(namesToTry, strings.ReplaceAll(name, "agent_", "kineticops-agent_"))
+	}
+	// try underscore <-> dash variations
+	if strings.Contains(name, "-") {
+		namesToTry = append(namesToTry, strings.ReplaceAll(name, "-", "_"))
+	}
+	if strings.Contains(name, "_") {
+		namesToTry = append(namesToTry, strings.ReplaceAll(name, "_", "-"))
+	}
+
+	seen := map[string]bool{}
+	for _, tryName := range namesToTry {
+		if seen[tryName] {
+			continue
+		}
+		seen[tryName] = true
+		for _, p := range candidates {
+			pCheck := strings.Replace(p, name, tryName, 1)
+			fmt.Printf("install_handler: artifact check path=%s\n", pCheck)
+			if fi, err := os.Stat(pCheck); err == nil {
+				fmt.Printf("install_handler: artifact found path=%s size=%d\n", pCheck, fi.Size())
+				if err := c.SendFile(pCheck); err != nil {
+					fmt.Printf("install_handler: SendFile error artifact path=%s err=%v\n", pCheck, err)
+					return c.Status(500).SendString(fmt.Sprintf("internal error serving artifact %s: %v", tryName, err))
+				}
+				return nil
+			} else {
+				fmt.Printf("install_handler: artifact os.Stat path=%s err=%v\n", pCheck, err)
+			}
+		}
+	}
+	// Return a 404 with no body so automated checks (HEAD/GET used by
+	// installers) do not receive non-empty text blobs that could be
+	// misinterpreted as checksum contents. This keeps behavior strict
+	// for checksum endpoints where an absent file should yield an empty
+	// response body.
+	return c.SendStatus(fiber.StatusNotFound)
 }
 
 // GenerateInstallationToken creates and stores a short-lived installation token

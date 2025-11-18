@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Cpu, HardDrive, Wifi, TrendingUp, TrendingDown } from 'lucide-react';
+import { Activity, Cpu, HardDrive, Wifi, TrendingUp, TrendingDown, Zap, Clock } from 'lucide-react';
 import Card from '../common/Card';
 import { useMetrics } from '../../hooks/useMetrics';
 
@@ -46,7 +46,7 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
   };
 
   const getValueColor = (value: number, type: string) => {
-    if (type === 'network') return 'text-purple-600';
+    if (type === 'network' || type === 'load' || type === 'uptime') return 'text-purple-600';
     if (value >= 90) return 'text-red-600';
     if (value >= 70) return 'text-yellow-600';
     return 'text-green-600';
@@ -59,7 +59,8 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
       icon: Cpu,
       value: getLatestValue(data.cpu),
       unit: '%',
-      color: 'bg-blue-100 text-blue-600'
+      color: 'bg-blue-100 text-blue-600',
+      type: 'percentage'
     },
     {
       id: 'memory',
@@ -67,7 +68,8 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
       icon: Activity,
       value: getLatestValue(data.memory),
       unit: '%',
-      color: 'bg-green-100 text-green-600'
+      color: 'bg-green-100 text-green-600',
+      type: 'percentage'
     },
     {
       id: 'disk',
@@ -75,15 +77,71 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
       icon: HardDrive,
       value: getLatestValue(data.disk),
       unit: '%',
-      color: 'bg-yellow-100 text-yellow-600'
+      color: 'bg-yellow-100 text-yellow-600',
+      type: 'percentage'
     },
     {
       id: 'network',
-      label: 'Network I/O',
+      label: 'Network Total',
       icon: Wifi,
       value: getLatestValue(data.network),
       unit: ' MB/s',
-      color: 'bg-purple-100 text-purple-600'
+      color: 'bg-purple-100 text-purple-600',
+      type: 'network'
+    },
+    {
+      id: 'network_in',
+      label: 'Network In',
+      icon: TrendingDown,
+      value: getLatestValue(data.network_in),
+      unit: ' MB/s',
+      color: 'bg-cyan-100 text-cyan-600',
+      type: 'network'
+    },
+    {
+      id: 'network_out',
+      label: 'Network Out',
+      icon: TrendingUp,
+      value: getLatestValue(data.network_out),
+      unit: ' MB/s',
+      color: 'bg-indigo-100 text-indigo-600',
+      type: 'network'
+    },
+    {
+      id: 'load_1min',
+      label: 'Load (1min)',
+      icon: Zap,
+      value: getLatestValue(data.load_1min),
+      unit: '',
+      color: 'bg-orange-100 text-orange-600',
+      type: 'load'
+    },
+    {
+      id: 'load_5min',
+      label: 'Load (5min)',
+      icon: Zap,
+      value: getLatestValue(data.load_5min),
+      unit: '',
+      color: 'bg-amber-100 text-amber-600',
+      type: 'load'
+    },
+    {
+      id: 'load_15min',
+      label: 'Load (15min)',
+      icon: Zap,
+      value: getLatestValue(data.load_15min),
+      unit: '',
+      color: 'bg-rose-100 text-rose-600',
+      type: 'load'
+    },
+    {
+      id: 'uptime',
+      label: 'Uptime',
+      icon: Clock,
+      value: getLatestValue(data.uptime),
+      unit: ' hours',
+      color: 'bg-teal-100 text-teal-600',
+      type: 'uptime'
     }
   ];
 
@@ -129,10 +187,11 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           const trend = trends[metric.id] || 'stable';
+          const isPercentage = metric.type === 'percentage';
           
           return (
             <div key={metric.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
@@ -147,31 +206,34 @@ const LiveMetrics: React.FC<LiveMetricsProps> = ({ hostId }) => {
               </div>
               
               <div className="flex items-baseline justify-between">
-                <span className={`text-2xl font-bold ${getValueColor(metric.value, metric.id)}`}>
-                  {metric.value.toFixed(1)}{metric.unit}
+                <span className={`text-2xl font-bold ${getValueColor(metric.value, metric.type)}`}>
+                  {metric.type === 'uptime' ? metric.value.toFixed(0) : metric.value.toFixed(1)}{metric.unit}
                 </span>
-                <div className="text-right">
-                  <div className={`text-xs px-2 py-1 rounded-full ${
-                    metric.value >= 90 ? 'bg-red-100 text-red-700' :
-                    metric.value >= 70 ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-green-100 text-green-700'
-                  }`}>
-                    {metric.value >= 90 ? 'Critical' :
-                     metric.value >= 70 ? 'Warning' : 'Normal'}
+                {isPercentage && (
+                  <div className="text-right">
+                    <div className={`text-xs px-2 py-1 rounded-full ${
+                      metric.value >= 90 ? 'bg-red-100 text-red-700' :
+                      metric.value >= 70 ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {metric.value >= 90 ? 'Critical' :
+                       metric.value >= 70 ? 'Warning' : 'Normal'}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Mini progress bar */}
-              <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    metric.value >= 90 ? 'bg-red-500' :
-                    metric.value >= 70 ? 'bg-yellow-500' : 'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(metric.value, 100)}%` }}
-                ></div>
-              </div>
+              {isPercentage && (
+                <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className={`h-2 rounded-full transition-all duration-500 ${
+                      metric.value >= 90 ? 'bg-red-500' :
+                      metric.value >= 70 ? 'bg-yellow-500' : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min(metric.value, 100)}%` }}
+                  ></div>
+                </div>
+              )}
             </div>
           );
         })}

@@ -373,9 +373,15 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 			result["memory_usage"] = m.Value
 		case "disk_usage":
 			result["disk_usage"] = m.Value // Query already returns MIN value
-		case "network_bytes":
+		case "network_in_bytes":
 			result["network_in"] = m.Value
+		case "network_out_bytes":
 			result["network_out"] = m.Value
+		case "uptime_seconds":
+			result["uptime"] = int64(m.Value)
+		case "load_1min", "load_5min", "load_15min":
+			// Store load values individually and build load_average string
+			result[m.Name] = m.Value
 		default:
 			result[m.Name] = m.Value
 		}
@@ -383,6 +389,16 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 			latestTimestamp = m.Timestamp
 		}
 	}
+
+	// Build load_average string from individual load values
+	if load1, ok1 := result["load_1min"].(float64); ok1 {
+		if load5, ok5 := result["load_5min"].(float64); ok5 {
+			if load15, ok15 := result["load_15min"].(float64); ok15 {
+				result["load_average"] = fmt.Sprintf("%.2f %.2f %.2f", load1, load5, load15)
+			}
+		}
+	}
+
 	// Convert UTC to IST for display
 	// Also include latest totals/used values from host_metrics table (if available)
 	var hm struct {
@@ -455,17 +471,17 @@ func GetHostLatestMetrics(c *fiber.Ctx) error {
 		if computedMemUsage > 100 {
 			computedMemUsage = 100
 		}
-		// record computed value and flag
-		result["memory_usage"] = computedMemUsage
-		result["memory_usage_computed"] = true
 		// if there was a prior memory_usage coming from metrics table, record the delta
-		if prior, ok := result["memory_usage"].(float64); ok {
-			diff := math.Abs(prior - computedMemUsage)
+		if priorVal, ok := result["memory_usage"].(float64); ok {
+			diff := math.Abs(priorVal - computedMemUsage)
 			result["memory_usage_diff"] = diff
 			if diff >= 15.0 {
 				result["memory_usage_warning"] = "Large discrepancy between snapshot and metric (>15%)"
 			}
 		}
+		// record computed value and flag (do this after computing diff)
+		result["memory_usage"] = computedMemUsage
+		result["memory_usage_computed"] = true
 	}
 	if hm.DiskTotal > 0 && hm.DiskUsed >= 0 {
 		computedDiskUsage := (hm.DiskUsed / hm.DiskTotal) * 100.0
@@ -534,6 +550,41 @@ func GetHostMetricsTimeRange(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(metrics)
+}
+
+// GetHostServices returns services reported by the agent for the given host id
+func GetHostServices(c *fiber.Ctx) error {
+	// tenant check (if authenticated)
+	var tenantID int64 = 0
+	if tid := c.Locals("tenant_id"); tid != nil {
+		tenantID = tid.(int64)
+	}
+
+	hostID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid host id"})
+	}
+
+	host, herr := postgres.GetHost(postgres.DB, hostID)
+	if herr != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
+	}
+	if tenantID != 0 && host.TenantID != tenantID {
+		return c.Status(403).JSON(fiber.Map{"error": "Access denied"})
+	}
+
+	// Use AgentRepository to find agent by host and list services
+	repo := postgres.NewAgentRepository(postgres.SqlxDB)
+	agent, aerr := repo.GetByHostID(int(hostID))
+	if aerr != nil {
+		return c.JSON([]map[string]interface{}{})
+	}
+	servicesList, serr := repo.GetServices(agent.ID)
+	if serr != nil {
+		return c.JSON([]map[string]interface{}{})
+	}
+
+	return c.JSON(servicesList)
 }
 
 // GetHostDashboardMetrics returns summarized metrics for host dashboard visualization

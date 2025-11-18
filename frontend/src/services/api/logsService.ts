@@ -32,6 +32,10 @@ class LogsService {
     return await apiClient.get(`/logs?${params.toString()}`);
   }
 
+  async getSources(): Promise<{ sources: string[]; levels: string[] }> {
+    return await apiClient.get('/logs/sources');
+  }
+
   async collectLog(data: {
     host_id: number;
     level: string;

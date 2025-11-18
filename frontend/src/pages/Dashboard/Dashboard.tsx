@@ -158,10 +158,7 @@ const Dashboard: React.FC = () => {
     fetchDashboardData();
     const interval = setInterval(() => {
       fetchDashboardData();
-      fetchHealth();
-    }, 10000); // Refresh every 10s for auto-discovery + health
-    // initial health fetch
-    fetchHealth();
+    }, 10000); // Refresh every 10s for auto-discovery
     return () => clearInterval(interval);
   }, []);
 
@@ -319,20 +316,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Fetch /health to get metrics_batcher info
-  const [batcherQueueLen, setBatcherQueueLen] = useState<number | null>(null);
-  const [batcherLastFlush, setBatcherLastFlush] = useState<string | null>(null);
-  const fetchHealth = async () => {
-    try {
-      const h: any = await apiClient.get('/health');
-      if (h) {
-        setBatcherQueueLen(h.metrics_batcher_queue_len ?? null);
-        setBatcherLastFlush(h.metrics_batcher_last_flush ?? null);
-      }
-    } catch (e) {
-      // ignore
-    }
-  };
+  // SystemHealth component now handles health endpoint data
 
   // Recompute stats locally when we get websocket updates (keeps UI responsive)
   const recomputeStats = (hostsList: Host[] | null, metricsMap: Record<number, any>, alertsList: Alert[]) => {
@@ -452,21 +436,6 @@ const Dashboard: React.FC = () => {
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
-
-        {/* Ingestion / batcher status */}
-        <div className="flex justify-end">
-          <div className="text-xs text-gray-600 flex items-center space-x-3">
-            <div className="flex items-center space-x-2">
-              <span className="font-medium text-gray-700">Ingest:</span>
-              <span className="px-2 py-1 rounded-md bg-white/10 text-sm">
-                {batcherQueueLen !== null ? `${batcherQueueLen} queued` : '—'}
-              </span>
-            </div>
-            <div className="text-gray-500">
-              Last flush: {batcherLastFlush ? new Date(batcherLastFlush).toLocaleString() : '—'}
-            </div>
-          </div>
-        </div>
 
         {/* Compact Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

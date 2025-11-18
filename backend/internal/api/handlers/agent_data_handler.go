@@ -352,8 +352,9 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	// Memory metrics with validation
 	if memory, ok := system["memory"].(map[string]interface{}); ok {
-		// Prefer bytes-based calculation when possible. Some agents report `available.bytes` instead
-		// of `used.bytes`. To be accurate, compute used = total - available when available is present.
+		// Prefer bytes-based calculation when possible. Accept both map{"bytes":...}
+		// shapes (new agent) and plain float64 values (older agents). Normalize
+		// into totalBytes and usedBytes and compute a single canonical percentage.
 		var totalBytes float64 = 0
 		if total, ok := memory["total"].(float64); ok && total > 0 {
 			totalBytes = total
@@ -361,37 +362,59 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		}
 
 		var usedBytes float64 = 0
-		// If available bytes provided, compute used = total - available
-		if avail, ok := memory["available"].(map[string]interface{}); ok {
-			if ab, ok := avail["bytes"].(float64); ok && ab >= 0 && totalBytes > 0 {
-				usedBytes = totalBytes - ab
+
+		// 1) Try available.bytes (preferred)
+		if availRaw, ok := memory["available"]; ok {
+			switch v := availRaw.(type) {
+			case map[string]interface{}:
+				if ab, ok := v["bytes"].(float64); ok && ab >= 0 && totalBytes > 0 {
+					usedBytes = totalBytes - ab
+				}
+			case float64:
+				if v >= 0 && totalBytes > 0 {
+					usedBytes = totalBytes - v
+				}
 			}
 		}
 
-		// If agent reports free bytes (older agents), use total - free to compute used
+		// 2) Fallback to free (either map or float)
 		if usedBytes == 0 {
-			if freeVal, ok := memory["free"].(float64); ok && freeVal >= 0 && totalBytes > 0 {
-				usedBytes = totalBytes - freeVal
-			}
-		}
-
-		// Fallback to used.bytes if available
-		if used, ok := memory["used"].(map[string]interface{}); ok {
-			if bytes, ok := used["bytes"].(float64); ok && bytes >= 0 {
-				// if we haven't computed usedBytes from available, use used.bytes
-				if usedBytes == 0 {
-					usedBytes = bytes
-				}
-			}
-			if pct, ok := used["pct"].(float64); ok && pct >= 0 && pct <= 1 {
-				metric.MemoryUsage = pct * 100
-				if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
-					logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
+			if freeRaw, ok := memory["free"]; ok {
+				switch v := freeRaw.(type) {
+				case map[string]interface{}:
+					if fb, ok := v["bytes"].(float64); ok && fb >= 0 && totalBytes > 0 {
+						usedBytes = totalBytes - fb
+					}
+				case float64:
+					if v >= 0 && totalBytes > 0 {
+						usedBytes = totalBytes - v
+					}
 				}
 			}
 		}
 
-		// If we have totalBytes and computed usedBytes, normalize and store
+		// 3) Fallback to used.bytes if still zero
+		if usedBytes == 0 {
+			if usedRaw, ok := memory["used"]; ok {
+				if usedMap, ok := usedRaw.(map[string]interface{}); ok {
+					if ub, ok := usedMap["bytes"].(float64); ok && ub >= 0 {
+						usedBytes = ub
+					}
+				}
+			}
+		}
+
+		// 4) Finally, if used.pct provided and we don't have numeric usedBytes/total, use pct
+		var pctFromAgent float64 = -1
+		if usedRaw, ok := memory["used"]; ok {
+			if usedMap, ok := usedRaw.(map[string]interface{}); ok {
+				if pct, ok := usedMap["pct"].(float64); ok && pct >= 0 {
+					pctFromAgent = pct
+				}
+			}
+		}
+
+		// If we have both totalBytes and usedBytes, compute canonical values
 		if usedBytes > 0 && totalBytes > 0 {
 			// clamp
 			if usedBytes < 0 {
@@ -404,6 +427,13 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			metric.MemoryTotal = totalBytes / (1024 * 1024) // MB (ensure set)
 			// compute percent
 			metric.MemoryUsage = (usedBytes / totalBytes) * 100
+		} else if pctFromAgent >= 0 {
+			// Use agent percentage when bytes are not available
+			metric.MemoryUsage = pctFromAgent * 100
+		}
+
+		// Persist memory_usage metric (single canonical write)
+		if metric.MemoryUsage >= 0 {
 			if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
 				logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
 			}
@@ -489,14 +519,36 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	// Network metrics with validation
 	if net, ok := system["network"].(map[string]interface{}); ok {
+		var networkInBytes, networkOutBytes float64
 		if in, ok := net["in"].(map[string]interface{}); ok {
 			if bytes, ok := in["bytes"].(float64); ok && bytes >= 0 {
+				networkInBytes = bytes
 				metric.NetworkIn = bytes / (1024 * 1024) // Convert to MB
 			}
 		}
 		if out, ok := net["out"].(map[string]interface{}); ok {
 			if bytes, ok := out["bytes"].(float64); ok && bytes >= 0 {
+				networkOutBytes = bytes
 				metric.NetworkOut = bytes / (1024 * 1024) // Convert to MB
+			}
+		}
+
+		// Store network metrics as time-series for historical analysis
+		if networkInBytes > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "network_in_bytes", networkInBytes, nil); err != nil {
+				logging.Errorf("CollectMetric(network_in_bytes) failed host=%d: %v", hostID, err)
+			}
+		}
+		if networkOutBytes > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "network_out_bytes", networkOutBytes, nil); err != nil {
+				logging.Errorf("CollectMetric(network_out_bytes) failed host=%d: %v", hostID, err)
+			}
+		}
+		// Combined network throughput metric
+		totalNetworkBytes := networkInBytes + networkOutBytes
+		if totalNetworkBytes > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "network_bytes", totalNetworkBytes, nil); err != nil {
+				logging.Errorf("CollectMetric(network_bytes) failed host=%d: %v", hostID, err)
 			}
 		}
 	}
@@ -508,6 +560,16 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 				if load15, ok := load["15"].(float64); ok && load15 >= 0 {
 					metric.LoadAverage = fmt.Sprintf("%.2f %.2f %.2f", load1, load5, load15)
 
+					// Store load average metrics for time-series analysis
+					if err := services.CollectMetric(hostID, tenantID, "load_1min", load1, nil); err != nil {
+						logging.Errorf("CollectMetric(load_1min) failed host=%d: %v", hostID, err)
+					}
+					if err := services.CollectMetric(hostID, tenantID, "load_5min", load5, nil); err != nil {
+						logging.Errorf("CollectMetric(load_5min) failed host=%d: %v", hostID, err)
+					}
+					if err := services.CollectMetric(hostID, tenantID, "load_15min", load15, nil); err != nil {
+						logging.Errorf("CollectMetric(load_15min) failed host=%d: %v", hostID, err)
+					}
 				}
 			}
 		}
@@ -537,6 +599,13 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			}
 		default:
 			metric.Uptime = 0
+		}
+
+		// Store uptime as a metric for historical tracking
+		if metric.Uptime > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "uptime_seconds", float64(metric.Uptime), nil); err != nil {
+				logging.Errorf("CollectMetric(uptime_seconds) failed host=%d: %v", hostID, err)
+			}
 		}
 	} else {
 		metric.Uptime = 0

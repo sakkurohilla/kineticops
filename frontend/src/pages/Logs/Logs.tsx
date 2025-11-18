@@ -11,7 +11,8 @@ import { Log } from '../../types';
 
 const Logs: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  // Show filters by default so host/service selector is immediately visible
+  const [showFilters, setShowFilters] = useState(true);
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 

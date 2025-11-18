@@ -55,9 +55,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   const disk_total = m?.disk_total ?? 0; // GB
   const uptimeVal = m?.uptime ?? null;
   const loadAvg = m?.load_average ?? '';
-  // network values are assumed to be bytes; convert to MB when rendering
-  const netIn = m?.network_in ?? null;
-  const netOut = m?.network_out ?? null;
+  // network values are in bytes; convert to MB
+  const netIn = m?.network_in !== undefined && m.network_in !== null ? m.network_in / (1024 * 1024) : null;
+  const netOut = m?.network_out !== undefined && m.network_out !== null ? m.network_out / (1024 * 1024) : null;
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
