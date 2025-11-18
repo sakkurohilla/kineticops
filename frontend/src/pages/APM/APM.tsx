@@ -25,6 +25,7 @@ interface ProcessMetric {
 interface Host {
   id: number;
   hostname: string;
+  ip: string;
   status: string;
 }
 
@@ -330,10 +331,6 @@ const APM: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 mr-2 ${autoRefresh ? 'animate-spin' : ''}`} />
                 {autoRefresh ? 'Auto Refresh ON' : 'Auto Refresh OFF'}
               </Button>
-              <Button variant="outline" onClick={fetchProcesses} size="sm">
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh Now
-              </Button>
             </div>
           </div>
 
@@ -352,7 +349,7 @@ const APM: React.FC = () => {
               >
                 {hosts.map(host => (
                   <option key={host.id} value={host.id}>
-                    {host.hostname}
+                    {host.hostname} ({host.ip})
                   </option>
                 ))}
               </select>

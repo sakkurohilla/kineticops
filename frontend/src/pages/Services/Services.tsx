@@ -18,11 +18,14 @@ interface ServiceMetric {
   pid: number;
   restart_count: number;
   enabled: boolean;
+  failure_reason?: string;
+  is_user_service: boolean;
 }
 
 interface Host {
   id: number;
   hostname: string;
+  ip: string;
 }
 
 function Services() {
@@ -35,28 +38,17 @@ function Services() {
 
   // WebSocket handler for real-time service updates
   const handleWebSocketMessage = (data: any) => {
-    console.log('[Services] WebSocket message received:', data.type, data);
+    if (!selectedHost) return;
     
-    if (!selectedHost) {
-      console.log('[Services] No host selected, ignoring message');
-      return;
-    }
-    
-    if (data.type === 'services') {
-      console.log('[Services] Services message for host:', data.host_id, 'selected:', selectedHost.id);
+    if (data.type === 'services' && data.host_id === selectedHost.id) {
+      const cpuSvcs = data.services?.top_cpu || [];
+      const memSvcs = data.services?.top_memory || [];
       
-      if (data.host_id === selectedHost.id) {
-        const cpuSvcs = data.services?.top_cpu || [];
-        const memSvcs = data.services?.top_memory || [];
-        
-        console.log('[Services] Setting CPU services:', cpuSvcs.length, 'Memory services:', memSvcs.length);
-        
-        if (cpuSvcs.length > 0) {
-          setCpuServices(cpuSvcs);
-        }
-        if (memSvcs.length > 0) {
-          setMemoryServices(memSvcs);
-        }
+      if (cpuSvcs.length > 0) {
+        setCpuServices(cpuSvcs);
+      }
+      if (memSvcs.length > 0) {
+        setMemoryServices(memSvcs);
       }
     }
   };
@@ -166,27 +158,26 @@ function Services() {
             </div>
           </div>
 
-          {/* Host Selector */}
+          {/* Host Selector - Compact */}
           {hosts.length > 0 && (
-            <Card>
-              <div className="flex items-center gap-3">
-                <Server className="w-5 h-5 text-gray-500" />
-                <select
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={selectedHost?.id || ''}
-                  onChange={(e) => {
-                    const host = hosts.find(h => h.id === Number(e.target.value));
-                    setSelectedHost(host || null);
-                  }}
-                >
-                  {hosts.map(host => (
-                    <option key={host.id} value={host.id}>
-                      {host.hostname}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Card>
+            <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-100">
+              <Server className="w-5 h-5 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">Host:</span>
+              <select
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-900 shadow-sm hover:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                value={selectedHost?.id || ''}
+                onChange={(e) => {
+                  const host = hosts.find(h => h.id === Number(e.target.value));
+                  setSelectedHost(host || null);
+                }}
+              >
+                {hosts.map(host => (
+                  <option key={host.id} value={host.id}>
+                    {host.hostname} ({host.ip})
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
 

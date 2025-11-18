@@ -16,14 +16,16 @@ import (
 type ServiceInfo struct {
 	Name          string  `json:"name"`
 	DisplayName   string  `json:"display_name"`
-	Status        string  `json:"status"`         // active, inactive, failed
-	SubStatus     string  `json:"sub_status"`     // running, exited, dead
-	CPUPercent    float64 `json:"cpu_percent"`    // Current CPU usage
-	MemoryPercent float64 `json:"memory_percent"` // Current memory usage
-	MemoryMB      float64 `json:"memory_mb"`      // Memory in MB
-	PID           int32   `json:"pid"`            // Main PID
-	RestartCount  int     `json:"restart_count"`  // Number of restarts
-	Enabled       bool    `json:"enabled"`        // Auto-start enabled
+	Status        string  `json:"status"`          // active, inactive, failed
+	SubStatus     string  `json:"sub_status"`      // running, exited, dead
+	CPUPercent    float64 `json:"cpu_percent"`     // Current CPU usage
+	MemoryPercent float64 `json:"memory_percent"`  // Current memory usage
+	MemoryMB      float64 `json:"memory_mb"`       // Memory in MB
+	PID           int32   `json:"pid"`             // Main PID
+	RestartCount  int     `json:"restart_count"`   // Number of restarts
+	Enabled       bool    `json:"enabled"`         // Auto-start enabled
+	FailureReason string  `json:"failure_reason"`  // Reason for failure if failed
+	IsUserService bool    `json:"is_user_service"` // User-installed vs system service
 }
 
 // GetTopServices returns top N services sorted by CPU or memory usage
@@ -64,6 +66,9 @@ func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInf
 		// Get resource usage
 		cpuPercent, memPercent, memMB := getServiceResources(props.PID, logger)
 
+		// Determine if user-installed service
+		isUserService := isUserInstalledService(name)
+
 		serviceList = append(serviceList, ServiceInfo{
 			Name:          name,
 			DisplayName:   props.Description,
@@ -75,14 +80,23 @@ func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInf
 			PID:           props.PID,
 			RestartCount:  props.NRestarts,
 			Enabled:       props.UnitFileState == "enabled",
+			FailureReason: props.FailureReason,
+			IsUserService: isUserService,
 		})
 	}
 
-	// Filter out inactive services with no resource usage
+	// Filter: Show user services OR system services using >30% CPU/Memory
 	var activeServices []ServiceInfo
 	for _, svc := range serviceList {
-		if svc.CPUPercent > 0.1 || svc.MemoryPercent > 0.1 || svc.Status == "active" {
+		// Always show user-installed services if active or failed
+		if svc.IsUserService && (svc.Status == "active" || svc.Status == "failed") {
 			activeServices = append(activeServices, svc)
+			continue
+		}
+		// Show system services only if using >30% resources
+		if !svc.IsUserService && (svc.CPUPercent > 30.0 || svc.MemoryPercent > 30.0) {
+			activeServices = append(activeServices, svc)
+			continue
 		}
 	}
 
@@ -123,6 +137,7 @@ type ServiceProperties struct {
 	PID           int32
 	NRestarts     int
 	UnitFileState string
+	FailureReason string
 }
 
 // getServiceProperties retrieves properties for a service
@@ -163,10 +178,47 @@ func getServiceProperties(name string, logger *utils.Logger) *ServiceProperties 
 			}
 		case "UnitFileState":
 			props.UnitFileState = value
+		case "Result":
+			if value != "success" {
+				props.FailureReason = value
+			}
+		case "StatusText":
+			if props.FailureReason == "" && value != "" {
+				props.FailureReason = value
+			}
 		}
 	}
 
 	return props
+}
+
+// isUserInstalledService determines if a service is user-installed (not system default)
+func isUserInstalledService(name string) bool {
+	// Common system services to exclude
+	systemServices := map[string]bool{
+		"systemd-journald": true, "systemd-logind": true, "systemd-udevd": true,
+		"systemd-timesyncd": true, "systemd-resolved": true, "systemd-networkd": true,
+		"dbus": true, "cron": true, "rsyslog": true, "ssh": true, "sshd": true,
+		"getty": true, "NetworkManager": true, "ModemManager": true,
+		"accounts-daemon": true, "polkit": true, "rtkit-daemon": true,
+		"systemd-oomd": true, "user": true, "session": true,
+		"avahi-daemon": true, "bluetooth": true, "cups": true,
+		"udisks2": true, "upower": true, "wpa_supplicant": true,
+		"packagekit": true, "snapd": true, "unattended-upgrades": true,
+	}
+
+	// Check if it's a known system service
+	if systemServices[name] {
+		return false
+	}
+
+	// Check for system service patterns
+	if strings.HasPrefix(name, "systemd-") || strings.HasPrefix(name, "user@") {
+		return false
+	}
+
+	// Everything else is likely user-installed
+	return true
 }
 
 // getServiceResources gets CPU and memory usage for a service PID
