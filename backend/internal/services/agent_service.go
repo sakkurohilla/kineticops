@@ -210,8 +210,18 @@ while true; do
 	# CPU usage as fraction (0..1) computed from /proc/stat
 	CPU_USAGE=$(bash -lc 'read cpu user1 nice1 system1 idle1 rest < /proc/stat; sleep 1; read cpu user2 nice2 system2 idle2 rest < /proc/stat; prev_total=$((user1+nice1+system1+idle1)); total=$((user2+nice2+system2+idle2)); idle_diff=$((idle2-idle1)); total_diff=$((total-prev_total)); if [ "$total_diff" -gt 0 ]; then awk -v td="$total_diff" -v id="$idle_diff" "BEGIN { printf "%.4f", (td-id)/td }"; else echo "0"; fi' 2>/dev/null || echo "0")
 
-	# Memory usage as percent (0..100) using /proc/meminfo for better accuracy
-	MEMORY_USAGE=$(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END { if(total>0) printf "%.1f", (total-avail)/total*100; else print "0" }' /proc/meminfo 2>/dev/null || echo "0")
+	# Memory: get total, available, and used (in MB)
+	read MEMORY_TOTAL_KB MEMORY_AVAILABLE_KB <<< $(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END {print total, avail}' /proc/meminfo 2>/dev/null || echo "0 0")
+	MEMORY_TOTAL_MB=$(awk -v kb="$MEMORY_TOTAL_KB" 'BEGIN { printf "%.2f", kb/1024 }')
+	MEMORY_AVAILABLE_MB=$(awk -v kb="$MEMORY_AVAILABLE_KB" 'BEGIN { printf "%.2f", kb/1024 }')
+	MEMORY_USED_MB=$(awk -v tot="$MEMORY_TOTAL_KB" -v avail="$MEMORY_AVAILABLE_KB" 'BEGIN { printf "%.2f", (tot-avail)/1024 }')
+	
+	# Memory usage as percent (0..100)
+	if [ "$MEMORY_TOTAL_KB" -gt 0 ]; then
+		MEMORY_USAGE=$(awk -v tot="$MEMORY_TOTAL_KB" -v avail="$MEMORY_AVAILABLE_KB" 'BEGIN { printf "%.1f", (tot-avail)/tot*100 }')
+	else
+		MEMORY_USAGE=0
+	fi
 
 	# Disk usage: report both total and used bytes for the root mount so the
 	# backend can compute a canonical percentage and avoid discrepancies.
@@ -224,8 +234,12 @@ while true; do
 		DISK_USAGE=0
 	fi
 
-	# Get running services (top 10) - keep existing approach
-	SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | head -10 | awk '{print $1}' | sed 's/.service$//' | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
+	# Get ONLY user-installed services (exclude system defaults)
+	# Filter out common system services that come with OS
+	SERVICES=$(systemctl list-units --type=service --state=running --no-pager --no-legend | \
+		awk '{print $1}' | sed 's/.service$//' | \
+		grep -vE '^(systemd|dbus|accounts-daemon|acpid|atd|cron|irqbalance|multipathd|networkd|plymouth|polkit|rsyslog|snapd|ssh|udev|udisks2|wpa_supplicant|ModemManager|NetworkManager|bluetooth|avahi|cups|gdm|lightdm|thermald|unattended-upgrades|packagekit|apparmor|apport|kerneloops)' | \
+		head -20 | tr '\n' ',' | sed 's/,$//' 2>/dev/null || echo "")
     
     # Send heartbeat
     curl -s -X POST "$SERVER_URL/api/v1/agents/heartbeat" \
@@ -234,6 +248,8 @@ while true; do
             \"token\": \"$TOKEN\",
             \"cpu_usage\": ${CPU_USAGE:-0},
             \"memory_usage\": ${MEMORY_USAGE:-0},
+            \"memory_total\": ${MEMORY_TOTAL_MB:-0},
+            \"memory_used\": ${MEMORY_USED_MB:-0},
             \"disk_usage\": ${DISK_USAGE:-0},
 			"services": [],
 			"metadata": {
