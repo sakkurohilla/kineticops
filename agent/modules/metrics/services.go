@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"bytes"
-	"encoding/json"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -30,8 +29,8 @@ type ServiceInfo struct {
 
 // GetTopServices returns top N services sorted by CPU or memory usage
 func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInfo, error) {
-	// Get list of all services
-	cmd := exec.Command("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--output=json")
+	// Get list of ALL installed service files (including inactive/disabled)
+	cmd := exec.Command("systemctl", "list-unit-files", "--type=service", "--no-pager", "--no-legend")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -40,22 +39,29 @@ func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInf
 		return nil, err
 	}
 
-	var services []map[string]interface{}
-	if err := json.Unmarshal(out.Bytes(), &services); err != nil {
-		logger.Error("Failed to parse systemctl output", "error", err)
-		return nil, err
+	// Parse list-unit-files output (each line: "service-name.service   enabled/disabled")
+	lines := strings.Split(out.String(), "\n")
+	var serviceNames []string
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		unit := fields[0]
+		if !strings.HasSuffix(unit, ".service") {
+			continue
+		}
+		name := strings.TrimSuffix(unit, ".service")
+		serviceNames = append(serviceNames, name)
 	}
 
 	var serviceList []ServiceInfo
 
-	// Process each service
-	for _, svc := range services {
-		unit, _ := svc["unit"].(string)
-		if unit == "" || !strings.HasSuffix(unit, ".service") {
+	// Process each service name
+	for _, name := range serviceNames {
+		if name == "" {
 			continue
 		}
-
-		name := strings.TrimSuffix(unit, ".service")
 
 		// Get service properties
 		props := getServiceProperties(name, logger)
@@ -234,9 +240,22 @@ func isUserInstalledService(name string) bool {
 
 	nameLower := strings.ToLower(name)
 
-	// Check if service name contains any user service pattern
+	// Check if service name matches any user service pattern
+	// Use word boundary checking to avoid false matches like "named" matching "systemd-hostnamed"
 	for _, pattern := range userServicePatterns {
-		if strings.Contains(nameLower, pattern) {
+		// Exact match
+		if nameLower == pattern {
+			return true
+		}
+		// Match with common service suffixes
+		if nameLower == pattern+".service" {
+			return true
+		}
+		// Match as prefix with separator (e.g., "docker-compose", "redis-server")
+		if strings.HasPrefix(nameLower, pattern+"-") {
+			return true
+		}
+		if strings.HasPrefix(nameLower, pattern+"@") {
 			return true
 		}
 	}
@@ -272,23 +291,45 @@ func getServiceResources(pid int32, _ *utils.Logger) (float64, float64, float64)
 func CollectServiceMetrics(logger *utils.Logger) map[string]interface{} {
 	logger.Info("CollectServiceMetrics called - starting service collection")
 
-	// Get top 10 by CPU
-	topCPU, err := GetTopServices(10, "cpu", logger)
+	// Get ALL user services (not limited by top N)
+	allServices, err := GetTopServices(1000, "cpu", logger) // High limit to get all
 	if err != nil {
-		logger.Error("Failed to get top CPU services", "error", err)
-		topCPU = []ServiceInfo{}
+		logger.Error("Failed to get services", "error", err)
+		allServices = []ServiceInfo{}
 	}
 
-	// Get top 10 by memory
-	topMemory, err := GetTopServices(10, "memory", logger)
-	if err != nil {
-		logger.Error("Failed to get top memory services", "error", err)
-		topMemory = []ServiceInfo{}
+	// Sort for top CPU (first 10)
+	topCPU := make([]ServiceInfo, len(allServices))
+	copy(topCPU, allServices)
+	for i := 0; i < len(topCPU); i++ {
+		for j := i + 1; j < len(topCPU); j++ {
+			if topCPU[i].CPUPercent < topCPU[j].CPUPercent {
+				topCPU[i], topCPU[j] = topCPU[j], topCPU[i]
+			}
+		}
+	}
+	if len(topCPU) > 10 {
+		topCPU = topCPU[:10]
+	}
+
+	// Sort for top Memory (first 10)
+	topMemory := make([]ServiceInfo, len(allServices))
+	copy(topMemory, allServices)
+	for i := 0; i < len(topMemory); i++ {
+		for j := i + 1; j < len(topMemory); j++ {
+			if topMemory[i].MemoryPercent < topMemory[j].MemoryPercent {
+				topMemory[i], topMemory[j] = topMemory[j], topMemory[i]
+			}
+		}
+	}
+	if len(topMemory) > 10 {
+		topMemory = topMemory[:10]
 	}
 
 	return map[string]interface{}{
-		"top_cpu":    topCPU,
-		"top_memory": topMemory,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"all_services": allServices, // Send ALL user services
+		"top_cpu":      topCPU,      // Top 10 by CPU
+		"top_memory":   topMemory,   // Top 10 by Memory
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
 	}
 }

@@ -31,6 +31,7 @@ interface Host {
 function Services() {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selectedHost, setSelectedHost] = useState<Host | null>(null);
+  const [allServices, setAllServices] = useState<ServiceMetric[]>([]);
   const [cpuServices, setCpuServices] = useState<ServiceMetric[]>([]);
   const [memoryServices, setMemoryServices] = useState<ServiceMetric[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,9 +42,13 @@ function Services() {
     if (!selectedHost) return;
     
     if (data.type === 'services' && data.host_id === selectedHost.id) {
+      const allSvcs = data.services?.all_services || [];
       const cpuSvcs = data.services?.top_cpu || [];
       const memSvcs = data.services?.top_memory || [];
       
+      if (allSvcs.length > 0) {
+        setAllServices(allSvcs);
+      }
       if (cpuSvcs.length > 0) {
         setCpuServices(cpuSvcs);
       }
@@ -123,15 +128,10 @@ function Services() {
     );
   }
 
-  const uniqueServices = Array.from(new Set([...cpuServices, ...memoryServices].map(s => s.name)));
-  const activeCount = uniqueServices.filter(name => {
-    const svc = [...cpuServices, ...memoryServices].find(s => s.name === name);
-    return svc && svc.status.toLowerCase() === 'active';
-  }).length;
-  const failedCount = uniqueServices.filter(name => {
-    const svc = [...cpuServices, ...memoryServices].find(s => s.name === name);
-    return svc && svc.status.toLowerCase() === 'failed';
-  }).length;
+  const uniqueServices = allServices.length > 0 ? allServices : Array.from(new Set([...cpuServices, ...memoryServices].map(s => s.name)));
+  const activeCount = allServices.filter(svc => svc.status.toLowerCase() === 'active').length;
+  const failedCount = allServices.filter(svc => svc.status.toLowerCase() === 'failed').length;
+  const inactiveCount = allServices.filter(svc => svc.status.toLowerCase() === 'inactive').length;
 
   return (
     <MainLayout>
@@ -220,6 +220,20 @@ function Services() {
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Failed</p>
                   <p className="text-3xl font-bold text-red-600 mt-1">{failedCount}</p>
+                </div>
+              </div>
+              
+              <div className="h-16 w-px bg-gray-200"></div>
+              
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-gray-50 rounded-xl">
+                  <div className="w-6 h-6 flex items-center justify-center">
+                    <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Inactive</p>
+                  <p className="text-3xl font-bold text-gray-600 mt-1">{inactiveCount}</p>
                 </div>
               </div>
             </div>
