@@ -141,7 +141,7 @@ type ServiceProperties struct {
 }
 
 // getServiceProperties retrieves properties for a service
-func getServiceProperties(name string, logger *utils.Logger) *ServiceProperties {
+func getServiceProperties(name string, _ *utils.Logger) *ServiceProperties {
 	cmd := exec.Command("systemctl", "show", name, "--no-pager")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -222,7 +222,7 @@ func isUserInstalledService(name string) bool {
 }
 
 // getServiceResources gets CPU and memory usage for a service PID
-func getServiceResources(pid int32, logger *utils.Logger) (float64, float64, float64) {
+func getServiceResources(pid int32, _ *utils.Logger) (float64, float64, float64) {
 	if pid <= 0 {
 		return 0, 0, 0
 	}
