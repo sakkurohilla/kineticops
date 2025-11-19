@@ -185,6 +185,15 @@ func (s *SystemModule) collectMetrics() error {
 		s.logger.Warn("Failed to collect network metrics")
 	}
 
+	// Collect disk I/O metrics
+	if diskIOData := s.getDiskIOMetrics(); diskIOData != nil {
+		systemData["diskio"] = diskIOData
+		metricsCollected++
+		s.logger.Info("Disk I/O metrics collected", "data", diskIOData)
+	} else {
+		s.logger.Warn("Failed to collect disk I/O metrics")
+	}
+
 	// Collect process metrics
 	if processData := CollectProcessMetrics(s.logger); processData != nil {
 		systemData["processes"] = processData
@@ -308,6 +317,83 @@ func (s *SystemModule) getNetworkMetrics() map[string]interface{} {
 		}
 	}
 	return nil
+}
+
+// getDiskIOMetrics returns disk I/O statistics with speed calculation
+func (s *SystemModule) getDiskIOMetrics() map[string]interface{} {
+	// Get initial disk I/O stats
+	ioStats1, err := disk.IOCounters()
+	if err != nil {
+		s.logger.Error("Failed to get disk I/O stats (first sample)", "error", err)
+		return nil
+	}
+
+	// Find the primary disk device (usually sda, vda, nvme0n1)
+	var deviceName string
+	var stat1 disk.IOCountersStat
+
+	// Priority order: sda, vda, nvme0n1, xvda
+	for _, name := range []string{"sda", "vda", "nvme0n1", "xvda"} {
+		if s, ok := ioStats1[name]; ok {
+			deviceName = name
+			stat1 = s
+			break
+		}
+	}
+
+	// If none of the preferred devices found, use first available
+	if deviceName == "" {
+		for name, s := range ioStats1 {
+			if !strings.Contains(name, "loop") && !strings.Contains(name, "ram") {
+				deviceName = name
+				stat1 = s
+				break
+			}
+		}
+	}
+
+	if deviceName == "" {
+		s.logger.Warn("No suitable disk device found for I/O metrics")
+		return nil
+	}
+
+	// Sleep for 1 second to calculate rate
+	time.Sleep(1 * time.Second)
+
+	// Get second sample
+	ioStats2, err := disk.IOCounters()
+	if err != nil {
+		s.logger.Error("Failed to get disk I/O stats (second sample)", "error", err)
+		return nil
+	}
+
+	stat2, ok := ioStats2[deviceName]
+	if !ok {
+		s.logger.Error("Device disappeared between samples", "device", deviceName)
+		return nil
+	}
+
+	// Calculate bytes read/written and speeds (per second)
+	readBytes := float64(stat2.ReadBytes)
+	writeBytes := float64(stat2.WriteBytes)
+	readSpeed := float64(stat2.ReadBytes-stat1.ReadBytes) / (1024 * 1024)    // MB/s
+	writeSpeed := float64(stat2.WriteBytes-stat1.WriteBytes) / (1024 * 1024) // MB/s
+
+	// Ensure non-negative speeds
+	if readSpeed < 0 {
+		readSpeed = 0
+	}
+	if writeSpeed < 0 {
+		writeSpeed = 0
+	}
+
+	return map[string]interface{}{
+		"device":      deviceName,
+		"read_bytes":  readBytes,
+		"write_bytes": writeBytes,
+		"read_speed":  readSpeed,
+		"write_speed": writeSpeed,
+	}
 }
 
 // getLoadMetrics returns system load data
