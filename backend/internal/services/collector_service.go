@@ -17,36 +17,44 @@ import (
 
 // HostMetric represents collected metrics from a host
 type HostMetric struct {
-	HostID      int64
-	CPUUsage    float64
-	MemoryUsage float64
-	MemoryTotal float64
-	MemoryUsed  float64
-	DiskUsage   float64
-	DiskTotal   float64
-	DiskUsed    float64
-	NetworkIn   float64
-	NetworkOut  float64
-	Uptime      int64
-	LoadAverage string
+	HostID         int64
+	CPUUsage       float64
+	MemoryUsage    float64
+	MemoryTotal    float64
+	MemoryUsed     float64
+	DiskUsage      float64
+	DiskTotal      float64
+	DiskUsed       float64
+	DiskReadBytes  float64
+	DiskWriteBytes float64
+	DiskReadSpeed  float64
+	DiskWriteSpeed float64
+	NetworkIn      float64
+	NetworkOut     float64
+	Uptime         int64
+	LoadAverage    string
 }
 
 // HostMetricDB represents the database model for host_metrics table
 type HostMetricDB struct {
-	ID          int64     `gorm:"primaryKey;autoIncrement"`
-	HostID      int64     `gorm:"column:host_id;not null"`
-	CPUUsage    float64   `gorm:"column:cpu_usage;type:decimal(5,2);default:0"`
-	MemoryUsage float64   `gorm:"column:memory_usage;type:decimal(5,2);default:0"`
-	MemoryTotal float64   `gorm:"column:memory_total;type:decimal(10,2);default:0"`
-	MemoryUsed  float64   `gorm:"column:memory_used;type:decimal(10,2);default:0"`
-	DiskUsage   float64   `gorm:"column:disk_usage;type:decimal(5,2);default:0"`
-	DiskTotal   float64   `gorm:"column:disk_total;type:decimal(10,2);default:0"`
-	DiskUsed    float64   `gorm:"column:disk_used;type:decimal(10,2);default:0"`
-	NetworkIn   float64   `gorm:"column:network_in;type:decimal(10,2);default:0"`
-	NetworkOut  float64   `gorm:"column:network_out;type:decimal(10,2);default:0"`
-	Uptime      int64     `gorm:"column:uptime;default:0"`
-	LoadAverage string    `gorm:"column:load_average;size:64;default:''"`
-	Timestamp   time.Time `gorm:"column:timestamp;default:CURRENT_TIMESTAMP"`
+	ID             int64     `gorm:"primaryKey;autoIncrement"`
+	HostID         int64     `gorm:"column:host_id;not null"`
+	CPUUsage       float64   `gorm:"column:cpu_usage;type:decimal(5,2);default:0"`
+	MemoryUsage    float64   `gorm:"column:memory_usage;type:decimal(5,2);default:0"`
+	MemoryTotal    float64   `gorm:"column:memory_total;type:decimal(10,2);default:0"`
+	MemoryUsed     float64   `gorm:"column:memory_used;type:decimal(10,2);default:0"`
+	DiskUsage      float64   `gorm:"column:disk_usage;type:decimal(5,2);default:0"`
+	DiskTotal      float64   `gorm:"column:disk_total;type:decimal(10,2);default:0"`
+	DiskUsed       float64   `gorm:"column:disk_used;type:decimal(10,2);default:0"`
+	DiskReadBytes  float64   `gorm:"column:disk_read_bytes;type:decimal(15,2);default:0"`
+	DiskWriteBytes float64   `gorm:"column:disk_write_bytes;type:decimal(15,2);default:0"`
+	DiskReadSpeed  float64   `gorm:"column:disk_read_speed;type:decimal(10,2);default:0"`
+	DiskWriteSpeed float64   `gorm:"column:disk_write_speed;type:decimal(10,2);default:0"`
+	NetworkIn      float64   `gorm:"column:network_in;type:decimal(10,2);default:0"`
+	NetworkOut     float64   `gorm:"column:network_out;type:decimal(10,2);default:0"`
+	Uptime         int64     `gorm:"column:uptime;default:0"`
+	LoadAverage    string    `gorm:"column:load_average;size:64;default:''"`
+	Timestamp      time.Time `gorm:"column:timestamp;default:CURRENT_TIMESTAMP"`
 }
 
 // TableName specifies the table name for GORM
@@ -73,7 +81,7 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	wg.Add(6)
+	wg.Add(7)
 
 	go func() {
 		defer wg.Done()
@@ -146,6 +154,20 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 		}
 	}()
 
+	go func() {
+		defer wg.Done()
+		if readBytes, writeBytes, readSpeed, writeSpeed, err := sshClient.CollectDiskIO(); err != nil {
+			logging.Warnf("[WARN] Failed to collect disk I/O for host %d: %v", host.ID, err)
+		} else {
+			mu.Lock()
+			metric.DiskReadBytes = readBytes
+			metric.DiskWriteBytes = writeBytes
+			metric.DiskReadSpeed = readSpeed
+			metric.DiskWriteSpeed = writeSpeed
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
 
 	return metric, nil
@@ -154,19 +176,23 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 // SaveHostMetrics saves metrics to database using GORM
 func SaveHostMetrics(metric *HostMetric) error {
 	dbm := &models.HostMetric{
-		HostID:      metric.HostID,
-		CPUUsage:    metric.CPUUsage,
-		MemoryUsage: metric.MemoryUsage,
-		MemoryTotal: metric.MemoryTotal,
-		MemoryUsed:  metric.MemoryUsed,
-		DiskUsage:   metric.DiskUsage,
-		DiskTotal:   metric.DiskTotal,
-		DiskUsed:    metric.DiskUsed,
-		NetworkIn:   metric.NetworkIn,
-		NetworkOut:  metric.NetworkOut,
-		Uptime:      metric.Uptime,
-		LoadAverage: metric.LoadAverage,
-		Timestamp:   time.Now(),
+		HostID:         metric.HostID,
+		CPUUsage:       metric.CPUUsage,
+		MemoryUsage:    metric.MemoryUsage,
+		MemoryTotal:    metric.MemoryTotal,
+		MemoryUsed:     metric.MemoryUsed,
+		DiskUsage:      metric.DiskUsage,
+		DiskTotal:      metric.DiskTotal,
+		DiskUsed:       metric.DiskUsed,
+		DiskReadBytes:  metric.DiskReadBytes,
+		DiskWriteBytes: metric.DiskWriteBytes,
+		DiskReadSpeed:  metric.DiskReadSpeed,
+		DiskWriteSpeed: metric.DiskWriteSpeed,
+		NetworkIn:      metric.NetworkIn,
+		NetworkOut:     metric.NetworkOut,
+		Uptime:         metric.Uptime,
+		LoadAverage:    metric.LoadAverage,
+		Timestamp:      time.Now(),
 	}
 
 	if err := postgres.SaveHostMetric(postgres.DB, dbm); err != nil {
@@ -202,16 +228,20 @@ func SaveHostMetrics(metric *HostMetric) error {
 	// add monotonic sequence id for ordering across websocket consumers
 	seq := telemetry.NextSeq()
 	payload := map[string]interface{}{
-		"host_id":      dbm.HostID,
-		"cpu_usage":    dbm.CPUUsage,
-		"memory_usage": dbm.MemoryUsage,
-		"disk_usage":   dbm.DiskUsage,
-		"network_in":   dbm.NetworkIn,
-		"network_out":  dbm.NetworkOut,
-		"seq":          seq,
-		"uptime":       dbm.Uptime,
-		"load_average": dbm.LoadAverage,
-		"timestamp":    dbm.Timestamp.Format(time.RFC3339),
+		"host_id":          dbm.HostID,
+		"cpu_usage":        dbm.CPUUsage,
+		"memory_usage":     dbm.MemoryUsage,
+		"disk_usage":       dbm.DiskUsage,
+		"disk_read_bytes":  dbm.DiskReadBytes,
+		"disk_write_bytes": dbm.DiskWriteBytes,
+		"disk_read_speed":  dbm.DiskReadSpeed,
+		"disk_write_speed": dbm.DiskWriteSpeed,
+		"network_in":       dbm.NetworkIn,
+		"network_out":      dbm.NetworkOut,
+		"seq":              seq,
+		"uptime":           dbm.Uptime,
+		"load_average":     dbm.LoadAverage,
+		"timestamp":        dbm.Timestamp.Format(time.RFC3339),
 	}
 	if b, err := json.Marshal(payload); err == nil {
 		// remember the last message for new clients (best-effort)

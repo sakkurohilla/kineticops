@@ -278,6 +278,67 @@ func (s *SSHClient) CollectLoadAverage() (string, error) {
 	return output, nil
 }
 
+// CollectDiskIO gets disk I/O read/write bytes and speed
+func (s *SSHClient) CollectDiskIO() (readBytes, writeBytes, readSpeed, writeSpeed float64, err error) {
+	// Read current disk stats from /proc/diskstats
+	// Sample twice with 1 second interval to calculate speed
+	cmd := `awk 'BEGIN {
+		# First reading
+		while ((getline < "/proc/diskstats") > 0) {
+			if ($3 ~ /^(sd|nvme|vd|hd)[a-z]$/ && !($3 ~ /[0-9]$/)) {
+				read1 += $6 * 512;
+				write1 += $10 * 512;
+			}
+		}
+		close("/proc/diskstats");
+		
+		# Sleep 1 second
+		system("sleep 1");
+		
+		# Second reading
+		while ((getline < "/proc/diskstats") > 0) {
+			if ($3 ~ /^(sd|nvme|vd|hd)[a-z]$/ && !($3 ~ /[0-9]$/)) {
+				read2 += $6 * 512;
+				write2 += $10 * 512;
+			}
+		}
+		close("/proc/diskstats");
+		
+		# Calculate speed (bytes per second)
+		read_speed = read2 - read1;
+		write_speed = write2 - write1;
+		
+		# Convert to MB
+		read_mb = read2 / 1024 / 1024;
+		write_mb = write2 / 1024 / 1024;
+		read_speed_mb = read_speed / 1024 / 1024;
+		write_speed_mb = write_speed / 1024 / 1024;
+		
+		printf "%.2f %.2f %.2f %.2f", read_mb, write_mb, read_speed_mb, write_speed_mb;
+	}'`
+	
+	output, err := s.ExecuteCommandTimeout(cmd, 5*time.Second)
+	if err != nil {
+		return 0, 0, 0, 0, nil
+	}
+
+	parts := strings.Fields(output)
+	if len(parts) < 4 {
+		return 0, 0, 0, 0, nil
+	}
+
+	readBytes, err1 := strconv.ParseFloat(parts[0], 64)
+	writeBytes, err2 := strconv.ParseFloat(parts[1], 64)
+	readSpeed, err3 := strconv.ParseFloat(parts[2], 64)
+	writeSpeed, err4 := strconv.ParseFloat(parts[3], 64)
+	
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return 0, 0, 0, 0, nil
+	}
+
+	return readBytes, writeBytes, readSpeed, writeSpeed, nil
+}
+
 // SSHService provides high-level SSH operations
 type SSHService struct{}
 

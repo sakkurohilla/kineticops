@@ -32,6 +32,10 @@ interface MetricData {
   disk_usage: number;
   disk_total: number;
   disk_used: number;
+  disk_read_bytes: number;
+  disk_write_bytes: number;
+  disk_read_speed: number;
+  disk_write_speed: number;
   network_in: number;
   network_out: number;
   uptime: number;
@@ -53,6 +57,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   // backend stores disk totals in GB (host_metrics snapshot conversion)
   const disk_used = m?.disk_used ?? 0; // GB
   const disk_total = m?.disk_total ?? 0; // GB
+  // disk I/O metrics
+  const disk_read_speed = m?.disk_read_speed ?? 0; // MB/s
+  const disk_write_speed = m?.disk_write_speed ?? 0; // MB/s
   const uptimeVal = m?.uptime ?? null;
   const loadAvg = m?.load_average ?? '';
   // network values are already in MB from backend (host_metrics table)
@@ -243,9 +250,17 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
               style={{ width: `${Math.min(disk ?? 0, 100)}%` }}
             ></div>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 mb-2">
             {disk_used.toFixed(1)} GB / {disk_total.toFixed(1)} GB
           </p>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <p className="text-xs text-green-600 font-medium">
+              Read: {disk_read_speed.toFixed(2)} MB/s
+            </p>
+            <p className="text-xs text-blue-600 font-medium">
+              Write: {disk_write_speed.toFixed(2)} MB/s
+            </p>
+          </div>
           <div className="mt-3 h-16" style={{ minHeight: 48 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={series} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
