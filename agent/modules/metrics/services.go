@@ -85,19 +85,15 @@ func GetTopServices(topN int, sortBy string, logger *utils.Logger) ([]ServiceInf
 		})
 	}
 
-	// Filter: Show user services OR system services using >30% CPU/Memory
+	// Filter: Show ALL user services regardless of state
+	// Only exclude system services entirely
 	var activeServices []ServiceInfo
 	for _, svc := range serviceList {
-		// Always show user-installed services if active or failed
-		if svc.IsUserService && (svc.Status == "active" || svc.Status == "failed") {
+		// Show ONLY user-installed services (any state: active, inactive, failed, etc.)
+		if svc.IsUserService {
 			activeServices = append(activeServices, svc)
-			continue
 		}
-		// Show system services only if using >30% resources
-		if !svc.IsUserService && (svc.CPUPercent > 30.0 || svc.MemoryPercent > 30.0) {
-			activeServices = append(activeServices, svc)
-			continue
-		}
+		// System services are NEVER shown
 	}
 
 	// Sort by requested metric
@@ -168,11 +164,17 @@ func getServiceProperties(name string, _ *utils.Logger) *ServiceProperties {
 			props.ActiveState = value
 		case "SubState":
 			props.SubState = value
+			// Normalize SubState: "dead" -> "stopped" for better UX
+			if value == "dead" {
+				props.SubState = "stopped"
+			}
 		case "MainPID":
 			if pid, err := strconv.ParseInt(value, 10, 32); err == nil {
 				props.PID = int32(pid)
 			}
 		case "NRestarts":
+			// NRestarts only counts automatic restarts after failures
+			// For manual restarts, we'd need to parse journal timestamps
 			if restarts, err := strconv.Atoi(value); err == nil {
 				props.NRestarts = restarts
 			}
@@ -194,31 +196,53 @@ func getServiceProperties(name string, _ *utils.Logger) *ServiceProperties {
 
 // isUserInstalledService determines if a service is user-installed (not system default)
 func isUserInstalledService(name string) bool {
-	// Common system services to exclude
-	systemServices := map[string]bool{
-		"systemd-journald": true, "systemd-logind": true, "systemd-udevd": true,
-		"systemd-timesyncd": true, "systemd-resolved": true, "systemd-networkd": true,
-		"dbus": true, "cron": true, "rsyslog": true, "ssh": true, "sshd": true,
-		"getty": true, "NetworkManager": true, "ModemManager": true,
-		"accounts-daemon": true, "polkit": true, "rtkit-daemon": true,
-		"systemd-oomd": true, "user": true, "session": true,
-		"avahi-daemon": true, "bluetooth": true, "cups": true,
-		"udisks2": true, "upower": true, "wpa_supplicant": true,
-		"packagekit": true, "snapd": true, "unattended-upgrades": true,
+	// STRICT WHITELIST APPROACH - Only show services matching these patterns
+	// This ensures we ONLY show real user-installed server software
+
+	userServicePatterns := []string{
+		"docker", "dockerd",
+		"mysql", "mysqld", "mariadb",
+		"postgres", "postgresql",
+		"mongodb", "mongod", "mongo",
+		"nginx",
+		"apache", "apache2", "httpd",
+		"tomcat", "tomcat7", "tomcat8", "tomcat9",
+		"redis", "redis-server",
+		"memcached",
+		"elasticsearch",
+		"kibana",
+		"logstash",
+		"jenkins",
+		"gitlab",
+		"prometheus",
+		"grafana",
+		"grafana-server",
+		"node",
+		"php-fpm", "php7", "php8",
+		"rabbitmq", "rabbitmq-server",
+		"kafka",
+		"zookeeper",
+		"cassandra",
+		"kineticops-agent", "kineticops",
+		"haproxy",
+		"varnish",
+		"squid",
+		"bind9", "named",
+		"postfix", "dovecot",
+		"vsftpd", "proftpd",
 	}
 
-	// Check if it's a known system service
-	if systemServices[name] {
-		return false
+	nameLower := strings.ToLower(name)
+
+	// Check if service name contains any user service pattern
+	for _, pattern := range userServicePatterns {
+		if strings.Contains(nameLower, pattern) {
+			return true
+		}
 	}
 
-	// Check for system service patterns
-	if strings.HasPrefix(name, "systemd-") || strings.HasPrefix(name, "user@") {
-		return false
-	}
-
-	// Everything else is likely user-installed
-	return true
+	// NOT in whitelist = EXCLUDE IT
+	return false
 }
 
 // getServiceResources gets CPU and memory usage for a service PID

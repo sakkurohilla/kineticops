@@ -245,13 +245,18 @@ func (s *SystemModule) getMemoryMetrics() map[string]interface{} {
 		return nil
 	}
 
-	s.logger.Debug("Memory info collected", "total", memInfo.Total, "used", memInfo.Used, "percent", memInfo.UsedPercent)
+	// CRITICAL: Use total - available to match 'free' command behavior
+	// This includes buffers/cache as "used" which matches system monitoring tools
+	actualUsed := float64(memInfo.Total - memInfo.Available)
+	actualUsedPercent := (actualUsed / float64(memInfo.Total)) * 100.0
+
+	s.logger.Debug("Memory info collected", "total", memInfo.Total, "used", actualUsed, "percent", actualUsedPercent)
 
 	return map[string]interface{}{
 		"total": float64(memInfo.Total),
 		"used": map[string]interface{}{
-			"bytes": float64(memInfo.Used),
-			"pct":   memInfo.UsedPercent / 100.0,
+			"bytes": actualUsed,
+			"pct":   actualUsedPercent / 100.0,
 		},
 		"free":      float64(memInfo.Free),
 		"available": float64(memInfo.Available),
