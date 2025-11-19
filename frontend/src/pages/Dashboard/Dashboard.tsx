@@ -749,7 +749,7 @@ const Dashboard: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               {hosts.slice(0, 10).map((host) => {
                 const metrics = hostMetrics[host.id];
                 const cpuUsage = metrics?.cpu_usage || 0;
@@ -766,126 +766,159 @@ const Dashboard: React.FC = () => {
                 return (
                   <div 
                     key={host.id} 
-                    className="bg-gradient-to-br from-white to-gray-50 rounded-lg p-3 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-gray-100"
+                    className="group relative bg-gradient-to-br from-white via-white to-blue-50/30 rounded-2xl p-4 shadow-card hover:shadow-paytm-lg transition-all duration-300 hover:scale-105 cursor-pointer border border-blue-100/50 overflow-hidden"
                     onClick={() => {
                       setSelectedHostId(host.id);
                       hostService.getLatestMetrics(host.id).then(m => setSelectedHostMetrics(m)).catch(() => setSelectedHostMetrics(null));
                     }}
                     onDoubleClick={() => navigate(`/hosts/${host.id}`)}
                   >
-                    {/* Host Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
-                          isOnline ? 'bg-gradient-to-br from-green-400 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
-                        }`}>
-                          <Server className="w-3 h-3 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-gray-900 text-sm truncate">{host.hostname || host.ip}</h3>
-                          <p className="text-xs text-gray-500">{host.ip}</p>
-                        </div>
-                      </div>
-                      <div className={`w-2 h-2 rounded-full ${
-                        isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-                      }`}></div>
-                    </div>
-
-                    {/* Metrics Grid */}
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      {/* CPU Circle */}
-                      <div className="text-center">
-                        <div className="relative w-8 h-8 mx-auto mb-1">
-                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
-                            <path
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                              fill="none"
-                              stroke="#e5e7eb"
-                              strokeWidth="2"
-                            />
-                            <path
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                              fill="none"
-                              stroke={cpuUsage > 80 ? '#ef4444' : cpuUsage > 60 ? '#f59e0b' : '#10b981'}
-                              strokeWidth="2"
-                              strokeDasharray={`${cpuUsage}, 100`}
-                              strokeLinecap="round"
-                              className="transition-all duration-1000"
-                            />
-                          </svg>
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-xs font-bold text-gray-700">{typeof cpuUsage === 'number' && cpuUsage !== 0 ? `${cpuUsage.toFixed(0)}%` : (metrics ? 'N/A' : '—')}</span>
-                              </div>
-                        </div>
-                        <p className="text-xs font-medium text-gray-600">CPU</p>
-                      </div>
-
-                      {/* Memory Circle */}
-                      <div className="text-center">
-                        <div className="relative w-8 h-8 mx-auto mb-1">
-                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
-                            <path
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                              fill="none"
-                              stroke="#e5e7eb"
-                              strokeWidth="2"
-                            />
-                            <path
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                              fill="none"
-                              stroke={memoryUsage > 80 ? '#ef4444' : memoryUsage > 60 ? '#f59e0b' : '#3b82f6'}
-                              strokeWidth="2"
-                              strokeDasharray={`${memoryUsage}, 100`}
-                              strokeLinecap="round"
-                              className="transition-all duration-1000"
-                            />
-                          </svg>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-bold text-gray-700">{typeof memoryUsage === 'number' ? `${memoryUsage.toFixed(0)}%` : 'N/A'}</span>
+                    {/* Paytm-style gradient overlay on hover */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-secondary-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    
+                    <div className="relative z-10">
+                      {/* Host Header - Paytm Style */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-md ${
+                            isOnline ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'
+                          }`}>
+                            <Server className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-gray-900 text-sm truncate max-w-[120px]">{host.hostname || host.ip}</h3>
+                            <p className="text-xs text-gray-500">{host.ip}</p>
                           </div>
                         </div>
-                        <p className="text-xs font-medium text-gray-600">RAM</p>
+                        <div className={`w-2.5 h-2.5 rounded-full shadow-lg ${
+                          isOnline ? 'bg-green-500 shadow-green-500/50 animate-pulse' : 'bg-gray-400'
+                        }`}></div>
                       </div>
 
-                      {/* Disk Circle */}
+                      {/* Paytm-style Metrics Grid with Gradients */}
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        {/* CPU Circle - Vibrant Blue Gradient */}
+                        <div className="text-center">
+                          <div className="relative w-11 h-11 mx-auto mb-1.5">
+                            <svg className="w-11 h-11 transform -rotate-90" viewBox="0 0 36 36">
+                              <path
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#e0f2fe"
+                                strokeWidth="3"
+                              />
+                              <path
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="url(#cpuGrad)"
+                                strokeWidth="3"
+                                strokeDasharray={`${cpuUsage}, 100`}
+                                strokeLinecap="round"
+                                className="transition-all duration-1000 ease-out"
+                              />
+                              <defs>
+                                <linearGradient id="cpuGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                  <stop offset="0%" stopColor="#007bff" />
+                                  <stop offset="100%" stopColor="#00b9f5" />
+                                </linearGradient>
+                              </defs>
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-sm font-extrabold bg-gradient-to-br from-primary-600 to-secondary-500 bg-clip-text text-transparent">
+                                {typeof cpuUsage === 'number' && cpuUsage !== 0 ? `${cpuUsage.toFixed(0)}%` : (metrics ? 'N/A' : '—')}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-xs font-semibold text-gray-600">CPU</p>
+                        </div>
+
+                        {/* Memory Circle - Vibrant Green Gradient */}
+                        <div className="text-center">
+                          <div className="relative w-11 h-11 mx-auto mb-1.5">
+                            <svg className="w-11 h-11 transform -rotate-90" viewBox="0 0 36 36">
+                              <path
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#d1fae5"
+                                strokeWidth="3"
+                              />
+                              <path
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="url(#memGrad)"
+                                strokeWidth="3"
+                                strokeDasharray={`${memoryUsage}, 100`}
+                                strokeLinecap="round"
+                                className="transition-all duration-1000 ease-out"
+                              />
+                              <defs>
+                                <linearGradient id="memGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                  <stop offset="0%" stopColor="#00d26a" />
+                                  <stop offset="100%" stopColor="#10b981" />
+                                </linearGradient>
+                              </defs>
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-sm font-extrabold bg-gradient-to-br from-green-600 to-emerald-500 bg-clip-text text-transparent">
+                                {typeof memoryUsage === 'number' ? `${memoryUsage.toFixed(0)}%` : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-xs font-semibold text-gray-600">RAM</p>
+                        </div>
+
+                      {/* Disk Circle - Vibrant Orange Gradient */}
                       <div className="text-center">
-                        <div className="relative w-8 h-8 mx-auto mb-1">
-                          <svg className="w-8 h-8 transform -rotate-90" viewBox="0 0 36 36">
+                        <div className="relative w-11 h-11 mx-auto mb-1.5">
+                          <svg className="w-11 h-11 transform -rotate-90" viewBox="0 0 36 36">
                             <path
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
-                              stroke="#e5e7eb"
-                              strokeWidth="2"
+                              stroke="#fed7aa"
+                              strokeWidth="3"
                             />
                             <path
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
-                              stroke={diskUsage > 80 ? '#ef4444' : diskUsage > 60 ? '#f59e0b' : '#8b5cf6'}
-                              strokeWidth="2"
+                              stroke="url(#diskGrad)"
+                              strokeWidth="3"
                               strokeDasharray={`${diskUsage}, 100`}
                               strokeLinecap="round"
-                              className="transition-all duration-1000"
+                              className="transition-all duration-1000 ease-out"
                             />
+                            <defs>
+                              <linearGradient id="diskGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor="#ff9800" />
+                                <stop offset="100%" stopColor="#f59e0b" />
+                              </linearGradient>
+                            </defs>
                           </svg>
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-bold text-gray-700">{typeof diskUsage === 'number' ? `${diskUsage.toFixed(0)}%` : 'N/A'}</span>
+                            <span className="text-sm font-extrabold bg-gradient-to-br from-orange-600 to-amber-500 bg-clip-text text-transparent">
+                              {typeof diskUsage === 'number' ? `${diskUsage.toFixed(0)}%` : 'N/A'}
+                            </span>
                           </div>
                         </div>
-                        <p className="text-xs font-medium text-gray-600">Disk</p>
+                        <p className="text-xs font-semibold text-gray-600">Disk</p>
                       </div>
                     </div>
 
-                    {/* Status and Last Seen */}
-                    <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                      <Badge 
-                        variant={isOnline ? 'success' : 'error'}
-                        size="sm"
-                      >
-                        {host.agent_status || 'offline'}
-                      </Badge>
-                      <span className="text-xs text-gray-500">
-                        {host.last_seen ? formatTimestamp(host.last_seen).split(' ')[1] : 'Never'}
-                      </span>
+                      {/* Paytm-style Status Badge */}
+                      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                        <div className="flex items-center space-x-2">
+                          <div className={`w-2 h-2 rounded-full ${
+                            isOnline ? 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse' : 'bg-gray-400'
+                          }`}></div>
+                          <span className={`text-xs font-semibold ${
+                            isOnline ? 'text-green-600' : 'text-gray-500'
+                          }`}>
+                            {host.agent_status || 'offline'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-400 font-medium">
+                          {host.last_seen ? formatTimestamp(host.last_seen).split(' ')[1] : 'Never'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
