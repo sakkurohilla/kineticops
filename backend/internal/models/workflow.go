@@ -12,6 +12,10 @@ type WorkflowSession struct {
 	AuthenticatedAt time.Time `json:"authenticated_at" db:"authenticated_at"`
 	ExpiresAt       time.Time `json:"expires_at" db:"expires_at"`
 	LastActivity    time.Time `json:"last_activity" db:"last_activity"`
+	// Credentials stored encrypted in session (for the duration of the session only)
+	Username string `json:"-" db:"username"`
+	Password string `json:"-" db:"password_encrypted"`
+	SSHKey   string `json:"-" db:"ssh_key_encrypted"`
 }
 
 type ServiceControlLog struct {

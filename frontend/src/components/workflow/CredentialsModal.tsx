@@ -6,7 +6,7 @@ import Input from '../common/Input';
 interface CredentialsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (credentials: { username: string; password?: string; ssh_key?: string }) => Promise<void>;
+  onSubmit: (credentials: { username: string; password?: string; ssh_key?: string; pem_file?: string }) => Promise<void>;
   hostName: string;
   hostIP: string;
   loading?: boolean;
@@ -24,9 +24,11 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
     username: 'root',
     password: '',
     ssh_key: '',
-    auth_method: 'password' as 'password' | 'key'
+    pem_file: '',
+    auth_method: 'password' as 'password' | 'key' | 'pem'
   });
   const [error, setError] = useState('');
+  const [pemFileName, setPemFileName] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,14 +49,33 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
       return;
     }
 
+    if (credentials.auth_method === 'pem' && !credentials.pem_file) {
+      setError('PEM file is required');
+      return;
+    }
+
     try {
       await onSubmit({
         username: credentials.username,
         password: credentials.auth_method === 'password' ? credentials.password : undefined,
-        ssh_key: credentials.auth_method === 'key' ? credentials.ssh_key : undefined
+        ssh_key: credentials.auth_method === 'key' ? credentials.ssh_key : undefined,
+        pem_file: credentials.auth_method === 'pem' ? credentials.pem_file : undefined
       });
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
+    }
+  };
+
+  const handlePemFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPemFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        setCredentials(prev => ({ ...prev, pem_file: content }));
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -111,7 +132,7 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
                   name="auth_method"
                   value="password"
                   checked={credentials.auth_method === 'password'}
-                  onChange={(e) => setCredentials(prev => ({ ...prev, auth_method: e.target.value as 'password' | 'key' }))}
+                  onChange={(e) => setCredentials(prev => ({ ...prev, auth_method: e.target.value as 'password' | 'key' | 'pem' }))}
                   className="mr-2"
                 />
                 <span className="text-sm text-gray-700">Password</span>
@@ -122,10 +143,21 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
                   name="auth_method"
                   value="key"
                   checked={credentials.auth_method === 'key'}
-                  onChange={(e) => setCredentials(prev => ({ ...prev, auth_method: e.target.value as 'password' | 'key' }))}
+                  onChange={(e) => setCredentials(prev => ({ ...prev, auth_method: e.target.value as 'password' | 'key' | 'pem' }))}
                   className="mr-2"
                 />
                 <span className="text-sm text-gray-700">SSH Key</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="auth_method"
+                  value="pem"
+                  checked={credentials.auth_method === 'pem'}
+                  onChange={(e) => setCredentials(prev => ({ ...prev, auth_method: e.target.value as 'password' | 'key' | 'pem' }))}
+                  className="mr-2"
+                />
+                <span className="text-sm text-gray-700">PEM File</span>
               </label>
             </div>
           </div>
@@ -140,7 +172,7 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
               placeholder="Enter password"
               required
             />
-          ) : (
+          ) : credentials.auth_method === 'key' ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">SSH Private Key</label>
               <textarea
@@ -152,6 +184,34 @@ const CredentialsModal: React.FC<CredentialsModalProps> = ({
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm resize-none"
                 required
               />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">PEM File (Cloud Server Key)</label>
+              <div className="flex items-center gap-3">
+                <label className="flex-1 cursor-pointer">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-blue-500 transition-colors">
+                    <div className="flex items-center justify-center gap-2 text-gray-600">
+                      <Key className="w-5 h-5" />
+                      <span className="text-sm">
+                        {pemFileName || 'Click to upload PEM file'}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pem,.key"
+                    onChange={handlePemFileChange}
+                    className="hidden"
+                    required
+                  />
+                </label>
+              </div>
+              {credentials.pem_file && (
+                <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-xs text-green-800 font-medium">✓ PEM file loaded successfully</p>
+                </div>
+              )}
             </div>
           )}
 

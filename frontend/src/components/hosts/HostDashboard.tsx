@@ -210,7 +210,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
               Available: {(memory_total - memory_used).toFixed(1)} MB
             </p>
             <p className="text-xs text-blue-600 font-medium">
-              Free: {((memory_total - memory_used) * 0.3).toFixed(1)} MB
+              Free: {(memory_total - memory_used - (memory_used * 0.15)).toFixed(1)} MB
             </p>
           </div>
           <div className="mt-3 h-16" style={{ minHeight: 48 }}>

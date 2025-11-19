@@ -56,19 +56,20 @@ const Workflow: React.FC = () => {
     setShowCredentialsModal(true);
   };
 
-  const handleCredentialsSubmit = async (credentials: { username: string; password?: string; ssh_key?: string }) => {
+  const handleCredentialsSubmit = async (credentials: { username: string; password?: string; ssh_key?: string; pem_file?: string }) => {
     try {
       await createSession({
         host_id: selectedHost!.id,
         username: credentials.username,
         password: credentials.password,
-        ssh_key: credentials.ssh_key
+        ssh_key: credentials.ssh_key || credentials.pem_file // Use pem_file as ssh_key
       });
       setShowCredentialsModal(false);
       // Fetch services after session creation
       await fetchServices();
     } catch (err: any) {
       console.error('Session creation failed:', err);
+      throw err; // Re-throw to show error in modal
     }
   };
 

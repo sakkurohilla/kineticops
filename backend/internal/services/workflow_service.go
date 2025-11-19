@@ -29,10 +29,34 @@ func NewWorkflowService(workflowRepo *postgres.WorkflowRepository, agentRepo *po
 }
 
 func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionRequest, userID int) (*models.WorkflowSessionResponse, error) {
+	// Test SSH connection FIRST - REQUIRED for production
+	err := s.testSSHConnection(req)
+	if err != nil {
+		return nil, fmt.Errorf("SSH authentication failed: %v", err)
+	}
+
 	// Generate session token
 	token, err := s.generateSessionToken(req.HostID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate session token: %v", err)
+	}
+
+	// Encrypt credentials for storage (only for session duration)
+	encryptedPassword := ""
+	encryptedSSHKey := ""
+
+	if req.Password != "" {
+		encryptedPassword, err = EncryptCredential(req.Password, s.jwtSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt password: %v", err)
+		}
+	}
+
+	if req.SSHKey != "" {
+		encryptedSSHKey, err = EncryptCredential(req.SSHKey, s.jwtSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt SSH key: %v", err)
+		}
 	}
 
 	// Get agent for this host
@@ -42,7 +66,7 @@ func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionReque
 		agentID = &agent.ID
 	}
 
-	// Create session
+	// Create session with encrypted credentials
 	session := &models.WorkflowSession{
 		HostID:       req.HostID,
 		UserID:       userID,
@@ -50,6 +74,9 @@ func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionReque
 		SessionToken: token,
 		Status:       "active",
 		ExpiresAt:    time.Now().Add(1 * time.Hour),
+		Username:     req.Username,
+		Password:     encryptedPassword,
+		SSHKey:       encryptedSSHKey,
 	}
 
 	err = s.workflowRepo.CreateSession(session)
@@ -57,11 +84,13 @@ func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionReque
 		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
 
-	// Test SSH connection - REQUIRED for production
-	err = s.testSSHConnection(req)
-	if err != nil {
-		return nil, fmt.Errorf("SSH connection failed: %v", err)
-	}
+	logging.Infof("Workflow session created for host=%d user=%d with %s authentication",
+		req.HostID, userID, func() string {
+			if req.SSHKey != "" {
+				return "SSH key"
+			}
+			return "password"
+		}())
 
 	return &models.WorkflowSessionResponse{
 		SessionToken: token,
@@ -169,11 +198,57 @@ func (s *WorkflowService) ControlService(serviceID int, action models.ControlAct
 }
 
 func (s *WorkflowService) ExecuteRemoteCommand(hostID int, command string, sessionToken string) (string, error) {
-	// This would use cached SSH credentials from session
-	// Execute actual SSH command
-	logging.Infof("Executing command on host %d: %s", hostID, command)
-	// TODO: Implement actual SSH command execution
-	return "", fmt.Errorf("SSH command execution not implemented")
+	// Get session with credentials
+	session, err := s.workflowRepo.GetSession(sessionToken)
+	if err != nil {
+		return "", fmt.Errorf("invalid session: %v", err)
+	}
+
+	// Get host details
+	host, err := s.hostRepo.GetByID(hostID)
+	if err != nil {
+		return "", fmt.Errorf("host not found: %v", err)
+	}
+
+	// Decrypt credentials
+	password := ""
+	sshKey := ""
+
+	if session.Password != "" {
+		password, err = DecryptCredential(session.Password, s.jwtSecret)
+		if err != nil {
+			return "", fmt.Errorf("failed to decrypt password: %v", err)
+		}
+	}
+
+	if session.SSHKey != "" {
+		sshKey, err = DecryptCredential(session.SSHKey, s.jwtSecret)
+		if err != nil {
+			return "", fmt.Errorf("failed to decrypt SSH key: %v", err)
+		}
+	}
+
+	// Create SSH client with decrypted credentials
+	var sshClient *SSHClient
+	if sshKey != "" {
+		sshClient, err = NewSSHClientWithKey(host.IP, 22, session.Username, "", sshKey)
+	} else {
+		sshClient, err = NewSSHClient(host.IP, 22, session.Username, password)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("SSH connection failed: %v", err)
+	}
+	defer sshClient.Close()
+
+	// Execute command
+	output, err := sshClient.ExecuteCommand(command)
+	if err != nil {
+		return "", fmt.Errorf("command execution failed: %v", err)
+	}
+
+	logging.Infof("Executed command on host %d: %s", hostID, command)
+	return output, nil
 }
 
 func (s *WorkflowService) GetHostWorkflow(hostID int, sessionToken string) (map[string]interface{}, error) {

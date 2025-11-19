@@ -15,12 +15,12 @@ func NewWorkflowRepository(db *sqlx.DB) *WorkflowRepository {
 
 func (r *WorkflowRepository) CreateSession(session *models.WorkflowSession) error {
 	query := `
-		INSERT INTO workflow_sessions (host_id, user_id, agent_id, session_token, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO workflow_sessions (host_id, user_id, agent_id, session_token, expires_at, username, password_encrypted, ssh_key_encrypted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, authenticated_at, last_activity`
 
 	return r.db.QueryRow(query, session.HostID, session.UserID, session.AgentID,
-		session.SessionToken, session.ExpiresAt).Scan(
+		session.SessionToken, session.ExpiresAt, session.Username, session.Password, session.SSHKey).Scan(
 		&session.ID, &session.AuthenticatedAt, &session.LastActivity)
 }
 
