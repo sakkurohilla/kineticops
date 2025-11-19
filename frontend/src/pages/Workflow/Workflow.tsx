@@ -4,7 +4,6 @@ import MainLayout from '../../components/layout/MainLayout';
 import CredentialsModal from '../../components/workflow/CredentialsModal';
 import ServiceBubble from '../../components/workflow/ServiceBubble';
 import ServiceControlPanel from '../../components/workflow/ServiceControlPanel';
-import RealTimeMetrics from '../../components/workflow/RealTimeMetrics';
 import { Host } from '../../types';
 import hostService from '../../services/api/hostService';
 import { useWorkflowSession, useServiceControl } from '../../hooks/useWorkflow';
@@ -434,7 +433,9 @@ const Workflow: React.FC = () => {
               )}
 
               {activeTab === 'analytics' && (
-                <RealTimeMetrics hostId={selectedHost.id} sessionToken={session.session_token} />
+                <div className="bg-white rounded-lg p-6 text-center">
+                  <p className="text-gray-500">Analytics features coming soon</p>
+                </div>
               )}
             </div>
           )}

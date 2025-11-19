@@ -212,12 +212,9 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <p className="text-xs text-gray-500">
             {memory_used.toFixed(1)} MB / {memory_total.toFixed(1)} MB
           </p>
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          <div className="mt-1">
             <p className="text-xs text-green-600 font-medium">
               Available: {(memory_total - memory_used).toFixed(1)} MB
-            </p>
-            <p className="text-xs text-blue-600 font-medium">
-              Free: {(memory_total - memory_used - (memory_used * 0.15)).toFixed(1)} MB
             </p>
           </div>
           <div className="mt-3 h-16" style={{ minHeight: 48 }}>

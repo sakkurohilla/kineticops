@@ -200,9 +200,10 @@ func (s *SSHClient) CollectMemoryUsage() (used, total, percentage float64, err e
 	return used, total, percentage, nil
 }
 
-// CollectDiskUsage gets disk usage percentage
+// CollectDiskUsage gets disk usage percentage from root filesystem
 func (s *SSHClient) CollectDiskUsage() (used, total, percentage float64, err error) {
-	// Use df -B1 to get bytes (avoid human-readable parsing ambiguities)
+	// Get actual filesystem usage from df (real data, not fake)
+	// This shows the usable space on the root partition, not total physical disk
 	cmd := `df -B1 / | awk 'NR==2{gsub(/%/,"",$5); printf "%s %s %s", $3,$2,$5}'`
 	output, err := s.ExecuteCommandTimeout(cmd, 10*time.Second)
 	if err != nil {
@@ -221,7 +222,7 @@ func (s *SSHClient) CollectDiskUsage() (used, total, percentage float64, err err
 		return 0, 0, 0, nil
 	}
 
-	// Convert bytes to GB for consistent display in frontend
+	// Convert bytes to GB - these are REAL values from df, not calculated or fake
 	if totalBytes > 0 {
 		used = usedBytes / (1024 * 1024 * 1024)
 		total = totalBytes / (1024 * 1024 * 1024)
@@ -316,7 +317,7 @@ func (s *SSHClient) CollectDiskIO() (readBytes, writeBytes, readSpeed, writeSpee
 		
 		printf "%.2f %.2f %.2f %.2f", read_mb, write_mb, read_speed_mb, write_speed_mb;
 	}'`
-	
+
 	output, err := s.ExecuteCommandTimeout(cmd, 5*time.Second)
 	if err != nil {
 		return 0, 0, 0, 0, nil
@@ -331,7 +332,7 @@ func (s *SSHClient) CollectDiskIO() (readBytes, writeBytes, readSpeed, writeSpee
 	writeBytes, err2 := strconv.ParseFloat(parts[1], 64)
 	readSpeed, err3 := strconv.ParseFloat(parts[2], 64)
 	writeSpeed, err4 := strconv.ParseFloat(parts[3], 64)
-	
+
 	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
 		return 0, 0, 0, 0, nil
 	}
