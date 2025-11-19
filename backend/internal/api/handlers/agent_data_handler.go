@@ -432,7 +432,21 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			metric.MemoryUsage = pctFromAgent * 100
 		}
 
-		// Persist memory metrics (usage percentage, total MB, used MB)
+		// Extract memory_free from agent data
+		if freeRaw, ok := memory["free"]; ok {
+			switch v := freeRaw.(type) {
+			case float64:
+				if v >= 0 {
+					metric.MemoryFree = v / (1024 * 1024) // Convert to MB
+				}
+			case map[string]interface{}:
+				if fb, ok := v["bytes"].(float64); ok && fb >= 0 {
+					metric.MemoryFree = fb / (1024 * 1024) // Convert to MB
+				}
+			}
+		}
+
+		// Persist memory metrics (usage percentage, total MB, used MB, free MB)
 		if metric.MemoryUsage >= 0 {
 			if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
 				logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
@@ -446,6 +460,11 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		if metric.MemoryUsed > 0 {
 			if err := services.CollectMetric(hostID, tenantID, "memory_used", metric.MemoryUsed, nil); err != nil {
 				logging.Errorf("CollectMetric(memory_used) failed host=%d: %v", hostID, err)
+			}
+		}
+		if metric.MemoryFree > 0 {
+			if err := services.CollectMetric(hostID, tenantID, "memory_free", metric.MemoryFree, nil); err != nil {
+				logging.Errorf("CollectMetric(memory_free) failed host=%d: %v", hostID, err)
 			}
 		}
 	}
@@ -674,14 +693,15 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 	// Store in host_metrics table with error handling
 	err := postgres.DB.Exec(`
-		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, 
+		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, memory_free,
 			disk_usage, disk_total, disk_used, network_in, network_out, uptime, load_average, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (host_id) DO UPDATE SET
 			cpu_usage = EXCLUDED.cpu_usage,
 			memory_usage = EXCLUDED.memory_usage,
 			memory_total = EXCLUDED.memory_total,
 			memory_used = EXCLUDED.memory_used,
+			memory_free = EXCLUDED.memory_free,
 			disk_usage = EXCLUDED.disk_usage,
 			disk_total = EXCLUDED.disk_total,
 			disk_used = EXCLUDED.disk_used,
@@ -690,7 +710,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			uptime = EXCLUDED.uptime,
 			load_average = EXCLUDED.load_average,
 			timestamp = EXCLUDED.timestamp
-	`, hostID, metric.CPUUsage, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed,
+	`, hostID, metric.CPUUsage, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed, metric.MemoryFree,
 		metric.DiskUsage, metric.DiskTotal, metric.DiskUsed, metric.NetworkIn, metric.NetworkOut,
 		metric.Uptime, metric.LoadAverage, metric.Timestamp).Error
 
@@ -706,6 +726,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		"memory_usage": metric.MemoryUsage,
 		"memory_total": metric.MemoryTotal,
 		"memory_used":  metric.MemoryUsed,
+		"memory_free":  metric.MemoryFree,
 		"disk_usage":   metric.DiskUsage,
 		"disk_total":   metric.DiskTotal,
 		"disk_used":    metric.DiskUsed,

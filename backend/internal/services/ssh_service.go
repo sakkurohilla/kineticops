@@ -171,33 +171,35 @@ func (s *SSHClient) CollectCPUUsage() (float64, error) {
 	return cpu, nil
 }
 
-// CollectMemoryUsage gets memory usage percentage
-func (s *SSHClient) CollectMemoryUsage() (used, total, percentage float64, err error) {
-	// Use /proc/meminfo to calculate used and total memory reliably
-	cmd := `awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END {used=total-avail; if(total>0) perc=used*100/total; else perc=0; printf "%d %d %.2f", used, total, perc}' /proc/meminfo`
+// CollectMemoryUsage gets memory usage percentage and free memory
+func (s *SSHClient) CollectMemoryUsage() (used, total, free, percentage float64, err error) {
+	// Get real memory values from /proc/meminfo: Total, Free (actual free), Available
+	cmd := `awk '/MemTotal/ {total=$2} /MemFree/ {free=$2} /MemAvailable/ {avail=$2} END {used=total-avail; if(total>0) perc=used*100/total; else perc=0; printf "%d %d %d %.2f", used, total, free, perc}' /proc/meminfo`
 	output, err := s.ExecuteCommandTimeout(cmd, 10*time.Second)
 	if err != nil {
-		return 0, 0, 0, nil
+		return 0, 0, 0, 0, nil
 	}
 
 	parts := strings.Fields(output)
-	if len(parts) < 3 {
-		return 0, 0, 0, nil
+	if len(parts) < 4 {
+		return 0, 0, 0, 0, nil
 	}
 
 	// meminfo reports kB; convert to MB for consistency with frontend where applicable
 	usedKb, err1 := strconv.ParseFloat(parts[0], 64)
 	totalKb, err2 := strconv.ParseFloat(parts[1], 64)
-	perc, err3 := strconv.ParseFloat(parts[2], 64)
-	if err1 != nil || err2 != nil || err3 != nil {
-		return 0, 0, 0, nil
+	freeKb, err3 := strconv.ParseFloat(parts[2], 64)
+	perc, err4 := strconv.ParseFloat(parts[3], 64)
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return 0, 0, 0, 0, nil
 	}
 
 	used = usedKb / 1024.0
 	total = totalKb / 1024.0
+	free = freeKb / 1024.0
 	percentage = perc
 
-	return used, total, percentage, nil
+	return used, total, free, percentage, nil
 }
 
 // CollectDiskUsage gets disk usage percentage from root filesystem

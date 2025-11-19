@@ -22,6 +22,7 @@ type HostMetric struct {
 	MemoryUsage    float64
 	MemoryTotal    float64
 	MemoryUsed     float64
+	MemoryFree     float64
 	DiskUsage      float64
 	DiskTotal      float64
 	DiskUsed       float64
@@ -43,6 +44,7 @@ type HostMetricDB struct {
 	MemoryUsage    float64   `gorm:"column:memory_usage;type:decimal(5,2);default:0"`
 	MemoryTotal    float64   `gorm:"column:memory_total;type:decimal(10,2);default:0"`
 	MemoryUsed     float64   `gorm:"column:memory_used;type:decimal(10,2);default:0"`
+	MemoryFree     float64   `gorm:"column:memory_free;type:decimal(10,2);default:0"`
 	DiskUsage      float64   `gorm:"column:disk_usage;type:decimal(5,2);default:0"`
 	DiskTotal      float64   `gorm:"column:disk_total;type:decimal(10,2);default:0"`
 	DiskUsed       float64   `gorm:"column:disk_used;type:decimal(10,2);default:0"`
@@ -96,13 +98,15 @@ func CollectHostMetrics(host *models.Host) (*HostMetric, error) {
 
 	go func() {
 		defer wg.Done()
-		if used, total, perc, err := sshClient.CollectMemoryUsage(); err != nil {
+		if used, total, free, perc, err := sshClient.CollectMemoryUsage(); err != nil {
 			logging.Warnf("[WARN] Failed to collect memory for host %d: %v", host.ID, err)
 		} else {
 			mu.Lock()
 			metric.MemoryUsed = used
 			metric.MemoryTotal = total
+			metric.MemoryFree = free
 			metric.MemoryUsage = perc
+			logging.Infof("[DEBUG] Memory collected for host %d: used=%.2f, total=%.2f, free=%.2f, perc=%.2f", host.ID, used, total, free, perc)
 			mu.Unlock()
 		}
 	}()
@@ -181,6 +185,7 @@ func SaveHostMetrics(metric *HostMetric) error {
 		MemoryUsage:    metric.MemoryUsage,
 		MemoryTotal:    metric.MemoryTotal,
 		MemoryUsed:     metric.MemoryUsed,
+		MemoryFree:     metric.MemoryFree,
 		DiskUsage:      metric.DiskUsage,
 		DiskTotal:      metric.DiskTotal,
 		DiskUsed:       metric.DiskUsed,
@@ -231,6 +236,9 @@ func SaveHostMetrics(metric *HostMetric) error {
 		"host_id":          dbm.HostID,
 		"cpu_usage":        dbm.CPUUsage,
 		"memory_usage":     dbm.MemoryUsage,
+		"memory_total":     dbm.MemoryTotal,
+		"memory_used":      dbm.MemoryUsed,
+		"memory_free":      dbm.MemoryFree,
 		"disk_usage":       dbm.DiskUsage,
 		"disk_read_bytes":  dbm.DiskReadBytes,
 		"disk_write_bytes": dbm.DiskWriteBytes,

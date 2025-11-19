@@ -29,6 +29,7 @@ interface MetricData {
   memory_usage: number;
   memory_total: number;
   memory_used: number;
+  memory_free: number;
   disk_usage: number;
   disk_total: number;
   disk_used: number;
@@ -53,6 +54,7 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
   // backend stores memory totals in MB (not bytes) for host_metrics snapshots
   const memory_used = m?.memory_used ?? 0; // MB
   const memory_total = m?.memory_total ?? 0; // MB
+  const memory_free = m?.memory_free ?? 0; // MB (actual free from MemFree)
   const disk = m?.disk_usage;
   // backend stores disk totals in GB (host_metrics snapshot conversion)
   const disk_used = m?.disk_used ?? 0; // GB
@@ -212,8 +214,11 @@ const HostDashboard: React.FC<HostDashboardProps> = ({ hostId }) => {
           <p className="text-xs text-gray-500">
             {memory_used.toFixed(1)} MB / {memory_total.toFixed(1)} MB
           </p>
-          <div className="mt-1">
+          <div className="grid grid-cols-2 gap-2 mt-1">
             <p className="text-xs text-green-600 font-medium">
+              Free: {memory_free.toFixed(1)} MB
+            </p>
+            <p className="text-xs text-blue-600 font-medium">
               Available: {(memory_total - memory_used).toFixed(1)} MB
             </p>
           </div>

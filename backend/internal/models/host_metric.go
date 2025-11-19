@@ -10,6 +10,7 @@ type HostMetric struct {
 	MemoryUsage    float64   `json:"memory_usage"`
 	MemoryTotal    float64   `json:"memory_total"`
 	MemoryUsed     float64   `json:"memory_used"`
+	MemoryFree     float64   `json:"memory_free"`
 	DiskUsage      float64   `json:"disk_usage"`
 	DiskTotal      float64   `json:"disk_total"`
 	DiskUsed       float64   `json:"disk_used"`
