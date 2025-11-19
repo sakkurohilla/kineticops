@@ -318,7 +318,8 @@ func (s *SSHClient) CollectDiskIO() (readBytes, writeBytes, readSpeed, writeSpee
 		printf "%.2f %.2f %.2f %.2f", read_mb, write_mb, read_speed_mb, write_speed_mb;
 	}'`
 
-	output, err := s.ExecuteCommandTimeout(cmd, 5*time.Second)
+	// Need longer timeout because command includes sleep 1 second
+	output, err := s.ExecuteCommandTimeout(cmd, 10*time.Second)
 	if err != nil {
 		return 0, 0, 0, 0, nil
 	}
