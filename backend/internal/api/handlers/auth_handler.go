@@ -44,10 +44,14 @@ func Login(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 
+	if req.Username == "" || req.Password == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Username and password are required"})
+	}
+
 	token, userID, err := services.LoginUser(req.Username, req.Password)
 	if err != nil {
 		services.LogEvent(0, "failed_login", req.Username)
-		return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials"})
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid username or password"})
 	}
 
 	cfg := config.Load()

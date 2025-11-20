@@ -87,6 +87,77 @@ func UpdateUserProfile(userID int64, email, username string) error {
 	return result.Error
 }
 
+// ProfileUpdateRequest represents extended profile update data
+type ProfileUpdateRequest struct {
+	Email     string `json:"email"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Phone     string `json:"phone"`
+	Company   string `json:"company"`
+	Location  string `json:"location"`
+	Role      string `json:"role"`
+	Timezone  string `json:"timezone"`
+}
+
+// UpdateUserProfileExtended updates user's full profile
+func UpdateUserProfileExtended(userID int64, req ProfileUpdateRequest) error {
+	// Check if email or username already taken by another user
+	if req.Email != "" || req.Username != "" {
+		var count int64
+		query := postgres.DB.Model(&models.User{}).Where("id != ?", userID)
+		
+		if req.Email != "" && req.Username != "" {
+			query = query.Where("email = ? OR username = ?", req.Email, req.Username)
+		} else if req.Email != "" {
+			query = query.Where("email = ?", req.Email)
+		} else if req.Username != "" {
+			query = query.Where("username = ?", req.Username)
+		}
+		
+		query.Count(&count)
+		if count > 0 {
+			return errors.New("email or username already taken")
+		}
+	}
+
+	updates := map[string]interface{}{}
+	if req.Email != "" {
+		updates["email"] = req.Email
+	}
+	if req.Username != "" {
+		updates["username"] = req.Username
+	}
+	if req.FirstName != "" {
+		updates["first_name"] = req.FirstName
+	}
+	if req.LastName != "" {
+		updates["last_name"] = req.LastName
+	}
+	if req.Phone != "" {
+		updates["phone"] = req.Phone
+	}
+	if req.Company != "" {
+		updates["company"] = req.Company
+	}
+	if req.Location != "" {
+		updates["location"] = req.Location
+	}
+	if req.Role != "" {
+		updates["role"] = req.Role
+	}
+	if req.Timezone != "" {
+		updates["timezone"] = req.Timezone
+	}
+
+	if len(updates) == 0 {
+		return errors.New("no fields to update")
+	}
+
+	result := postgres.DB.Model(&models.User{}).Where("id = ?", userID).Updates(updates)
+	return result.Error
+}
+
 // DeleteUser soft deletes a user
 func DeleteUser(userID int64) error {
 	result := postgres.DB.Delete(&models.User{}, userID)

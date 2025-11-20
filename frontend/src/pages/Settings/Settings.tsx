@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
 import { 
   User, Bell, Shield, Database, Webhook, Mail, Slack, 
@@ -6,10 +6,12 @@ import {
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
+import api from '../../services/api/client';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('account');
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     // Account settings
     company_name: 'KineticOps',
@@ -20,7 +22,7 @@ const Settings: React.FC = () => {
     email_notifications: true,
     slack_notifications: false,
     webhook_notifications: false,
-    alert_email: 'alerts@example.com',
+    alert_email: '',
     slack_webhook: '',
     custom_webhook: '',
     
@@ -49,14 +51,29 @@ const Settings: React.FC = () => {
     { id: 'appearance', label: 'Appearance', icon: Palette },
   ];
 
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const response = await api.get('/settings');
+      setSettings(response.data);
+    } catch (err) {
+      console.error('Failed to fetch settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      // TODO: API call to save settings
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await api.put('/settings', settings);
       alert('Settings saved successfully!');
-    } catch (err) {
-      alert('Failed to save settings');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || 'Failed to save settings';
+      alert(errorMsg);
     } finally {
       setSaving(false);
     }

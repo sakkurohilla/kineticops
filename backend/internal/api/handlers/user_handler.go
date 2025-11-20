@@ -23,16 +23,13 @@ func GetCurrentUser(c *fiber.Ctx) error {
 func UpdateUser(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(int64)
 
-	var req struct {
-		Email    string `json:"email"`
-		Username string `json:"username"`
-	}
+	var req services.ProfileUpdateRequest
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 
-	if err := services.UpdateUserProfile(userID, req.Email, req.Username); err != nil {
+	if err := services.UpdateUserProfileExtended(userID, req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 

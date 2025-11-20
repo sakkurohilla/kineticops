@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
+import api from '../../services/api/client';
 
 const Profile: React.FC = () => {
   const [activeTab, setActiveTab] = useState('personal');
@@ -57,17 +58,24 @@ const Profile: React.FC = () => {
 
   const fetchProfile = async () => {
     try {
-      // TODO: Replace with actual user API call
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        const user = JSON.parse(userData);
-        setProfile({
-          ...profile,
-          email: user.email || '',
-          first_name: user.name?.split(' ')[0] || '',
-          last_name: user.name?.split(' ').slice(1).join(' ') || '',
-        });
-      }
+      const response = await api.get('/profile');
+      const user = response.data;
+      setProfile({
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        company: user.company || '',
+        role: user.role || '',
+        location: user.location || '',
+        timezone: user.timezone || 'Asia/Kolkata',
+        current_password: '',
+        new_password: '',
+        confirm_password: '',
+        language: 'en',
+        notifications_enabled: true,
+        email_digest: 'daily',
+      });
     } catch (err) {
       console.error('Failed to fetch profile:', err);
     }
@@ -87,11 +95,22 @@ const Profile: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // TODO: API call to save profile
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await api.put('/profile', {
+        email: profile.email,
+        username: profile.email, // Using email as username
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+        phone: profile.phone,
+        company: profile.company,
+        location: profile.location,
+        role: profile.role,
+        timezone: profile.timezone,
+      });
       alert('Profile updated successfully!');
-    } catch (err) {
-      alert('Failed to update profile');
+      fetchProfile(); // Refresh profile data
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || 'Failed to update profile';
+      alert(errorMsg);
     } finally {
       setSaving(false);
     }
@@ -110,8 +129,10 @@ const Profile: React.FC = () => {
 
     setSaving(true);
     try {
-      // TODO: API call to change password
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await api.put('/password/change', {
+        current_password: profile.current_password,
+        new_password: profile.new_password,
+      });
       alert('Password changed successfully!');
       setProfile({
         ...profile,
@@ -119,8 +140,9 @@ const Profile: React.FC = () => {
         new_password: '',
         confirm_password: '',
       });
-    } catch (err) {
-      alert('Failed to change password');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || 'Failed to change password';
+      alert(errorMsg);
     } finally {
       setSaving(false);
     }
