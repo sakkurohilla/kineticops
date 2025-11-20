@@ -53,7 +53,14 @@ func (r *HostRepository) Create(host *models.Host) error {
 
 func (r *HostRepository) GetByID(id int) (*models.Host, error) {
 	var host models.Host
-	query := `SELECT * FROM hosts WHERE id = $1`
+	// Select all columns from hosts table
+	query := `
+		SELECT id, hostname, ip, os, agent_status, status, tenant_id, tags, "group", 
+		       description, last_seen, last_sync, reg_token, ssh_user, ssh_password, 
+		       ssh_port, ssh_key, created_at
+		FROM hosts 
+		WHERE id = $1
+	`
 	err := r.db.Get(&host, query, id)
 	if err != nil {
 		return nil, err

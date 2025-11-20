@@ -13,6 +13,10 @@ func NewWorkflowRepository(db *sqlx.DB) *WorkflowRepository {
 	return &WorkflowRepository{db: db}
 }
 
+func (r *WorkflowRepository) GetDB() *sqlx.DB {
+	return r.db
+}
+
 func (r *WorkflowRepository) CreateSession(session *models.WorkflowSession) error {
 	query := `
 		INSERT INTO workflow_sessions (host_id, user_id, agent_id, session_token, expires_at, username, password_encrypted, ssh_key_encrypted)

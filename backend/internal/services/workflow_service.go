@@ -8,6 +8,7 @@ import (
 	"github.com/sakkurohilla/kineticops/backend/internal/logging"
 	"github.com/sakkurohilla/kineticops/backend/internal/models"
 	"github.com/sakkurohilla/kineticops/backend/internal/repository/postgres"
+	ws "github.com/sakkurohilla/kineticops/backend/internal/websocket"
 )
 
 type WorkflowService struct {
@@ -131,6 +132,31 @@ func (s *WorkflowService) DiscoverServices(hostID int, sessionToken string) ([]m
 	services, err := s.agentRepo.GetServices(agent.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %v", err)
+	}
+
+	return services, nil
+}
+
+// DiscoverServicesRealtime gets real-time services from websocket cache (same as Services page)
+func (s *WorkflowService) DiscoverServicesRealtime(hostID int, sessionToken string) (interface{}, error) {
+	// Validate session
+	_, err := s.ValidateSession(sessionToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get last cached services from websocket hub
+	servicesData, err := ws.GetLastServicesForHost(int64(hostID))
+	if err != nil {
+		// Fallback to database if no websocket data available yet
+		logging.Warnf("No real-time services for host %d, using database fallback: %v", hostID, err)
+		return s.DiscoverServices(hostID, sessionToken)
+	}
+
+	// Extract services from the websocket message
+	services, ok := servicesData["services"]
+	if !ok {
+		return nil, fmt.Errorf("services field not found in cached data")
 	}
 
 	return services, nil
@@ -277,6 +303,80 @@ func (s *WorkflowService) GetHostWorkflow(hostID int, sessionToken string) (map[
 	}, nil
 }
 
+func (s *WorkflowService) GetHostWorkflowRealtime(hostID int, sessionToken string) (map[string]interface{}, error) {
+	// Validate session
+	_, err := s.ValidateSession(sessionToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get services from websocket cache (real-time)
+	services, err := s.DiscoverServicesRealtime(hostID, sessionToken)
+	if err != nil {
+		// Fallback to database
+		services, err = s.DiscoverServices(hostID, sessionToken)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Get latest host metrics from database
+	var metrics struct {
+		CPUUsage       float64 `db:"cpu_usage"`
+		MemoryUsage    float64 `db:"memory_usage"`
+		MemoryFree     float64 `db:"memory_free"`
+		DiskUsage      float64 `db:"disk_usage"`
+		DiskReadSpeed  float64 `db:"disk_read_speed"`
+		DiskWriteSpeed float64 `db:"disk_write_speed"`
+		NetworkIn      float64 `db:"network_in"`
+		NetworkOut     float64 `db:"network_out"`
+		LoadAverage    float64 `db:"load_average"`
+	}
+
+	query := `
+		SELECT cpu_usage, memory_usage, memory_free, disk_usage, 
+		       disk_read_speed, disk_write_speed, network_in, network_out, load_average
+		FROM host_metrics
+		WHERE host_id = $1
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`
+
+	// Use GetDB() method to access the database
+	err = s.workflowRepo.GetDB().Get(&metrics, query, hostID)
+	if err != nil {
+		logging.Warnf("Failed to fetch metrics for host %d: %v", hostID, err)
+		// Return services without metrics
+		return map[string]interface{}{
+			"services": services,
+			"status":   "active",
+		}, nil
+	}
+
+	// Get recent logs
+	logs, err := s.workflowRepo.GetControlLogs(hostID, 10)
+	if err != nil {
+		logs = []models.ServiceControlLog{} // Empty if error
+	}
+
+	return map[string]interface{}{
+		"services": services,
+		"metrics": map[string]interface{}{
+			"cpu_usage":        metrics.CPUUsage,
+			"memory_usage":     metrics.MemoryUsage,
+			"memory_free":      metrics.MemoryFree,
+			"disk_usage":       metrics.DiskUsage,
+			"disk_read_speed":  metrics.DiskReadSpeed,
+			"disk_write_speed": metrics.DiskWriteSpeed,
+			"network_in":       metrics.NetworkIn,
+			"network_out":      metrics.NetworkOut,
+			"load_average":     metrics.LoadAverage,
+		},
+		"logs":   logs,
+		"status": "active",
+	}, nil
+}
+
 func (s *WorkflowService) CloseSession(sessionToken string) error {
 	return s.workflowRepo.ExpireSession(sessionToken)
 }
@@ -299,9 +399,7 @@ func (s *WorkflowService) testSSHConnection(req *models.WorkflowSessionRequest) 
 	// Get host details to get the actual IP address
 	host, err := s.hostRepo.GetByID(req.HostID)
 	if err != nil {
-		// For development: allow workflow without existing host
-		logging.Warnf("[WARN] Host %d not found, skipping SSH test: %v", req.HostID, err)
-		return nil
+		return fmt.Errorf("host not found: %v", err)
 	}
 
 	// Use host IP for SSH connection
@@ -310,6 +408,16 @@ func (s *WorkflowService) testSSHConnection(req *models.WorkflowSessionRequest) 
 		return fmt.Errorf("host IP not configured")
 	}
 
+	// Validate credentials are provided
+	if req.Username == "" {
+		return fmt.Errorf("SSH username is required")
+	}
+
+	if req.SSHKey == "" && req.Password == "" {
+		return fmt.Errorf("SSH password or key is required")
+	}
+
+	// Test the actual SSH connection
 	if req.SSHKey != "" {
 		return TestSSHConnectionWithKey(hostIP, 22, req.Username, "", req.SSHKey)
 	}

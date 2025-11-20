@@ -55,14 +55,15 @@ func DiscoverServices(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Workflow service not initialized"})
 	}
 
-	services, err := workflowService.DiscoverServices(hostID, sessionToken)
+	// Get real-time services from the global hub's last known state
+	// This uses the same websocket data that the Services page uses
+	services, err := workflowService.DiscoverServicesRealtime(hostID, sessionToken)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{
 		"services": services,
-		"count":    len(services),
 	})
 }
 
@@ -133,7 +134,7 @@ func GetWorkflowData(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Workflow service not initialized"})
 	}
 
-	data, err := workflowService.GetHostWorkflow(hostID, sessionToken)
+	data, err := workflowService.GetHostWorkflowRealtime(hostID, sessionToken)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

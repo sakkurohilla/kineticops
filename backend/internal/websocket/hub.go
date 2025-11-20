@@ -245,6 +245,33 @@ func GetGlobalClientCount() int {
 	return globalHub.ClientCount()
 }
 
+// GetLastServicesForHost retrieves the last cached services message for a specific host
+func GetLastServicesForHost(hostID int64) (map[string]interface{}, error) {
+	if globalHub == nil {
+		return nil, fmt.Errorf("global hub not initialized")
+	}
+
+	globalHub.mu.Lock()
+	defer globalHub.mu.Unlock()
+
+	cached, exists := globalHub.lastMessages[hostID]
+	if !exists {
+		return nil, fmt.Errorf("no cached services for host %d", hostID)
+	}
+
+	var msgData map[string]interface{}
+	if err := json.Unmarshal(cached.Msg, &msgData); err != nil {
+		return nil, fmt.Errorf("failed to parse cached message: %v", err)
+	}
+
+	// Check if this is a services message
+	if msgType, ok := msgData["type"].(string); !ok || msgType != "services" {
+		return nil, fmt.Errorf("last message for host %d is not services data (type: %v)", hostID, msgData["type"])
+	}
+
+	return msgData, nil
+}
+
 //func (h *Hub) Broadcast(data []byte) {
 //	h.broadcast <- data
 //}

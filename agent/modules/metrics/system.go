@@ -212,6 +212,15 @@ func (s *SystemModule) collectMetrics() error {
 		s.logger.Warn("Failed to collect service metrics")
 	}
 
+	// Collect application metrics
+	if applications := DetectApplications(s.logger); len(applications) > 0 {
+		systemData["applications"] = applications
+		metricsCollected++
+		s.logger.Info("Application metrics collected", "count", len(applications))
+	} else {
+		s.logger.Debug("No applications detected")
+	}
+
 	if loadData := s.getLoadMetrics(); loadData != nil {
 		systemData["load"] = loadData
 		metricsCollected++
@@ -220,7 +229,7 @@ func (s *SystemModule) collectMetrics() error {
 		s.logger.Warn("Failed to collect load metrics")
 	}
 
-	s.logger.Info("Metrics collection cycle completed successfully", "collected", metricsCollected, "total", 6)
+	s.logger.Info("Metrics collection cycle completed successfully", "collected", metricsCollected, "total", 7)
 	return s.pipeline.Send(event)
 }
 

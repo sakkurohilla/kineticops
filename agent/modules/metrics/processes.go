@@ -131,3 +131,78 @@ func CollectProcessMetrics(logger *utils.Logger) map[string]interface{} {
 		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 	}
 }
+
+// ApplicationInfo holds information about detected applications
+type ApplicationInfo struct {
+	Name       string  `json:"name"`
+	Type       string  `json:"type"` // node, python, java, etc.
+	PID        int32   `json:"pid"`
+	CPUPercent float64 `json:"cpu_percent"`
+	MemoryMB   float64 `json:"memory_mb"`
+	Port       int     `json:"port,omitempty"` // if detectable
+	CmdLine    string  `json:"cmdline,omitempty"`
+}
+
+// DetectApplications identifies running applications from processes
+func DetectApplications(logger *utils.Logger) []ApplicationInfo {
+	procs, err := process.Processes()
+	if err != nil {
+		logger.Error("Failed to get process list for application detection", "error", err)
+		return []ApplicationInfo{}
+	}
+
+	var applications []ApplicationInfo
+	appTypes := map[string]string{
+		"node":         "Node.js",
+		"npm":          "Node.js",
+		"python":       "Python",
+		"python3":      "Python",
+		"java":         "Java",
+		"php-fpm":      "PHP",
+		"php":          "PHP",
+		"ruby":         "Ruby",
+		"dotnet":       ".NET",
+		"mongod":       "MongoDB",
+		"redis-server": "Redis",
+		"postgres":     "PostgreSQL",
+		"mysql":        "MySQL",
+		"nginx":        "Nginx",
+		"apache2":      "Apache",
+		"httpd":        "Apache",
+	}
+
+	for _, p := range procs {
+		name, _ := p.Name()
+		if name == "" {
+			continue
+		}
+
+		// Check if this is a known application type
+		appType, isApp := appTypes[name]
+		if !isApp {
+			continue
+		}
+
+		// Get process details
+		cpuPercent, _ := p.CPUPercent()
+		memInfo, _ := p.MemoryInfo()
+		var memoryMB float64
+		if memInfo != nil {
+			memoryMB = float64(memInfo.RSS) / (1024 * 1024)
+		}
+
+		cmdline, _ := p.Cmdline()
+
+		applications = append(applications, ApplicationInfo{
+			Name:       name,
+			Type:       appType,
+			PID:        p.Pid,
+			CPUPercent: cpuPercent,
+			MemoryMB:   memoryMB,
+			CmdLine:    cmdline,
+		})
+	}
+
+	logger.Info("Detected applications", "count", len(applications))
+	return applications
+}
