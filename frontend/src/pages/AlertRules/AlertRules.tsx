@@ -3,9 +3,11 @@ import MainLayout from '../../components/layout/MainLayout';
 import { Plus, Bell, Trash2, RefreshCw } from 'lucide-react';
 import Button from '../../components/common/Button';
 import api from '../../services/api/client';
+import hostService from '../../services/api/hostService';
 
 interface AlertRule {
   id: number;
+  host_id?: number;
   metric_name: string;
   operator: string;
   threshold: number;
@@ -16,11 +18,19 @@ interface AlertRule {
   created_at: string;
 }
 
+interface Host {
+  id: number;
+  hostname?: string;
+  ip: string;
+}
+
 const AlertRules: React.FC = () => {
   const [rules, setRules] = useState<AlertRule[]>([]);
+  const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
+    host_id: 0, // 0 means all hosts
     metric_name: 'cpu_usage',
     operator: '>',
     threshold: 90,
@@ -32,7 +42,17 @@ const AlertRules: React.FC = () => {
 
   useEffect(() => {
     fetchRules();
+    fetchHosts();
   }, []);
+
+  const fetchHosts = async () => {
+    try {
+      const hostsData = await hostService.getAllHosts();
+      setHosts(hostsData || []);
+    } catch (err) {
+      console.error('Failed to fetch hosts:', err);
+    }
+  };
 
   const fetchRules = async () => {
     try {
@@ -52,6 +72,7 @@ const AlertRules: React.FC = () => {
       await api.post('/alerts/rules', formData);
       setShowCreateForm(false);
       setFormData({
+        host_id: 0,
         metric_name: 'cpu_usage',
         operator: '>',
         threshold: 90,
@@ -140,7 +161,13 @@ const AlertRules: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rules.map((rule) => (
+            {rules.map((rule) => {
+              const ruleHost = hosts.find(h => h.id === rule.host_id);
+              const hostLabel = rule.host_id === 0 || !rule.host_id 
+                ? 'All Hosts' 
+                : (ruleHost?.hostname || ruleHost?.ip || `Host #${rule.host_id}`);
+              
+              return (
               <div key={rule.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center space-x-2">
@@ -164,6 +191,10 @@ const AlertRules: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm bg-blue-50 px-2 py-1 rounded">
+                    <span className="text-blue-600 font-medium">Host:</span>
+                    <span className="font-semibold text-blue-900">{hostLabel}</span>
+                  </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">Condition:</span>
                     <span className="font-medium text-gray-900">
@@ -185,7 +216,8 @@ const AlertRules: React.FC = () => {
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
 
@@ -197,6 +229,29 @@ const AlertRules: React.FC = () => {
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Create Alert Rule</h2>
                 
                 <form onSubmit={handleCreate} className="space-y-4">
+                  {/* Host Selector */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Host/Server
+                    </label>
+                    <select
+                      value={formData.host_id}
+                      onChange={(e) => setFormData({ ...formData, host_id: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    >
+                      <option value={0}>All Hosts (Global Rule)</option>
+                      {hosts.map((host) => (
+                        <option key={host.id} value={host.id}>
+                          {host.hostname || host.ip} ({host.ip})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select a specific host or apply this rule to all hosts
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Metric

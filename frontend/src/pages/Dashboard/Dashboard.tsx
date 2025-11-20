@@ -611,7 +611,7 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-blue-700">{stats.avgCpuUsage.toFixed(0)}%</span>
+                      <span className="text-lg font-bold text-blue-700">{stats.avgCpuUsage.toFixed(1)}%</span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-blue-700 flex items-center justify-center space-x-1">
@@ -650,7 +650,7 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-green-700">{stats.avgMemoryUsage.toFixed(0)}%</span>
+                      <span className="text-lg font-bold text-green-700">{stats.avgMemoryUsage.toFixed(1)}%</span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-green-700 flex items-center justify-center space-x-1">
@@ -689,7 +689,7 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-amber-700">{stats.avgDiskUsage.toFixed(0)}%</span>
+                      <span className="text-lg font-bold text-amber-700">{stats.avgDiskUsage.toFixed(1)}%</span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-amber-700 flex items-center justify-center space-x-1">

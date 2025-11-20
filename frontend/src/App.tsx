@@ -21,6 +21,8 @@ import Workflow from './pages/Workflow/Workflow';
 import APM from './pages/APM/APM';
 import Services from './pages/Services/Services';
 import Synthetics from './pages/Synthetics/Synthetics';
+import Settings from './pages/Settings/Settings';
+import Profile from './pages/Profile/Profile';
 
 const App: React.FC = () => {
   return (
@@ -125,6 +127,24 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <Synthetics />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

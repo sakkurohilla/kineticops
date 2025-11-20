@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Server, BarChart3, FileText, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert } from 'lucide-react';
+import { Home, Server, BarChart3, FileText, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Sidebar: React.FC = () => {
@@ -19,6 +19,11 @@ const Sidebar: React.FC = () => {
     { id: 'logs', icon: FileText, label: 'Logs', path: '/logs' },
     { id: 'alerts', icon: ShieldAlert, label: 'Alert Rules', path: '/alerts' },
     { id: 'workflow', icon: GitBranch, label: 'Workflow', path: '/workflow' },
+  ];
+
+  const bottomMenuItems = [
+    { id: 'profile', icon: User, label: 'Profile', path: '/profile' },
+    { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' },
   ];
 
   const handleLogout = () => {
@@ -100,8 +105,42 @@ const Sidebar: React.FC = () => {
         </ul>
       </nav>
 
-      {/* Bottom Section - Logout */}
-      <div className="border-t border-purple-500/20 py-6 px-3">
+      {/* Bottom Section - Profile, Settings, Logout */}
+      <div className="border-t border-purple-500/20 py-6 px-3 space-y-3">
+        {bottomMenuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.path;
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className={`relative flex items-center w-full px-4 py-3 rounded-2xl transition-all duration-300 group hover:scale-105 ${
+                isActive
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-xl shadow-purple-500/30'
+                  : 'text-gray-300 hover:bg-white/10 hover:text-white backdrop-blur-sm'
+              }`}
+            >
+              <Icon className="w-6 h-6 flex-shrink-0" />
+              <span
+                className={`ml-4 font-semibold transition-all duration-300 whitespace-nowrap ${
+                  isExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
+                }`}
+              >
+                {item.label}
+              </span>
+
+              {/* Tooltip for collapsed state */}
+              {!isExpanded && (
+                <div className="absolute left-full ml-4 px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 text-white text-sm rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 whitespace-nowrap z-50 shadow-xl">
+                  {item.label}
+                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-2 w-3 h-3 bg-gray-900 rotate-45"></div>
+                </div>
+              )}
+            </button>
+          );
+        })}
+
         <button
           onClick={handleLogout}
           className="relative flex items-center w-full px-4 py-3 rounded-2xl text-gray-300 hover:bg-gradient-to-r hover:from-red-500 hover:to-pink-600 hover:text-white transition-all duration-300 group hover:scale-105 backdrop-blur-sm"
