@@ -190,10 +190,8 @@ const Dashboard: React.FC = () => {
         }
       }
       
-      // Only update hosts if data changed
-      if (hostsData && hostsData.length > 0) {
-        setHosts(hostsData);
-      }
+      // Always update hosts state (even if empty)
+      setHosts(hostsData || []);
 
       // Avoid re-fetching per-host metrics if host list didn't change
       const hostIds = (hostsData || []).map((h: any) => h.id).sort();
@@ -299,9 +297,11 @@ const Dashboard: React.FC = () => {
       // Merge metrics into existing hostMetrics state to preserve websocket updates
       setHostMetrics(prev => ({ ...prev, ...metricsMap }));
 
-      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : stats.avgCpuUsage;
-      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : stats.avgMemoryUsage;
-      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : stats.avgDiskUsage;
+      // Only fallback to previous stats if we have no valid metrics AND no hosts
+      // This ensures we show 0 when there are genuinely no metrics, not just preserve old values
+      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : (totalHosts > 0 ? 0 : stats.avgCpuUsage);
+      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : (totalHosts > 0 ? 0 : stats.avgMemoryUsage);
+      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : (totalHosts > 0 ? 0 : stats.avgDiskUsage);
       
       const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : stats.systemHealth;
 

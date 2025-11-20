@@ -9,6 +9,31 @@ let ws: WebSocket | null = null;
 let subscribers = new Set<MessageHandler>();
 let connectAttempts = 0;
 let reconnectTimer: number | null = null;
+let visibilityHandler: (() => void) | null = null;
+
+// Handle page visibility changes to reconnect when tab becomes visible
+function setupVisibilityHandler() {
+  if (visibilityHandler) return; // already setup
+  
+  visibilityHandler = () => {
+    if (document.visibilityState === 'visible') {
+      // Tab became visible - ensure we're connected
+      console.log('[wsManager] tab became visible, ensuring connection');
+      if (!ws && subscribers.size > 0) {
+        connect();
+      }
+    }
+  };
+  
+  document.addEventListener('visibilitychange', visibilityHandler);
+}
+
+function removeVisibilityHandler() {
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler);
+    visibilityHandler = null;
+  }
+}
 
 function deriveBaseWs() {
   // Prefer deriving the WS endpoint from the browser location when available.
@@ -113,20 +138,25 @@ function connect() {
 
   ws.onclose = (ev) => {
     ws = null;
-    // Only reconnect on abnormal closures (not normal 1000/1001)
-    // 1001 is "going away" which happens on tab switch - don't reconnect immediately
-    if (ev && ev.code !== 1000 && ev.code !== 1001) {
-      console.warn('[wsManager] connection closed abnormally, scheduling reconnect', ev.code);
-      scheduleReconnect();
+    console.log('[wsManager] connection closed', ev.code, ev.reason);
+    
+    // Handle different close codes
+    if (ev && (ev.code === 1000 || ev.code === 1001)) {
+      // Normal closure (1000) or "going away" (1001 - tab switch/navigation)
+      console.log('[wsManager] normal closure, will auto-reconnect');
+      wsStatus.setWsStatus('reconnecting');
+      // Auto-reconnect immediately for normal closures
+      setTimeout(() => {
+        if (!ws && subscribers.size > 0) {
+          console.log('[wsManager] reconnecting after normal close');
+          connect();
+        }
+      }, 500); // Short 500ms delay
     } else {
-      console.log('[wsManager] connection closed normally', ev.code);
-      wsStatus.setWsStatus('disconnected');
-      // Auto-reconnect after short delay for normal closures (tab refocus)
-      if (ev && ev.code === 1001) {
-        setTimeout(() => {
-          if (!ws) connect();
-        }, 1000);
-      }
+      // Abnormal closure - use exponential backoff
+      console.warn('[wsManager] abnormal closure code', ev.code, 'scheduling reconnect');
+      wsStatus.setWsStatus('reconnecting');
+      scheduleReconnect();
     }
   };
 
@@ -138,12 +168,19 @@ function connect() {
 
 export function subscribe(handler: MessageHandler) {
   subscribers.add(handler);
+  // Setup visibility handler on first subscriber
+  if (subscribers.size === 1) {
+    setupVisibilityHandler();
+  }
   // ensure connection exists
   if (!ws) connect();
   return () => {
     subscribers.delete(handler);
     // Keep socket alive even with no subscribers - don't close it
     // The backend sends pings every 30s to keep connection alive
+    if (subscribers.size === 0) {
+      removeVisibilityHandler();
+    }
   };
 }
 

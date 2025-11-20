@@ -39,7 +39,24 @@ apiClient.interceptors.request.use(
 
     // CSRF token for unsafe methods
     if (config.method && ['post', 'put', 'delete', 'patch'].includes(config.method.toLowerCase())) {
-      const csrfToken = getCookie('csrf_token');
+      let csrfToken = getCookie('csrf_token');
+      
+      // If no CSRF token cookie exists, make a preflight GET to obtain it
+      if (!csrfToken) {
+        try {
+          console.log('[API] No CSRF token, fetching...');
+          await fetch(`${BASE_URL}/health`, {
+            method: 'GET',
+            credentials: 'include',
+          });
+          // Wait a moment for cookie to be set
+          await new Promise(resolve => setTimeout(resolve, 100));
+          csrfToken = getCookie('csrf_token');
+        } catch (e) {
+          console.warn('[API] Failed to fetch CSRF token:', e);
+        }
+      }
+      
       if (csrfToken) {
         config.headers['X-CSRF-Token'] = csrfToken;
       }
