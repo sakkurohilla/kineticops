@@ -11,6 +11,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_compute_disk_usage ON host_metrics;
+
 CREATE TRIGGER tr_compute_disk_usage
 BEFORE INSERT OR UPDATE ON host_metrics
 FOR EACH ROW

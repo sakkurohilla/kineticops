@@ -59,8 +59,11 @@ func Init() error {
 
 	sqlDB, err := DB.DB()
 	if err == nil {
-		sqlDB.SetMaxOpenConns(20)
-		sqlDB.SetMaxIdleConns(10)
+		// Optimized connection pool settings for high load
+		sqlDB.SetMaxOpenConns(50)                 // Increased from 20
+		sqlDB.SetMaxIdleConns(25)                 // Increased from 10
+		sqlDB.SetConnMaxLifetime(5 * time.Minute) // Recycle connections
+		sqlDB.SetConnMaxIdleTime(1 * time.Minute) // Close idle connections
 	}
 	// Ensure essential tables exist (auto-migrate minimal schemas).
 	// We'll check existence before and after AutoMigrate so we can log what changed.
@@ -142,6 +145,12 @@ func Init() error {
 		logging.Errorf("Sqlx connection failed: %v", err)
 		return err
 	}
+
+	// Optimize sqlx connection pool
+	SqlxDB.SetMaxOpenConns(50)
+	SqlxDB.SetMaxIdleConns(25)
+	SqlxDB.SetConnMaxLifetime(5 * time.Minute)
+	SqlxDB.SetConnMaxIdleTime(1 * time.Minute)
 
 	logging.Infof("PostgreSQL connected (GORM + sqlx)")
 	return err

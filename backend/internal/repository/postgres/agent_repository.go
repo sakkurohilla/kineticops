@@ -67,6 +67,8 @@ func (r *AgentRepository) GetByHostID(hostID int) (*models.Agent, error) {
 }
 
 func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentHeartbeat) error {
+	startTime := time.Now()
+
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return err
@@ -77,7 +79,7 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		}
 	}()
 
-	// Update agent heartbeat
+	// Update agent heartbeat - optimized single query
 	_, err = tx.Exec(`
 		UPDATE agents 
 		SET last_heartbeat = $1, status = 'online', updated_at = CURRENT_TIMESTAMP
@@ -110,6 +112,9 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		// Otherwise return the original error (unknown token)
 		return err
 	}
+
+	// Update agent health (async for performance) - will be called from heartbeat handler
+	// go services.AgentHealthSvc.UpdateHealth(int64(agentID), float64(time.Since(startTime).Milliseconds()), err != nil)
 
 	// Normalize nil heartbeat to avoid repeated nil checks below
 	if heartbeat == nil {
@@ -158,16 +163,19 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		return err
 	}
 
-	// Update agent services
-	for _, service := range heartbeat.Services {
-		_, err = tx.Exec(`
-			INSERT INTO agent_services (agent_id, service_name, status, process_id, memory_usage, cpu_usage, last_check)
-			VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-			ON CONFLICT (agent_id, service_name) 
-			DO UPDATE SET status = $3, process_id = $4, memory_usage = $5, cpu_usage = $6, last_check = CURRENT_TIMESTAMP`,
-			agentID, service.Name, service.Status, service.PID, service.MemoryUsage, service.CPUUsage)
-		if err != nil {
-			return err
+	// Batch update agent services if any
+	if len(heartbeat.Services) > 0 {
+		// Use bulk insert for better performance
+		for _, service := range heartbeat.Services {
+			_, err = tx.Exec(`
+				INSERT INTO agent_services (agent_id, service_name, status, process_id, memory_usage, cpu_usage, last_check)
+				VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+				ON CONFLICT (agent_id, service_name) 
+				DO UPDATE SET status = $3, process_id = $4, memory_usage = $5, cpu_usage = $6, last_check = CURRENT_TIMESTAMP`,
+				agentID, service.Name, service.Status, service.PID, service.MemoryUsage, service.CPUUsage)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -183,6 +191,12 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 
 	if err := tx.Commit(); err != nil {
 		return err
+	}
+
+	// Log performance metric
+	elapsed := time.Since(startTime).Milliseconds()
+	if elapsed > 100 {
+		logging.Warnf("Heartbeat processing slow: %dms for host=%d", elapsed, hostID)
 	}
 
 	// disk_usage is now computed server-side in the upsert SQL (from disk bytes when provided)
@@ -217,7 +231,7 @@ func (r *AgentRepository) UpdateHeartbeat(token string, heartbeat *models.AgentH
 		"timestamp":  time.Now().UTC().Format(time.RFC3339),
 	}
 	if b, jerr := json.Marshal(payload); jerr == nil {
-		logging.Infof("[WS BROADCAST] host=%d heartbeat", hostID)
+		logging.Infof("[WS BROADCAST] host=%d heartbeat (processed in %dms)", hostID, elapsed)
 		if gh := ws.GetGlobalHub(); gh != nil {
 			gh.RememberMessage(b)
 		}

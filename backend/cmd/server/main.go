@@ -11,7 +11,6 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	fiberRecover "github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sakkurohilla/kineticops/backend/config"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/handlers"
 	"github.com/sakkurohilla/kineticops/backend/internal/api/routes"
@@ -150,6 +149,10 @@ func main() {
 	handlers.InitAgentHandlers(agentService)
 	handlers.InitWorkflowHandlers(workflowService)
 
+	// Initialize circuit breakers for external services
+	middleware.InitCircuitBreakers()
+	logging.Infof("Circuit breakers initialized")
+
 	// Initialize telemetry (OpenTelemetry) - returns shutdown func
 	shutdownTelemetry := telemetry.InitTelemetry()
 	defer shutdownTelemetry()
@@ -176,6 +179,23 @@ func main() {
 
 	// Start alert scheduler worker
 	workers.StartAlertScheduler()
+
+	// Start metric aggregation service for analytics
+	services.MetricAggregationSvc.StartAggregationWorker(context.Background())
+
+	// Start trend analysis service
+	go services.TrendAnalysisSvc.StartTrendAnalysisWorker(context.Background())
+
+	// Start agent health monitoring
+	go services.AgentHealthSvc.CheckOfflineAgents(context.Background())
+
+	// Start token rotation cleanup
+	go services.TokenRotationSvc.CleanupExpiredTokens(context.Background())
+
+	// Start enhanced retention worker
+	enhancedRetentionWorker := workers.NewRetentionWorker(mongoClient)
+	go enhancedRetentionWorker.Start(context.Background())
+	logging.Infof("Enhanced retention worker started")
 
 	// Set up Redpanda/Kafka
 	// Read brokers from config (REDPANDA_BROKER). It may be a comma-separated
@@ -269,19 +289,34 @@ func main() {
 		wsHub.Broadcast(msg)
 	})
 
+	// Session service available for session management
+	_ = services.NewSessionService(redisrepo.Client)
+	logging.Infof("Session service initialized")
+
+	// Initialize health check handler
+	healthHandler := handlers.NewHealthCheckHandler(redisrepo.Client, mongoClient)
+
 	// Fiber app with error handler
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
 	})
 
-	// Global middlewares
-	app.Use(middleware.Logger())
-	app.Use(middleware.CORS())
-	app.Use(middleware.CSRFMiddleware)
-	// Recover from panics in handlers to avoid process exit
-	app.Use(fiberRecover.New())
-	// Apply the API rate limiter (middleware.RateLimiter only applies to /api/ paths)
-	app.Use(middleware.RateLimiter())
+	// Global middlewares - order matters!
+	app.Use(middleware.SecurityHeaders())                     // Security headers (HSTS, CSP, etc.)
+	app.Use(middleware.RequestID())                           // Add request ID first
+	app.Use(middleware.PanicRecovery())                       // Recover from panics
+	app.Use(middleware.ErrorLogger())                         // Log all errors
+	app.Use(middleware.Logger())                              // HTTP request logging
+	app.Use(middleware.CORS())                                // CORS headers
+	app.Use(middleware.CSRFMiddleware)                        // CSRF protection
+	app.Use(middleware.ValidateAndSanitizeInput())            // Input validation and XSS/SQL injection prevention
+	app.Use(middleware.AdvancedRateLimiter(redisrepo.Client)) // Advanced rate limiting
+
+	// Health check endpoints (before other routes)
+	app.Get("/health", handlers.BasicHealthCheck)
+	app.Get("/health/detailed", healthHandler.DetailedHealthCheck)
+	app.Get("/health/ready", healthHandler.ReadinessCheck)
+	app.Get("/health/live", handlers.LivenessCheck)
 
 	// Register ALL routes through unified router
 	routes.RegisterAllRoutes(app)
@@ -322,6 +357,8 @@ func main() {
 	logging.Infof("🔌 API Base: http://localhost:%s/api/v1", cfg.AppPort)
 	logging.Infof("🌍 Network: http://0.0.0.0:%s", cfg.AppPort)
 	logging.Infof("⚙️  Metric Collector: Running every 60s")
+	logging.Infof("🔒 Security: Headers, Rate Limiting, Input Validation, Circuit Breakers enabled")
+	logging.Infof("💾 Retention: 30-day metrics, 30-day logs, 90-day audit logs")
 
 	// Watch for SIGHUP to reload configuration at runtime without restart.
 	go func() {
@@ -335,8 +372,56 @@ func main() {
 		}
 	}()
 
-	// Listen on all interfaces (0.0.0.0)
-	if err := app.Listen("0.0.0.0:" + cfg.AppPort); err != nil {
-		logging.Errorf("server Listen error: %v", err)
+	// Start server in goroutine for graceful shutdown
+	go func() {
+		if err := app.Listen("0.0.0.0:" + cfg.AppPort); err != nil {
+			logging.Errorf("server Listen error: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logging.Infof("Shutdown signal received, starting graceful shutdown...")
+
+	// Graceful shutdown with 30 second timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// Shutdown HTTP server
+	if err := app.Shutdown(); err != nil {
+		logging.Errorf("Error during server shutdown: %v", err)
 	}
+
+	// Close database connections
+	if mongoClient != nil {
+		if err := mongoClient.Disconnect(shutdownCtx); err != nil {
+			logging.Errorf("Error disconnecting MongoDB: %v", err)
+		} else {
+			logging.Infof("MongoDB connection closed")
+		}
+	}
+
+	if redisrepo.Client != nil {
+		if err := redisrepo.Client.Close(); err != nil {
+			logging.Errorf("Error closing Redis: %v", err)
+		} else {
+			logging.Infof("Redis connection closed")
+		}
+	}
+
+	if postgres.SqlxDB != nil {
+		if err := postgres.SqlxDB.Close(); err != nil {
+			logging.Errorf("Error closing PostgreSQL: %v", err)
+		} else {
+			logging.Infof("PostgreSQL connection closed")
+		}
+	}
+
+	// Flush logs
+	logging.Flush()
+
+	logging.Infof("Graceful shutdown completed. Goodbye!")
 }

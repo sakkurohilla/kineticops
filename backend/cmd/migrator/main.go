@@ -30,6 +30,35 @@ func main() {
 	}
 	defer db.Close()
 
+	// Create schema_migrations table if not exists
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version VARCHAR(255) PRIMARY KEY,
+			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		logging.Errorf("failed to create schema_migrations table: %v", err)
+		os.Exit(1)
+	}
+
+	// Get already applied migrations
+	applied := make(map[string]bool)
+	rows, err := db.Query("SELECT version FROM schema_migrations")
+	if err != nil {
+		logging.Errorf("failed to query schema_migrations: %v", err)
+		os.Exit(1)
+	}
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			logging.Errorf("failed to scan version: %v", err)
+			os.Exit(1)
+		}
+		applied[version] = true
+	}
+	rows.Close()
+
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		logging.Errorf("failed to read migrations dir %s: %v", dir, err)
@@ -48,6 +77,14 @@ func main() {
 		if !strings.HasSuffix(name, ".up.sql") {
 			continue
 		}
+
+		// Skip if already applied
+		version := strings.TrimSuffix(name, ".sql")
+		if applied[version] {
+			logging.Infof("Skipping already applied migration: %s", name)
+			continue
+		}
+
 		path := filepath.Join(dir, name)
 		logging.Infof("Applying migration %s...", path)
 		content, err := os.ReadFile(path)
@@ -59,6 +96,13 @@ func main() {
 			logging.Errorf("migration %s failed: %v", path, err)
 			os.Exit(1)
 		}
+
+		// Record migration as applied
+		if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", version); err != nil {
+			logging.Errorf("failed to record migration %s: %v", version, err)
+			os.Exit(1)
+		}
+
 		logging.Infof("Applied %s", path)
 	}
 

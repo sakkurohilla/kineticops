@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
-import { Plus, Server, Search, RefreshCw, Users, Trash2 } from 'lucide-react';
+import { Plus, Server, Search, RefreshCw, Users, Trash2, Download } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import SimpleAddHostForm from '../../components/hosts/SimpleAddHostForm';
@@ -9,6 +9,7 @@ import { useHosts } from '../../hooks/useHosts';
 import { useNavigate } from 'react-router-dom';
 import hostService from '../../services/api/hostService';
 import { formatTimestamp } from '../../utils/dateUtils';
+import { downloadCSV, downloadJSON, formatHostsForExport } from '../../utils/exportUtils';
 
 const Hosts: React.FC = () => {
   const { hosts, loading, error, refetch } = useHosts();
@@ -38,6 +39,17 @@ const Hosts: React.FC = () => {
     } catch (err: any) {
       alert('Failed to delete host: ' + err.message);
     }
+  };
+
+  const handleExportCSV = () => {
+    const exportData = formatHostsForExport(filteredHosts);
+    const timestamp = new Date().toISOString().split('T')[0];
+    downloadCSV(exportData, `hosts-export-${timestamp}`);
+  };
+
+  const handleExportJSON = () => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    downloadJSON(filteredHosts, `hosts-export-${timestamp}`);
   };
 
   // Fetch metrics for hosts
@@ -110,6 +122,26 @@ const Hosts: React.FC = () => {
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
+            <div className="relative group">
+              <Button variant="outline">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+              <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                <button
+                  onClick={handleExportCSV}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-lg"
+                >
+                  Export as CSV
+                </button>
+                <button
+                  onClick={handleExportJSON}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-b-lg"
+                >
+                  Export as JSON
+                </button>
+              </div>
+            </div>
             <Button variant="primary" onClick={() => setShowAddForm(true)}>
               <Plus className="w-4 h-4" />
               Add Host

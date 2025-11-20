@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import Logs from './pages/Logs/Logs';
@@ -13,6 +14,7 @@ import ResetPassword from './pages/Auth/ResetPassword';
 import MFASetup from './pages/Auth/MFASetup';
 import Dashboard from './pages/Dashboard/Dashboard';
 import AlertsPage from './pages/Alerts/Alerts';
+import AlertRules from './pages/AlertRules/AlertRules';
 import Metrics from './pages/Metrics/Metrics';
 import Hosts from './pages/Hosts/Hosts';
 import HostDetails from './components/hosts/HostDetails';
@@ -24,9 +26,10 @@ import Synthetics from './pages/Synthetics/Synthetics';
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <Router>
-        <Routes>
+      <ThemeProvider>
+        <AppProvider>
+          <Router>
+          <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -83,6 +86,15 @@ const App: React.FC = () => {
           />
 
           <Route
+            path="/alert-rules"
+            element={
+              <ProtectedRoute>
+                <AlertRules />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/logs"
             element={
               <ProtectedRoute>
@@ -133,6 +145,7 @@ const App: React.FC = () => {
         </Routes>
         </Router>
       </AppProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 };

@@ -13,7 +13,8 @@ import {
   Shield,
   ChevronRight,
   Database,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import hostService from '../../services/api/hostService';
@@ -71,6 +72,7 @@ const Dashboard: React.FC = () => {
   const [hostMetrics, setHostMetrics] = useState<Record<number, any>>({});
   const [selectedHostId, setSelectedHostId] = useState<number | null>(null);
   const [selectedHostMetrics, setSelectedHostMetrics] = useState<any | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   // Derived values for selected host analytics (compute once)
   const selectedMemPercent = (() => {
     const m = selectedHostMetrics;
@@ -158,13 +160,17 @@ const Dashboard: React.FC = () => {
     fetchDashboardData();
     const interval = setInterval(() => {
       fetchDashboardData();
-    }, 10000); // Refresh every 10s for auto-discovery
+    }, 30000); // Refresh every 30s for auto-discovery
     return () => clearInterval(interval);
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      setIsLoading(true);
+      // Don't set loading on background refresh to prevent UI flicker
+      if (hosts.length === 0) {
+        setIsLoading(true);
+      }
+      setIsRefreshing(true);
 
       // Fetch hosts - try direct API call if service fails
       let hostsData;
@@ -185,7 +191,11 @@ const Dashboard: React.FC = () => {
           hostsData = [];
         }
       }
-      setHosts(hostsData || []);
+      
+      // Only update hosts if data changed
+      if (hostsData && hostsData.length > 0) {
+        setHosts(hostsData);
+      }
 
       // Avoid re-fetching per-host metrics if host list didn't change
       const hostIds = (hostsData || []).map((h: any) => h.id).sort();
@@ -291,11 +301,11 @@ const Dashboard: React.FC = () => {
       // Merge metrics into existing hostMetrics state to preserve websocket updates
       setHostMetrics(prev => ({ ...prev, ...metricsMap }));
 
-      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : 0;
-      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
-      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : 0;
+      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : stats.avgCpuUsage;
+      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : stats.avgMemoryUsage;
+      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : stats.avgDiskUsage;
       
-      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 0;
+      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : stats.systemHealth;
 
       setStats({
         totalHosts,
@@ -313,6 +323,7 @@ const Dashboard: React.FC = () => {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -436,6 +447,19 @@ const Dashboard: React.FC = () => {
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
+        {/* Dashboard Header */}
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+          <button
+            onClick={() => fetchDashboardData()}
+            disabled={isRefreshing}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span className="text-sm font-medium">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+        </div>
 
         {/* Compact Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -443,6 +467,7 @@ const Dashboard: React.FC = () => {
           <div 
             className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg p-3 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
             onClick={() => navigate('/hosts')}
+            title="Total number of monitored hosts. Green dot shows online hosts, red dot shows offline hosts. Click to view all hosts."
           >
             <div className="flex items-center justify-between">
               <div>
@@ -469,7 +494,10 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* System Health - Green Gradient */}
-          <div className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg">
+          <div 
+            className="bg-gradient-to-br from-green-500 to-emerald-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
+            title="Overall system health score based on average CPU, memory, and disk usage across all online hosts. Higher is better."
+          >
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center space-x-1 mb-1">
@@ -496,6 +524,7 @@ const Dashboard: React.FC = () => {
           <div 
             className="bg-gradient-to-br from-orange-500 to-red-600 rounded-lg p-3 text-white cursor-pointer transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
             onClick={() => navigate('/alerts')}
+            title="Total active alerts across all hosts. Red dot shows critical alerts, yellow dot shows warnings. Click to view alert details."
           >
             <div className="flex items-center justify-between">
               <div>
@@ -522,7 +551,10 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Average CPU - Purple Gradient */}
-          <div className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg">
+          <div 
+            className="bg-gradient-to-br from-purple-500 to-indigo-700 rounded-lg p-3 text-white transform hover:scale-105 transition-all duration-300 shadow-md hover:shadow-lg"
+            title="Average CPU usage across all online hosts. Shows percentage of CPU capacity being used. Trend indicator compares to threshold."
+          >
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center space-x-1 mb-1">
@@ -564,7 +596,10 @@ const Dashboard: React.FC = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* CPU Usage - Animated Circle */}
-                <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                <div 
+                  className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200"
+                  title="Average CPU usage percentage across all monitored hosts. Shows how much processing power is being used."
+                >
                   <div className="relative w-16 h-16 mx-auto mb-2">
                     <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path
@@ -600,7 +635,10 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Memory Usage - Animated Circle */}
-                <div className="text-center p-3 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border border-green-200">
+                <div 
+                  className="text-center p-3 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border border-green-200"
+                  title="Average memory (RAM) usage percentage across all monitored hosts. Shows how much RAM is currently in use."
+                >
                   <div className="relative w-16 h-16 mx-auto mb-2">
                     <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path
@@ -636,7 +674,10 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Disk Usage - Animated Circle */}
-                <div className="text-center p-3 bg-gradient-to-br from-amber-50 to-orange-100 rounded-lg border border-amber-200">
+                <div 
+                  className="text-center p-3 bg-gradient-to-br from-amber-50 to-orange-100 rounded-lg border border-amber-200"
+                  title="Average disk space usage percentage across all monitored hosts. Shows how much storage space is used."
+                >
                   <div className="relative w-16 h-16 mx-auto mb-2">
                     <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                       <path

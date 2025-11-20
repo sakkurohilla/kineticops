@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { Bell, Settings, LogOut, User, ChevronDown } from 'lucide-react';
+import { Bell, Settings, LogOut, User, ChevronDown, Moon, Sun } from 'lucide-react';
 import wsStatus from '../../utils/wsStatus';
+import { useTheme } from '../../context/ThemeContext';
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { isDarkMode, toggleDarkMode } = useTheme();
   const [showDropdown, setShowDropdown] = useState(false);
   const [wsState, setWsState] = useState<'disconnected'|'connecting'|'connected'|'error'|'reconnecting'>('disconnected');
   const [wsInfo, setWsInfo] = useState<string | undefined>(undefined);
@@ -94,6 +96,15 @@ const Header: React.FC = () => {
             <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+            </button>
+
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={toggleDarkMode}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
 
             {/* Settings */}

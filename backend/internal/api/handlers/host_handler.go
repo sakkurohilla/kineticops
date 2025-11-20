@@ -121,6 +121,32 @@ func DeleteHost(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Host not found"})
 	}
 
+	// Audit log - record host deletion
+	userID := c.Locals("user_id")
+	var userIDInt int64
+	if userID != nil {
+		if uid, ok := userID.(int64); ok {
+			userIDInt = uid
+		}
+	}
+
+	auditLog := models.AuditLog{
+		UserID:     userIDInt,
+		TenantID:   host.TenantID,
+		Action:     "host.delete",
+		Resource:   "host",
+		ResourceID: fmt.Sprintf("%d", id),
+		IPAddress:  c.IP(),
+		UserAgent:  c.Get("User-Agent"),
+		Status:     "pending",
+		Details:    fmt.Sprintf("Deleting host: %s (IP: %s, ID: %d)", host.Hostname, host.IP, id),
+		Timestamp:  time.Now(),
+	}
+
+	if err := postgres.DB.Create(&auditLog).Error; err != nil {
+		logging.Warnf("failed to create audit log for host deletion: %v", err)
+	}
+
 	// EXPIRE installation tokens for this tenant to prevent reuse of install tokens
 	if res := postgres.DB.Model(&models.InstallationToken{}).Where("tenant_id = ?", host.TenantID).Updates(map[string]interface{}{
 		"used":       true,
@@ -166,8 +192,17 @@ func DeleteHost(c *fiber.Ctx) error {
 	// Delete the host
 	err = postgres.DeleteHost(postgres.DB, id)
 	if err != nil {
+		// Update audit log to failed
+		auditLog.Status = "failed"
+		auditLog.Details += fmt.Sprintf(" - Error: %v", err)
+		postgres.DB.Save(&auditLog)
 		return c.Status(500).JSON(fiber.Map{"error": "Cannot delete host"})
 	}
+
+	// Update audit log to success
+	auditLog.Status = "success"
+	auditLog.Details += " - Successfully deleted host and all associated data"
+	postgres.DB.Save(&auditLog)
 
 	// Record tombstone to prevent immediate auto-recreation by agents
 	if res := postgres.DB.Exec("INSERT INTO deleted_hosts (hostname, tenant_id, deleted_at) VALUES (?, ?, CURRENT_TIMESTAMP)", host.Hostname, host.TenantID); res.Error != nil {
