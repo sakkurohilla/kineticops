@@ -11,7 +11,6 @@ import api from '../../services/api/client';
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('account');
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     // Account settings
     company_name: 'KineticOps',
@@ -61,8 +60,6 @@ const Settings: React.FC = () => {
       setSettings(response.data);
     } catch (err) {
       console.error('Failed to fetch settings:', err);
-    } finally {
-      setLoading(false);
     }
   };
 

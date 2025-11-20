@@ -16,31 +16,31 @@ func GetUserSettings(userID int64) (*models.UserSettings, error) {
 	if result.Error == gorm.ErrRecordNotFound {
 		// Create default settings
 		settings = models.UserSettings{
-			UserID:              userID,
-			CompanyName:         "KineticOps",
-			Timezone:            "Asia/Kolkata",
-			DateFormat:          "YYYY-MM-DD",
-			EmailNotifications:  true,
-			SlackNotifications:  false,
+			UserID:               userID,
+			CompanyName:          "KineticOps",
+			Timezone:             "Asia/Kolkata",
+			DateFormat:           "YYYY-MM-DD",
+			EmailNotifications:   true,
+			SlackNotifications:   false,
 			WebhookNotifications: false,
-			AlertEmail:          "",
-			SlackWebhook:        "",
-			CustomWebhook:       "",
-			RequireMFA:          false,
-			SessionTimeout:      30,
-			PasswordExpiry:      90,
-			MetricsRetention:    30,
-			LogsRetention:       7,
-			TracesRetention:     7,
-			AutoRefresh:         true,
-			RefreshInterval:     30,
-			MaxDashboardWidgets: 20,
+			AlertEmail:           "",
+			SlackWebhook:         "",
+			CustomWebhook:        "",
+			RequireMFA:           false,
+			SessionTimeout:       30,
+			PasswordExpiry:       90,
+			MetricsRetention:     30,
+			LogsRetention:        7,
+			TracesRetention:      7,
+			AutoRefresh:          true,
+			RefreshInterval:      30,
+			MaxDashboardWidgets:  20,
 		}
-		
+
 		if err := postgres.DB.Create(&settings).Error; err != nil {
 			return nil, err
 		}
-		
+
 		return &settings, nil
 	} else if result.Error != nil {
 		return nil, result.Error

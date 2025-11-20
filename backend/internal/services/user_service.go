@@ -106,7 +106,7 @@ func UpdateUserProfileExtended(userID int64, req ProfileUpdateRequest) error {
 	if req.Email != "" || req.Username != "" {
 		var count int64
 		query := postgres.DB.Model(&models.User{}).Where("id != ?", userID)
-		
+
 		if req.Email != "" && req.Username != "" {
 			query = query.Where("email = ? OR username = ?", req.Email, req.Username)
 		} else if req.Email != "" {
@@ -114,7 +114,7 @@ func UpdateUserProfileExtended(userID int64, req ProfileUpdateRequest) error {
 		} else if req.Username != "" {
 			query = query.Where("username = ?", req.Username)
 		}
-		
+
 		query.Count(&count)
 		if count > 0 {
 			return errors.New("email or username already taken")

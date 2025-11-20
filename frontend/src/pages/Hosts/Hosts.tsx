@@ -325,7 +325,7 @@ const Hosts: React.FC = () => {
                           />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{cpuUsage.toFixed(0)}%</span>
+                          <span className="text-xs font-bold text-gray-700">{cpuUsage.toFixed(1)}%</span>
                         </div>
                       </div>
                       <p className="text-xs font-medium text-gray-600">CPU</p>
@@ -352,7 +352,7 @@ const Hosts: React.FC = () => {
                           />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{memoryUsage.toFixed(0)}%</span>
+                          <span className="text-xs font-bold text-gray-700">{memoryUsage.toFixed(1)}%</span>
                         </div>
                       </div>
                       <p className="text-xs font-medium text-gray-600">RAM</p>
@@ -379,7 +379,7 @@ const Hosts: React.FC = () => {
                           />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-gray-700">{diskUsage.toFixed(0)}%</span>
+                          <span className="text-xs font-bold text-gray-700">{diskUsage.toFixed(1)}%</span>
                         </div>
                       </div>
                       <p className="text-xs font-medium text-gray-600">Disk</p>
