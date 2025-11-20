@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Server, BarChart3, FileText, Bell, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert } from 'lucide-react';
+import { Home, Server, BarChart3, FileText, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Sidebar: React.FC = () => {
@@ -17,8 +17,7 @@ const Sidebar: React.FC = () => {
     { id: 'synthetics', icon: Globe, label: 'Synthetics', path: '/synthetics' },
     { id: 'metrics', icon: BarChart3, label: 'Metrics', path: '/metrics' },
     { id: 'logs', icon: FileText, label: 'Logs', path: '/logs' },
-    { id: 'alerts', icon: Bell, label: 'Alerts', path: '/alerts' },
-    { id: 'alert-rules', icon: ShieldAlert, label: 'Alert Rules', path: '/alert-rules' },
+    { id: 'alerts', icon: ShieldAlert, label: 'Alert Rules', path: '/alerts' },
     { id: 'workflow', icon: GitBranch, label: 'Workflow', path: '/workflow' },
   ];
 

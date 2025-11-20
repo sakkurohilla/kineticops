@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../../components/layout/MainLayout';
-import { Plus, Bell, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Bell, Trash2, RefreshCw } from 'lucide-react';
 import Button from '../../components/common/Button';
 import api from '../../services/api/client';
 
@@ -37,7 +37,7 @@ const AlertRules: React.FC = () => {
   const fetchRules = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/alert-rules');
+      const response = await api.get('/alerts/rules');
       setRules(response.data || []);
     } catch (err) {
       console.error('Failed to fetch alert rules:', err);
@@ -49,7 +49,7 @@ const AlertRules: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/alert-rules', formData);
+      await api.post('/alerts/rules', formData);
       setShowCreateForm(false);
       setFormData({
         metric_name: 'cpu_usage',
@@ -71,7 +71,7 @@ const AlertRules: React.FC = () => {
       return;
     }
     try {
-      await api.delete(`/alert-rules/${id}`);
+      await api.delete(`/alerts/rules/${id}`);
       fetchRules();
     } catch (err: any) {
       alert('Failed to delete alert rule: ' + (err.message || 'Unknown error'));

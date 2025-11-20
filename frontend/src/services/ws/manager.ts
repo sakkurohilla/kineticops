@@ -113,11 +113,20 @@ function connect() {
 
   ws.onclose = (ev) => {
     ws = null;
-    if (ev && ev.code !== 1000) {
-      console.warn('[wsManager] connection closed, scheduling reconnect', ev.code);
+    // Only reconnect on abnormal closures (not normal 1000/1001)
+    // 1001 is "going away" which happens on tab switch - don't reconnect immediately
+    if (ev && ev.code !== 1000 && ev.code !== 1001) {
+      console.warn('[wsManager] connection closed abnormally, scheduling reconnect', ev.code);
       scheduleReconnect();
     } else {
+      console.log('[wsManager] connection closed normally', ev.code);
       wsStatus.setWsStatus('disconnected');
+      // Auto-reconnect after short delay for normal closures (tab refocus)
+      if (ev && ev.code === 1001) {
+        setTimeout(() => {
+          if (!ws) connect();
+        }, 1000);
+      }
     }
   };
 

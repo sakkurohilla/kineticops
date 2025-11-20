@@ -7,7 +7,6 @@ import Button from '../../components/common/Button';
 import { RefreshCw, Download, Server } from 'lucide-react';
 import hostService from '../../services/api/hostService';
 import { Host } from '../../types';
-import { downloadCSV, downloadJSON, formatMetricsForExport } from '../../utils/exportUtils';
 
 const Metrics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');

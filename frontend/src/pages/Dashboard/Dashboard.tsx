@@ -55,7 +55,8 @@ interface Alert {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
+  // REMOVED isLoading state - it was causing values to flash to 0 on refresh
+  // const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalHosts: 0,
     onlineHosts: 0,
@@ -166,10 +167,7 @@ const Dashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Don't set loading on background refresh to prevent UI flicker
-      if (hosts.length === 0) {
-        setIsLoading(true);
-      }
+      // Never set loading to prevent values flashing to 0
       setIsRefreshing(true);
 
       // Fetch hosts - try direct API call if service fails
@@ -322,7 +320,7 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
-      setIsLoading(false);
+      // REMOVED setIsLoading(false) - no longer using loading state
       setIsRefreshing(false);
     }
   };
@@ -386,31 +384,23 @@ const Dashboard: React.FC = () => {
     return <Activity className="w-4 h-4 text-gray-500" />;
   };
 
-  if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="p-6 lg:p-8">
-          <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[1, 2, 3, 4].map(i => (
-                <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
-              ))}
+  // REMOVED loading spinner completely - it was causing values to flash to 0
+  // Dashboard now shows data immediately, no loading state
+  
+  // Compact Host Analytics Panel (Dashboard)
+  // This panel shows detailed metrics when user clicks on a specific host
+  return (
+    <MainLayout>
+      {selectedHostId && (
+        <div className="fixed right-6 top-24 w-72 bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-2xl border border-gray-100 z-50">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Host Analytics</h3>
+              <p className="text-xs text-gray-500">Host ID: {selectedHostId}</p>
             </div>
-          </div>
-        </div>
-
-        {/* Compact Host Analytics Panel (Dashboard) */}
-        {selectedHostId && (
-          <div className="fixed right-6 top-24 w-72 bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-2xl border border-gray-100 z-50">
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <h3 className="text-sm font-bold text-gray-900">Host Analytics</h3>
-                <p className="text-xs text-gray-500">Host ID: {selectedHostId}</p>
-              </div>
-              <button onClick={() => { setSelectedHostId(null); setSelectedHostMetrics(null); }} className="p-1 rounded hover:bg-gray-100">
-                <X className="w-4 h-4 text-gray-600" />
-              </button>
+            <button onClick={() => { setSelectedHostId(null); setSelectedHostMetrics(null); }} className="p-1 rounded hover:bg-gray-100">
+              <X className="w-4 h-4 text-gray-600" />
+            </button>
             </div>
 
             <div className="flex items-center justify-between">
@@ -440,12 +430,8 @@ const Dashboard: React.FC = () => {
             <div className="mt-3 text-xs text-gray-500">Last updated: {selectedHostMetrics?.timestamp ? new Date(selectedHostMetrics.timestamp).toLocaleString() : '—'}</div>
           </div>
         )}
-      </MainLayout>
-    );
-  }
-
-  return (
-    <MainLayout>
+      
+      {/* Main Dashboard Content */}
       <div className="p-6 space-y-6">
         {/* Dashboard Header */}
         <div className="flex items-center justify-between mb-2">
@@ -793,15 +779,15 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               {hosts.slice(0, 10).map((host) => {
                 const metrics = hostMetrics[host.id];
-                const cpuUsage = metrics?.cpu_usage || 0;
+                const cpuUsage = typeof metrics?.cpu_usage === 'number' ? metrics.cpu_usage : null;
                 // prefer memory totals when present
-                let memoryUsage = metrics?.memory_usage || 0;
+                let memoryUsage: number | null = typeof metrics?.memory_usage === 'number' ? metrics.memory_usage : null;
                 if ((metrics?.memory_total && metrics?.memory_used) || (metrics?.memory_total_bytes && metrics?.memory_used_bytes)) {
                   const total = metrics?.memory_total || metrics?.memory_total_bytes;
                   const used = metrics?.memory_used || metrics?.memory_used_bytes;
                   if (total && used) memoryUsage = (used / total) * 100;
                 }
-                const diskUsage = metrics?.disk_usage || 0;
+                const diskUsage = typeof metrics?.disk_usage === 'number' ? metrics.disk_usage : null;
                 const isOnline = host.agent_status === 'online';
                 
                 return (
@@ -853,7 +839,7 @@ const Dashboard: React.FC = () => {
                                 fill="none"
                                 stroke="url(#cpuGrad)"
                                 strokeWidth="3"
-                                strokeDasharray={`${cpuUsage}, 100`}
+                                strokeDasharray={`${cpuUsage ?? 0}, 100`}
                                 strokeLinecap="round"
                                 className="transition-all duration-1000 ease-out"
                               />
@@ -866,7 +852,7 @@ const Dashboard: React.FC = () => {
                             </svg>
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-sm font-extrabold bg-gradient-to-br from-primary-600 to-secondary-500 bg-clip-text text-transparent">
-                                {typeof cpuUsage === 'number' && cpuUsage !== 0 ? `${cpuUsage.toFixed(0)}%` : (metrics ? 'N/A' : '—')}
+                                {cpuUsage !== null ? `${cpuUsage.toFixed(1)}%` : '—'}
                               </span>
                             </div>
                           </div>
@@ -888,7 +874,7 @@ const Dashboard: React.FC = () => {
                                 fill="none"
                                 stroke="url(#memGrad)"
                                 strokeWidth="3"
-                                strokeDasharray={`${memoryUsage}, 100`}
+                                strokeDasharray={`${memoryUsage ?? 0}, 100`}
                                 strokeLinecap="round"
                                 className="transition-all duration-1000 ease-out"
                               />
@@ -901,7 +887,7 @@ const Dashboard: React.FC = () => {
                             </svg>
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-sm font-extrabold bg-gradient-to-br from-green-600 to-emerald-500 bg-clip-text text-transparent">
-                                {typeof memoryUsage === 'number' ? `${memoryUsage.toFixed(0)}%` : 'N/A'}
+                                {memoryUsage !== null ? `${memoryUsage.toFixed(1)}%` : '—'}
                               </span>
                             </div>
                           </div>
@@ -923,7 +909,7 @@ const Dashboard: React.FC = () => {
                               fill="none"
                               stroke="url(#diskGrad)"
                               strokeWidth="3"
-                              strokeDasharray={`${diskUsage}, 100`}
+                              strokeDasharray={`${diskUsage ?? 0}, 100`}
                               strokeLinecap="round"
                               className="transition-all duration-1000 ease-out"
                             />
@@ -936,7 +922,7 @@ const Dashboard: React.FC = () => {
                           </svg>
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-sm font-extrabold bg-gradient-to-br from-orange-600 to-amber-500 bg-clip-text text-transparent">
-                              {typeof diskUsage === 'number' ? `${diskUsage.toFixed(0)}%` : 'N/A'}
+                              {diskUsage !== null ? `${diskUsage.toFixed(1)}%` : '—'}
                             </span>
                           </div>
                         </div>
@@ -1008,7 +994,7 @@ const Dashboard: React.FC = () => {
           </Card>
         )}
       </div>
-    </MainLayout>
+      </MainLayout>
   );
 };
 

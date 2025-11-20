@@ -13,7 +13,6 @@ import ForgotPassword from './pages/Auth/ForgotPassword';
 import ResetPassword from './pages/Auth/ResetPassword';
 import MFASetup from './pages/Auth/MFASetup';
 import Dashboard from './pages/Dashboard/Dashboard';
-import AlertsPage from './pages/Alerts/Alerts';
 import AlertRules from './pages/AlertRules/AlertRules';
 import Metrics from './pages/Metrics/Metrics';
 import Hosts from './pages/Hosts/Hosts';
@@ -78,15 +77,6 @@ const App: React.FC = () => {
 
           <Route
             path="/alerts"
-            element={
-              <ProtectedRoute>
-                <AlertsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/alert-rules"
             element={
               <ProtectedRoute>
                 <AlertRules />
