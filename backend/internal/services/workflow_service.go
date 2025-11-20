@@ -74,10 +74,11 @@ func (s *WorkflowService) CreateWorkflowSession(req *models.WorkflowSessionReque
 		AgentID:      agentID,
 		SessionToken: token,
 		Status:       "active",
-		ExpiresAt:    time.Now().Add(1 * time.Hour),
-		Username:     req.Username,
-		Password:     encryptedPassword,
-		SSHKey:       encryptedSSHKey,
+		// SSH workflow sessions expire after 10 minutes for security
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+		Username:  req.Username,
+		Password:  encryptedPassword,
+		SSHKey:    encryptedSSHKey,
 	}
 
 	err = s.workflowRepo.CreateSession(session)

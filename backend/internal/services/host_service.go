@@ -25,7 +25,7 @@ func RegisterHost(hostname, ip, os, group, tags string, tenantID int64, token st
 	return host, err
 }
 
-// ListHosts returns all hosts for a tenant
+// ListHosts returns all hosts for a tenant with computed agent status
 func ListHosts(tenantID int64, limit, offset int) ([]models.Host, error) {
 	var hosts []models.Host
 	var result *gorm.DB
@@ -43,12 +43,51 @@ func ListHosts(tenantID int64, limit, offset int) ([]models.Host, error) {
 		return nil, result.Error
 	}
 
+	// Compute real-time agent status based on last_seen
+	now := time.Now()
+	for i := range hosts {
+		if hosts[i].LastSeen.IsZero() {
+			hosts[i].AgentStatus = "offline"
+		} else {
+			timeSinceLastSeen := now.Sub(hosts[i].LastSeen)
+			// If agent hasn't reported in 2 minutes, mark as offline
+			if timeSinceLastSeen > 2*time.Minute {
+				hosts[i].AgentStatus = "offline"
+			} else if timeSinceLastSeen > 1*time.Minute {
+				hosts[i].AgentStatus = "warning"
+			} else {
+				hosts[i].AgentStatus = "online"
+			}
+		}
+	}
+
 	return hosts, nil
 }
 
-// GetHostByID retrieves a single host
+// GetHostByID retrieves a single host with computed agent status
 func GetHostByID(hostID, tenantID int64) (*models.Host, error) {
-	return postgres.GetHost(postgres.DB, hostID)
+	host, err := postgres.GetHost(postgres.DB, hostID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute real-time agent status based on last_seen
+	now := time.Now()
+	if host.LastSeen.IsZero() {
+		host.AgentStatus = "offline"
+	} else {
+		timeSinceLastSeen := now.Sub(host.LastSeen)
+		// If agent hasn't reported in 2 minutes, mark as offline
+		if timeSinceLastSeen > 2*time.Minute {
+			host.AgentStatus = "offline"
+		} else if timeSinceLastSeen > 1*time.Minute {
+			host.AgentStatus = "warning"
+		} else {
+			host.AgentStatus = "online"
+		}
+	}
+
+	return host, nil
 }
 
 // UpdateHostFields updates specific host fields

@@ -277,6 +277,7 @@ func main() {
 	// Global middlewares
 	app.Use(middleware.Logger())
 	app.Use(middleware.CORS())
+	app.Use(middleware.CSRFMiddleware)
 	// Recover from panics in handlers to avoid process exit
 	app.Use(fiberRecover.New())
 	// Apply the API rate limiter (middleware.RateLimiter only applies to /api/ paths)

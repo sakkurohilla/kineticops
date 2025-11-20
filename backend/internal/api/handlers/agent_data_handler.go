@@ -766,6 +766,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 	payload := map[string]interface{}{
 		"type":             "metric",
 		"host_id":          hostID,
+		"seq":              uint64(time.Now().UnixNano()),
 		"cpu_usage":        metric.CPUUsage,
 		"memory_usage":     metric.MemoryUsage,
 		"memory_total":     metric.MemoryTotal,
@@ -816,6 +817,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			"type":      "services",
 			"host_id":   hostID,
 			"services":  servicesData,
+			"seq":       uint64(time.Now().UnixNano()),
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
 		if sb, serr := json.Marshal(servicePayload); serr == nil {

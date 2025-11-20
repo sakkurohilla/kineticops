@@ -30,7 +30,12 @@ func (r *WorkflowRepository) CreateSession(session *models.WorkflowSession) erro
 
 func (r *WorkflowRepository) GetSession(token string) (*models.WorkflowSession, error) {
 	var session models.WorkflowSession
-	query := `SELECT * FROM workflow_sessions WHERE session_token = $1 AND expires_at > NOW()`
+	// Check both expires_at AND last_activity (5 min inactivity timeout)
+	query := `SELECT * FROM workflow_sessions 
+		WHERE session_token = $1 
+		AND expires_at > NOW() 
+		AND last_activity > NOW() - INTERVAL '5 minutes'
+		AND status = 'active'`
 	err := r.db.Get(&session, query, token)
 	if err != nil {
 		return nil, err
@@ -92,10 +97,12 @@ func (r *WorkflowRepository) GetControlLogs(hostID int, limit int) ([]models.Ser
 }
 
 func (r *WorkflowRepository) CleanupExpiredSessions() error {
+	// Expire sessions based on expires_at OR inactivity (5 min)
 	query := `
 		UPDATE workflow_sessions 
 		SET status = 'expired' 
-		WHERE expires_at < NOW() AND status = 'active'`
+		WHERE status = 'active' 
+		AND (expires_at < NOW() OR last_activity < NOW() - INTERVAL '5 minutes')`
 	_, err := r.db.Exec(query)
 	return err
 }

@@ -19,11 +19,10 @@ type Hub struct {
 	unregister chan *Client
 	mu         sync.Mutex
 	maxClients int // Enterprise connection limit
-	// lastMessages keeps the most recent message per host_id so new clients can
-	// receive a warm-up snapshot when they connect. We store the message along
-	// with the monotonic sequence id so older messages don't overwrite newer
-	// ones.
-	lastMessages map[int64]struct {
+	// lastMessages keeps the most recent message per host_id and message type
+	// so new clients can receive a warm-up snapshot when they connect.
+	// Key format: "hostID:type" (e.g., "6:services", "6:metric")
+	lastMessages map[string]struct {
 		Seq uint64
 		Msg []byte
 	}
@@ -46,7 +45,7 @@ func NewHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		maxClients: 10000, // Enterprise limit
-		lastMessages: make(map[int64]struct {
+		lastMessages: make(map[string]struct {
 			Seq uint64
 			Msg []byte
 		}),
@@ -191,10 +190,17 @@ func (h *Hub) RememberMessage(msg []byte) {
 					seq = uint64(s)
 				}
 			}
+			// Get message type for composite key
+			msgType := "unknown"
+			if mType, ok := tmp["type"].(string); ok {
+				msgType = mType
+			}
+			key := fmt.Sprintf("%d:%s", hid, msgType)
+
 			h.mu.Lock()
-			existing, ok := h.lastMessages[hid]
+			existing, ok := h.lastMessages[key]
 			if !ok || seq > existing.Seq {
-				h.lastMessages[hid] = struct {
+				h.lastMessages[key] = struct {
 					Seq uint64
 					Msg []byte
 				}{Seq: seq, Msg: msg}
@@ -254,7 +260,9 @@ func GetLastServicesForHost(hostID int64) (map[string]interface{}, error) {
 	globalHub.mu.Lock()
 	defer globalHub.mu.Unlock()
 
-	cached, exists := globalHub.lastMessages[hostID]
+	// Use composite key with "services" type
+	key := fmt.Sprintf("%d:services", hostID)
+	cached, exists := globalHub.lastMessages[key]
 	if !exists {
 		return nil, fmt.Errorf("no cached services for host %d", hostID)
 	}

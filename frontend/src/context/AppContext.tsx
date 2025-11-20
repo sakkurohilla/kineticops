@@ -22,6 +22,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [lastActivity, setLastActivity] = useState<number>(Date.now());
 
   useEffect(() => {
     // Check if user is already logged in
@@ -29,21 +30,61 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     if (token) {
       fetchUser();
       startSessionTimeout();
+      initializeActivityTracking();
     } else {
       setIsLoading(false);
     }
 
     return () => {
       clearSessionTimeout();
+      removeActivityTracking();
     };
   }, []);
 
+  // Track user activity (mouse, keyboard, scroll)
+  const initializeActivityTracking = () => {
+    const updateActivity = () => {
+      setLastActivity(Date.now());
+    };
+    
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+    window.addEventListener('click', updateActivity);
+  };
+
+  const removeActivityTracking = () => {
+    const updateActivity = () => setLastActivity(Date.now());
+    window.removeEventListener('mousemove', updateActivity);
+    window.removeEventListener('keydown', updateActivity);
+    window.removeEventListener('scroll', updateActivity);
+    window.removeEventListener('click', updateActivity);
+  };
+
+  // Check for inactivity every minute
+  useEffect(() => {
+    if (!user) return;
+    
+    const checkInactivity = setInterval(() => {
+      const inactiveTime = Date.now() - lastActivity;
+      const INACTIVITY_LIMIT = 10 * 60 * 1000; // 10 minutes
+      
+      if (inactiveTime > INACTIVITY_LIMIT) {
+        logout();
+        alert('Session expired due to inactivity. Please login again.');
+      }
+    }, 60 * 1000); // Check every minute
+    
+    return () => clearInterval(checkInactivity);
+  }, [user, lastActivity]);
+
   const startSessionTimeout = () => {
     clearSessionTimeout();
+    // Session expires after 10 minutes of inactivity
     const timeout = setTimeout(() => {
       logout();
       alert('Session expired. Please login again.');
-    }, 60 * 60 * 1000); // 1 hour
+    }, 10 * 60 * 1000); // 10 minutes
     setSessionTimeout(timeout);
   };
 
@@ -76,10 +117,13 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
           continue;
         }
 
-        // Only logout if it's an auth error (401)
+        // Only logout if it's an auth error (401), not on network errors
         if (status === 401 || (err?.message && err.message.includes('Invalid'))) {
           authService.logout();
           setUser(null);
+        } else if (err?.isNetworkError) {
+          // Don't logout on network errors, just set loading to false
+          console.warn('[AppContext] Network error during fetchUser, keeping session');
         }
 
         setIsLoading(false);

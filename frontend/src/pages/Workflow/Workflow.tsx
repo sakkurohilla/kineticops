@@ -8,6 +8,7 @@ import { Host } from '../../types';
 import hostService from '../../services/api/hostService';
 import { useWorkflowSession, useServiceControl } from '../../hooks/useWorkflow';
 import { handleApiError } from '../../utils/errorHandler';
+import useWebSocket from '../../hooks/useWebsocket';
 
 const Workflow: React.FC = () => {
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -23,7 +24,7 @@ const Workflow: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
 
-  const { session, createSession, closeSession, loading: sessionLoading } = useWorkflowSession();
+  const { session, createSession, loading: sessionLoading } = useWorkflowSession();
 
   const { controlService, loading: controlLoading } = useServiceControl(session?.session_token);
 
@@ -36,6 +37,22 @@ const Workflow: React.FC = () => {
   useEffect(() => {
     fetchHosts();
   }, []);
+
+  // WebSocket handler for real-time service updates
+  const handleWebSocketMessage = (data: any) => {
+    if (!data || !selectedHost) return;
+    
+    // Handle services updates for the selected host
+    if (data.type === 'services' && data.host_id === selectedHost.id) {
+      const servicesData = data.services;
+      if (Array.isArray(servicesData)) {
+        console.log('[Workflow] Received services update via WebSocket:', servicesData.length, 'services');
+        setServices(servicesData);
+      }
+    }
+  };
+
+  useWebSocket(handleWebSocketMessage);
 
   const fetchHosts = async () => {
     try {
@@ -57,39 +74,49 @@ const Workflow: React.FC = () => {
 
   const handleCredentialsSubmit = async (credentials: { username: string; password?: string; ssh_key?: string; pem_file?: string }) => {
     try {
-      await createSession({
+      const newSession = await createSession({
         host_id: selectedHost!.id,
         username: credentials.username,
         password: credentials.password,
         ssh_key: credentials.ssh_key || credentials.pem_file // Use pem_file as ssh_key
       });
       setShowCredentialsModal(false);
-      // Fetch services after session creation
-      await fetchServices();
+      
+      // Fetch services using the new session token directly
+      if (newSession?.session_token && selectedHost) {
+        try {
+          const response = await fetch(`/api/v1/workflow/${selectedHost.id}/discover`, {
+            method: 'POST',
+            headers: {
+              'X-Session-Token': newSession.session_token,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            // Ensure services is always an array
+            const servicesData = data.services;
+            if (Array.isArray(servicesData)) {
+              setServices(servicesData);
+            } else if (servicesData && typeof servicesData === 'object') {
+              // If services is an object with services array inside
+              setServices(Array.isArray(servicesData.services) ? servicesData.services : []);
+            } else {
+              setServices([]);
+            }
+          } else {
+            console.error('Failed to fetch services:', response.statusText);
+            setServices([]);
+          }
+        } catch (err) {
+          console.error('Failed to fetch services:', err);
+          setServices([]);
+        }
+      }
     } catch (err: any) {
       console.error('Session creation failed:', err);
       throw err; // Re-throw to show error in modal
-    }
-  };
-
-  const fetchServices = async () => {
-    if (!session?.session_token || !selectedHost) return;
-    
-    try {
-      // Discover services
-      const response = await fetch(`/api/v1/workflow/${selectedHost.id}/discover`, {
-        method: 'POST',
-        headers: {
-          'X-Session-Token': session.session_token
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setServices(data.services || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch services:', err);
     }
   };
 
@@ -108,7 +135,14 @@ const Workflow: React.FC = () => {
   };
 
   const getStatusIcon = (status: string) => {
-    const icons = { 'running': '🟢', 'stopped': '🔴', 'healthy': '✅', 'warning': '⚠️' };
+    const icons = { 
+      'online': '🟢', 
+      'offline': '🔴', 
+      'warning': '⚠️',
+      'running': '🟢', 
+      'stopped': '🔴', 
+      'healthy': '✅'
+    };
     return icons[status as keyof typeof icons] || '❓';
   };
 
@@ -247,7 +281,7 @@ const Workflow: React.FC = () => {
             // Host Management
             <div>
               <button
-                onClick={() => { setSelectedHost(null); closeSession(); }}
+                onClick={() => { setSelectedHost(null); }}
                 className="mb-4 text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
               >
                 <ChevronRight size={18} className="rotate-180" /> Back to Hosts
@@ -302,7 +336,7 @@ const Workflow: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
                     <h4 className="text-lg font-bold mb-4 text-gray-900">⚙️ Services</h4>
-                    {services.length === 0 ? (
+                    {!Array.isArray(services) || services.length === 0 ? (
                       <div className="text-center py-8 text-gray-500">
                         <p>No services discovered</p>
                         <p className="text-sm mt-1">Services will appear here once agent is connected</p>

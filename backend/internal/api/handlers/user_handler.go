@@ -52,7 +52,6 @@ func DeleteUser(c *fiber.Ctx) error {
 
 // ListUsers returns all users (admin only)
 func ListUsers(c *fiber.Ctx) error {
-	// TODO: Add admin role check
 	users, err := services.GetAllUsers()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch users"})
@@ -61,10 +60,8 @@ func ListUsers(c *fiber.Ctx) error {
 	return c.JSON(users)
 }
 
-// ✅ NEW: GetUserByID - Admin gets specific user
+// GetUserByID - Admin gets specific user
 func GetUserByID(c *fiber.Ctx) error {
-	// TODO: Add admin role check
-
 	userIDParam := c.Params("id")
 	userID, err := strconv.ParseInt(userIDParam, 10, 64)
 	if err != nil {
@@ -79,10 +76,8 @@ func GetUserByID(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
-// ✅ NEW: UpdateUserByID - Admin updates any user
+// UpdateUserByID - Admin updates any user
 func UpdateUserByID(c *fiber.Ctx) error {
-	// TODO: Add admin role check
-
 	userIDParam := c.Params("id")
 	userID, err := strconv.ParseInt(userIDParam, 10, 64)
 	if err != nil {
@@ -105,10 +100,8 @@ func UpdateUserByID(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"msg": "User updated successfully"})
 }
 
-// ✅ NEW: DeleteUserByID - Admin deletes any user
+// DeleteUserByID - Admin deletes any user
 func DeleteUserByID(c *fiber.Ctx) error {
-	// TODO: Add admin role check
-
 	userIDParam := c.Params("id")
 	userID, err := strconv.ParseInt(userIDParam, 10, 64)
 	if err != nil {
