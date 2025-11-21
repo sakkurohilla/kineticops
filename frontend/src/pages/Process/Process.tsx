@@ -116,7 +116,7 @@ const Process: React.FC = () => {
     
     const interval = setInterval(() => {
       fetchProcesses();
-    }, 5000); // Refresh every 5 seconds
+    }, 30000); // Professional interval: 30 seconds
 
     return () => clearInterval(interval);
   }, [autoRefresh, selectedHost]);

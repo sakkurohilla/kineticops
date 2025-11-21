@@ -7,7 +7,7 @@ type ProcessMetric struct {
 	ID            int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	TenantID      int64     `json:"tenant_id" gorm:"not null;index:idx_process_metrics_tenant_id"`
 	HostID        int64     `json:"host_id" gorm:"not null;index:idx_process_metrics_host_id"`
-	PID           int       `json:"pid" gorm:"not null"`
+	PID           int       `json:"pid" gorm:"column:pid;not null"`
 	Name          string    `json:"name" gorm:"type:varchar(255);not null"`
 	Username      string    `json:"username" gorm:"type:varchar(100)"`
 	CPUPercent    float64   `json:"cpu_percent" gorm:"type:decimal(5,2)"`

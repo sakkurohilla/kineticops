@@ -109,15 +109,15 @@ func GetTopProcesses(topN int, sortBy string, logger *utils.Logger) ([]ProcessIn
 func CollectProcessMetrics(logger *utils.Logger) map[string]interface{} {
 	logger.Info("CollectProcessMetrics called - starting process collection")
 
-	// Get top 20 by CPU
-	topCPU, err := GetTopProcesses(20, "cpu", logger)
+	// Get top 10 by CPU
+	topCPU, err := GetTopProcesses(10, "cpu", logger)
 	if err != nil {
 		logger.Error("Failed to get top CPU processes", "error", err)
 		topCPU = []ProcessInfo{}
 	}
 
-	// Get top 20 by memory
-	topMemory, err := GetTopProcesses(20, "memory", logger)
+	// Get top 10 by memory
+	topMemory, err := GetTopProcesses(10, "memory", logger)
 	if err != nil {
 		logger.Error("Failed to get top memory processes", "error", err)
 		topMemory = []ProcessInfo{}

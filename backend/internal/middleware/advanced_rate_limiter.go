@@ -42,10 +42,10 @@ type EndpointLimit struct {
 var defaultConfig = RateLimiterConfig{
 	GlobalRPM:    10000,
 	GlobalRPH:    100000,
-	IPLimitRPM:   60,
-	IPLimitRPH:   1000,
-	UserLimitRPM: 120,
-	UserLimitRPH: 2000,
+	IPLimitRPM:   200,
+	IPLimitRPH:   5000,
+	UserLimitRPM: 300,
+	UserLimitRPH: 10000,
 	EndpointLimits: map[string]EndpointLimit{
 		"/api/v1/metrics/collect": {RPM: 120, RPH: 5000}, // Higher limit for metric collection
 		"/api/v1/auth/login":      {RPM: 5, RPH: 20},     // Lower limit for login

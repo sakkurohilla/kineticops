@@ -250,7 +250,7 @@ func (s *SystemModule) getCPUMetrics() map[string]interface{} {
 
 	return map[string]interface{}{
 		"total": map[string]interface{}{
-			"pct": usage / 100.0,
+			"pct": usage,
 		},
 	}
 }
@@ -274,7 +274,7 @@ func (s *SystemModule) getMemoryMetrics() map[string]interface{} {
 		"total": float64(memInfo.Total),
 		"used": map[string]interface{}{
 			"bytes": actualUsed,
-			"pct":   actualUsedPercent / 100.0,
+			"pct":   actualUsedPercent,
 		},
 		"free":      float64(memInfo.Free),
 		"available": float64(memInfo.Available),
@@ -298,7 +298,7 @@ func (s *SystemModule) getDiskMetrics() map[string]interface{} {
 		"total":       float64(usage.Total),
 		"used": map[string]interface{}{
 			"bytes": float64(usage.Used),
-			"pct":   usage.UsedPercent / 100.0,
+			"pct":   usage.UsedPercent,
 		},
 		"free": float64(usage.Free),
 	}

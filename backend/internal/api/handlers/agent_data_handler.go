@@ -341,8 +341,8 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 	// CPU metrics with validation
 	if cpu, ok := system["cpu"].(map[string]interface{}); ok {
 		if total, ok := cpu["total"].(map[string]interface{}); ok {
-			if pct, ok := total["pct"].(float64); ok && pct >= 0 && pct <= 1 {
-				metric.CPUUsage = pct * 100
+			if pct, ok := total["pct"].(float64); ok && pct >= 0 && pct <= 100 {
+				metric.CPUUsage = pct
 				logging.Infof("[METRICS] CPU for host=%d: usage=%.2f%%", hostID, metric.CPUUsage)
 				if err := services.CollectMetric(hostID, tenantID, "cpu_usage", metric.CPUUsage, nil); err != nil {
 					logging.Errorf("CollectMetric(cpu_usage) failed host=%d: %v", hostID, err)
@@ -430,7 +430,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			metric.MemoryUsage = (usedBytes / totalBytes) * 100
 		} else if pctFromAgent >= 0 {
 			// Use agent percentage when bytes are not available
-			metric.MemoryUsage = pctFromAgent * 100
+			metric.MemoryUsage = pctFromAgent
 		}
 
 		// Extract memory_free from agent data
@@ -698,7 +698,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 		// Handle top CPU processes
 		if topCPU, ok := processesData["top_cpu"].([]interface{}); ok && len(topCPU) > 0 {
-			logging.Infof("[PROCESSES] Storing %d top CPU processes", len(topCPU))
+			logging.Infof("[PROCESSES] Storing %d processes for host=%d", len(topCPU), hostID)
 			for _, procData := range topCPU {
 				if proc, ok := procData.(map[string]interface{}); ok {
 					// Extract PID - handle both int and float64
@@ -804,36 +804,26 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		}
 		return
 	} else {
-		// Store in host_metrics table with error handling
-		err := postgres.DB.Exec(`
-			INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, memory_free,
-				disk_usage, disk_total, disk_used, disk_read_bytes, disk_write_bytes, disk_read_speed, disk_write_speed,
-				network_in, network_out, uptime, load_average, timestamp)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-			ON CONFLICT (host_id) DO UPDATE SET
-				cpu_usage = EXCLUDED.cpu_usage,
-				memory_usage = EXCLUDED.memory_usage,
-				memory_total = EXCLUDED.memory_total,
-				memory_used = EXCLUDED.memory_used,
-				memory_free = EXCLUDED.memory_free,
-				disk_usage = EXCLUDED.disk_usage,
-				disk_total = EXCLUDED.disk_total,
-				disk_used = EXCLUDED.disk_used,
-				disk_read_bytes = EXCLUDED.disk_read_bytes,
-				disk_write_bytes = EXCLUDED.disk_write_bytes,
-				disk_read_speed = EXCLUDED.disk_read_speed,
-				disk_write_speed = EXCLUDED.disk_write_speed,
-				network_in = EXCLUDED.network_in,
-				network_out = EXCLUDED.network_out,
-				uptime = EXCLUDED.uptime,
-				load_average = EXCLUDED.load_average,
-				timestamp = EXCLUDED.timestamp
-		`, hostID, metric.CPUUsage, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed, metric.MemoryFree,
-			metric.DiskUsage, metric.DiskTotal, metric.DiskUsed, metric.DiskReadBytes, metric.DiskWriteBytes,
-			metric.DiskReadSpeed, metric.DiskWriteSpeed, metric.NetworkIn, metric.NetworkOut,
-			metric.Uptime, metric.LoadAverage, metric.Timestamp).Error
-
-		if err != nil {
+		// Store in host_metrics table as time-series data (INSERT each collection)
+		if err := services.SaveHostMetrics(&services.HostMetric{
+			HostID:         hostID,
+			CPUUsage:       metric.CPUUsage,
+			MemoryUsage:    metric.MemoryUsage,
+			MemoryTotal:    metric.MemoryTotal,
+			MemoryUsed:     metric.MemoryUsed,
+			MemoryFree:     metric.MemoryFree,
+			DiskUsage:      metric.DiskUsage,
+			DiskTotal:      metric.DiskTotal,
+			DiskUsed:       metric.DiskUsed,
+			DiskReadBytes:  metric.DiskReadBytes,
+			DiskWriteBytes: metric.DiskWriteBytes,
+			DiskReadSpeed:  metric.DiskReadSpeed,
+			DiskWriteSpeed: metric.DiskWriteSpeed,
+			NetworkIn:      metric.NetworkIn,
+			NetworkOut:     metric.NetworkOut,
+			Uptime:         metric.Uptime,
+			LoadAverage:    metric.LoadAverage,
+		}); err != nil {
 			logging.Errorf("Failed to store host metrics for host %d: %v", hostID, err)
 		}
 

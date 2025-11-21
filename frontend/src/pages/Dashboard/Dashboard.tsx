@@ -128,15 +128,6 @@ const Dashboard: React.FC = () => {
   // Real-time updates via WebSocket - buffer updates and apply debounced
   useWebsocket((payload: any) => {
     if (!payload || !payload?.host_id) return;
-    
-    // TEMPORARY FIX: Ignore WebSocket metrics if they have all zeros or very low values
-    // The backend is broadcasting stale/placeholder metrics from host_metrics table
-    // instead of real-time metrics. We'll rely on API calls for now.
-    const hasRealData = (payload.cpu_usage > 0.1 || payload.memory_usage > 1 || payload.disk_usage > 1);
-    if (!hasRealData) {
-      console.log('[Dashboard] Ignoring WebSocket placeholder metric with zeros:', payload);
-      return; // Skip processing this metric
-    }
 
     // Normalize minimal payload
     const normalized = {
