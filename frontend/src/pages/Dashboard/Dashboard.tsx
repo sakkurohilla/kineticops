@@ -19,6 +19,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import hostService from '../../services/api/hostService';
 import apiClient from '../../services/api/client';
+import authService from '../../services/auth/authService';
 // import { useMetrics } from '../../hooks/useMetrics';
 import useWebsocket from '../../hooks/useWebsocket';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -29,9 +30,9 @@ interface DashboardStats {
   offlineHosts: number;
   criticalAlerts: number;
   warningAlerts: number;
-  avgCpuUsage: number;
-  avgMemoryUsage: number;
-  avgDiskUsage: number;
+  avgCpuUsage: number | null;
+  avgMemoryUsage: number | null;
+  avgDiskUsage: number | null;
   systemHealth: number;
 }
 
@@ -55,21 +56,30 @@ interface Alert {
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  // REMOVED isLoading state - it was causing values to flash to 0 on refresh
-  // const [isLoading, setIsLoading] = useState(true);
+  // Don't initialize with zeros - causes flash on refresh
   const [stats, setStats] = useState<DashboardStats>({
     totalHosts: 0,
     onlineHosts: 0,
     offlineHosts: 0,
     criticalAlerts: 0,
     warningAlerts: 0,
-    avgCpuUsage: 0,
-    avgMemoryUsage: 0,
-    avgDiskUsage: 0,
+    avgCpuUsage: null,
+    avgMemoryUsage: null,
+    avgDiskUsage: null,
     systemHealth: 100,
   });
   const [hosts, setHosts] = useState<Host[]>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    hostsRef.current = hosts;
+  }, [hosts]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    alertsRef.current = alerts;
+  }, [alerts]);
   const [hostMetrics, setHostMetrics] = useState<Record<number, any>>({});
   const [selectedHostId, setSelectedHostId] = useState<number | null>(null);
   const [selectedHostMetrics, setSelectedHostMetrics] = useState<any | null>(null);
@@ -110,10 +120,23 @@ const Dashboard: React.FC = () => {
   const pendingMetricsRef = useRef<Record<number, any>>({});
   const debounceTimerRef = useRef<number | null>(null);
   const DEBOUNCE_MS = 200;
+  
+  // Refs to always access latest state (prevents stale closure in WebSocket callback)
+  const hostsRef = useRef<Host[]>([]);
+  const alertsRef = useRef<Alert[]>([]);
 
   // Real-time updates via WebSocket - buffer updates and apply debounced
   useWebsocket((payload: any) => {
     if (!payload || !payload?.host_id) return;
+    
+    // TEMPORARY FIX: Ignore WebSocket metrics if they have all zeros or very low values
+    // The backend is broadcasting stale/placeholder metrics from host_metrics table
+    // instead of real-time metrics. We'll rely on API calls for now.
+    const hasRealData = (payload.cpu_usage > 0.1 || payload.memory_usage > 1 || payload.disk_usage > 1);
+    if (!hasRealData) {
+      console.log('[Dashboard] Ignoring WebSocket placeholder metric with zeros:', payload);
+      return; // Skip processing this metric
+    }
 
     // Normalize minimal payload
     const normalized = {
@@ -151,18 +174,47 @@ const Dashboard: React.FC = () => {
       // merge into hostMetrics and recompute once
       setHostMetrics(prev => {
         const merged = { ...prev, ...toApply };
-        recomputeStats(hosts, merged, alerts);
+        // Only recompute if we have hosts loaded (avoid resetting stats on initial WS update)
+        // Use refs to get latest values (prevents stale closure)
+        const currentHosts = hostsRef.current;
+        const currentAlerts = alertsRef.current;
+        if (currentHosts && currentHosts.length > 0) {
+          recomputeStats(currentHosts, merged, currentAlerts);
+        }
         return merged;
       });
     }, DEBOUNCE_MS) as unknown as number;
   });
 
   useEffect(() => {
-    fetchDashboardData();
-    const interval = setInterval(() => {
+    // Wait for auth token before fetching to avoid 403 errors
+    const token = authService.getToken();
+    if (token) {
+      console.log('[Dashboard] Auth token ready, fetching dashboard data');
       fetchDashboardData();
-    }, 30000); // Refresh every 30s for auto-discovery
-    return () => clearInterval(interval);
+    } else {
+      console.warn('[Dashboard] No auth token yet, will retry until available');
+      // Retry with longer interval until token is available (after login)
+      let retryCount = 0;
+      const maxRetries = 10; // Max 10 seconds waiting
+      const timer = setInterval(() => {
+        const retryToken = authService.getToken();
+        if (retryToken) {
+          console.log('[Dashboard] Token acquired on retry, fetching dashboard data');
+          clearInterval(timer);
+          fetchDashboardData();
+        } else {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            console.error('[Dashboard] Still no token after', maxRetries, 'retries');
+            clearInterval(timer);
+          }
+        }
+      }, 1000); // Check every second
+      return () => clearInterval(timer);
+    }
+    // Removed 30s interval - rely on WebSocket for real-time updates to prevent flicker
+    // Manual refresh available via Refresh button
   }, []);
 
   const fetchDashboardData = async () => {
@@ -175,7 +227,6 @@ const Dashboard: React.FC = () => {
       try {
         hostsData = await hostService.getAllHosts();
       } catch (err) {
-        console.log('Host service failed, trying direct API call');
         // Direct API call without auth for auto-discovered hosts
         const response = await fetch('http://localhost:8080/api/v1/hosts', {
           method: 'GET',
@@ -191,6 +242,7 @@ const Dashboard: React.FC = () => {
       }
       
       // Always update hosts state (even if empty)
+      console.log('[Dashboard] Fetched hosts:', hostsData?.length || 0, 'hosts', hostsData);
       setHosts(hostsData || []);
 
       // Avoid re-fetching per-host metrics if host list didn't change
@@ -220,6 +272,7 @@ const Dashboard: React.FC = () => {
         // Try bulk endpoint first (new backend route)
           try {
           const allLatest: any = await apiClient.get(`/hosts/metrics/latest/all?limit=${hostIds.length}`);
+          console.log('[Dashboard] Bulk metrics API response:', allLatest);
           // support both array and map shapes returned by backend
           if (Array.isArray(allLatest)) {
             const map: Record<number, any> = {};
@@ -229,12 +282,14 @@ const Dashboard: React.FC = () => {
             metricsResults = (hostsData || []).map((h: any) => ({ hostId: h.id, metrics: allLatest[h.id] || null }));
           }
         } catch (e) {
+          console.warn('[Dashboard] Bulk metrics failed, falling back to per-host fetch:', e);
           // Fallback: per-host fetch with timeout
           const timeoutMs = 1500;
           const perHost = (hostsData || []).map((host: any) => {
             const p = (async () => {
               try {
                 const metrics = await hostService.getLatestMetrics(host.id);
+                console.log('[Dashboard] Per-host metrics for', host.id, ':', metrics);
                 return { hostId: host.id, metrics };
               } catch (err) {
                 try {
@@ -259,11 +314,15 @@ const Dashboard: React.FC = () => {
           metricsResults = await Promise.all(perHost);
         }
       }
+      console.log('[Dashboard] Got metricsResults:', metricsResults?.length || 0, 'results', metricsResults);
+      
       const metricsMap: Record<number, any> = {};
       let totalCpu = 0, totalMemory = 0, totalDisk = 0, validMetrics = 0;
 
       metricsResults.forEach(({ hostId, metrics }) => {
-        if (metrics) {
+        console.log('[Dashboard] Processing metric for host', hostId, ':', metrics);
+        // Skip placeholder metric frames (early websocket frames with no real values)
+        if (metrics && !metrics._placeholder) {
           // compute memory percent from totals when available
           let memPercent = metrics.memory_usage;
           if ((metrics.memory_total && metrics.memory_used) || (metrics.memory_total_bytes && metrics.memory_used_bytes)) {
@@ -297,24 +356,38 @@ const Dashboard: React.FC = () => {
       // Merge metrics into existing hostMetrics state to preserve websocket updates
       setHostMetrics(prev => ({ ...prev, ...metricsMap }));
 
-      // Only fallback to previous stats if we have no valid metrics AND no hosts
-      // This ensures we show 0 when there are genuinely no metrics, not just preserve old values
-      const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : (totalHosts > 0 ? 0 : stats.avgCpuUsage);
-      const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : (totalHosts > 0 ? 0 : stats.avgMemoryUsage);
-      const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : (totalHosts > 0 ? 0 : stats.avgDiskUsage);
-      
-      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : stats.systemHealth;
+      // Calculate new averages; if none valid, keep previous non-null values
+      const newAvgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : null;
+      const newAvgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : null;
+      const newAvgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : null;
 
-      setStats({
-        totalHosts,
-        onlineHosts,
-        offlineHosts,
-        criticalAlerts: alerts.filter(a => a.severity === 'critical').length,
-        warningAlerts: alerts.filter(a => a.severity === 'warning' || a.severity === 'high').length,
-        avgCpuUsage,
-        avgMemoryUsage,
-        avgDiskUsage,
-        systemHealth,
+      console.log('[Dashboard] Initial fetch complete: validMetrics=' + validMetrics + 
+        ' cpu=' + (newAvgCpuUsage?.toFixed(1) || 'null') + '%' +
+        ' mem=' + (newAvgMemoryUsage?.toFixed(1) || 'null') + '%' +
+        ' disk=' + (newAvgDiskUsage?.toFixed(1) || 'null') + '%');
+
+      const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 100;
+
+      // Functional update so we can preserve last non-null averages on empty responses
+      setStats(prev => {
+        const cpuFinal = newAvgCpuUsage !== null ? newAvgCpuUsage : prev.avgCpuUsage;
+        const memFinal = newAvgMemoryUsage !== null ? newAvgMemoryUsage : prev.avgMemoryUsage;
+        const diskFinal = newAvgDiskUsage !== null ? newAvgDiskUsage : prev.avgDiskUsage;
+        
+        const newStats = {
+          totalHosts,
+            onlineHosts,
+            offlineHosts,
+            criticalAlerts: alerts.filter(a => a.severity === 'critical').length,
+            warningAlerts: alerts.filter(a => a.severity === 'warning' || a.severity === 'high').length,
+            avgCpuUsage: cpuFinal,
+            avgMemoryUsage: memFinal,
+            avgDiskUsage: diskFinal,
+            systemHealth,
+        };
+        
+        console.log('[Dashboard] Setting final stats:', newStats);
+        return newStats;
       });
 
     } catch (err) {
@@ -330,10 +403,14 @@ const Dashboard: React.FC = () => {
   // Recompute stats locally when we get websocket updates (keeps UI responsive)
   const recomputeStats = (hostsList: Host[] | null, metricsMap: Record<number, any>, alertsList: Alert[]) => {
     const hostsArr = hostsList || hosts;
+    
+    console.log('[Dashboard] recomputeStats called with', hostsArr.length, 'hosts and', Object.keys(metricsMap).length, 'metrics');
+    
   // metricsKeys was unused; compute stats directly from hosts list and metricsMap
     let totalCpu = 0, totalMemory = 0, totalDisk = 0, validMetrics = 0;
     hostsArr.forEach((host: any) => {
       const m = metricsMap[host.id];
+      console.log('[Dashboard] recomputeStats - host', host.id, 'metric:', m);
       if (!m) return;
       let memPercent = m.memory_usage;
       if ((m.memory_total && m.memory_used) || (m.memory_total_bytes && m.memory_used_bytes)) {
@@ -351,14 +428,17 @@ const Dashboard: React.FC = () => {
       totalMemory += (typeof memPercent === 'number' ? memPercent : 0);
       totalDisk += (typeof diskPercent === 'number' ? diskPercent : 0);
       validMetrics++;
+      console.log('[Dashboard] Added to totals - cpu:', (m.cpu_usage || 0), 'mem:', (typeof memPercent === 'number' ? memPercent : 0), 'disk:', (typeof diskPercent === 'number' ? diskPercent : 0));
     });
 
-    const avgCpuUsage = validMetrics > 0 ? totalCpu / validMetrics : 0;
-    const avgMemoryUsage = validMetrics > 0 ? totalMemory / validMetrics : 0;
-    const avgDiskUsage = validMetrics > 0 ? totalDisk / validMetrics : 0;
     const totalHosts = hostsArr.length;
     const onlineHosts = hostsArr.filter((h: any) => h.agent_status === 'online').length;
-    const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 0;
+    const systemHealth = totalHosts > 0 ? Math.round((onlineHosts / totalHosts) * 100) : 100;
+
+    console.log('[Dashboard] recomputeStats result: validMetrics=' + validMetrics + 
+      ' cpu=' + (validMetrics > 0 ? (totalCpu / validMetrics).toFixed(1) : 'null') + '%' +
+      ' mem=' + (validMetrics > 0 ? (totalMemory / validMetrics).toFixed(1) : 'null') + '%' +
+      ' disk=' + (validMetrics > 0 ? (totalDisk / validMetrics).toFixed(1) : 'null') + '%');
 
     setStats(prev => ({
       ...prev,
@@ -367,9 +447,10 @@ const Dashboard: React.FC = () => {
       offlineHosts: totalHosts - onlineHosts,
       criticalAlerts: (alertsList || alerts).filter(a => a.severity === 'critical').length,
       warningAlerts: (alertsList || alerts).filter(a => a.severity === 'warning' || a.severity === 'high').length,
-      avgCpuUsage,
-      avgMemoryUsage,
-      avgDiskUsage,
+      // Only update averages if we have valid metrics, otherwise keep previous values
+      avgCpuUsage: validMetrics > 0 ? totalCpu / validMetrics : prev.avgCpuUsage,
+      avgMemoryUsage: validMetrics > 0 ? totalMemory / validMetrics : prev.avgMemoryUsage,
+      avgDiskUsage: validMetrics > 0 ? totalDisk / validMetrics : prev.avgDiskUsage,
       systemHealth,
     }));
   };
@@ -378,7 +459,8 @@ const Dashboard: React.FC = () => {
 
 
 
-  const getTrendIcon = (current: number, previous: number) => {
+  const getTrendIcon = (current: number | null, previous: number) => {
+    if (current === null) return <Activity className="w-4 h-4 text-gray-500" />;
     if (current > previous) return <TrendingUp className="w-4 h-4 text-red-500" />;
     if (current < previous) return <TrendingDown className="w-4 h-4 text-green-500" />;
     return <Activity className="w-4 h-4 text-gray-500" />;
@@ -432,10 +514,10 @@ const Dashboard: React.FC = () => {
         )}
       
       {/* Main Dashboard Content */}
-      <div className="p-6 space-y-6">
+      <div className="p-4 space-y-4">
         {/* Dashboard Header */}
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+          <h1 className="text-xl font-bold text-gray-800">Dashboard</h1>
           <button
             onClick={() => fetchDashboardData()}
             disabled={isRefreshing}
@@ -461,14 +543,14 @@ const Dashboard: React.FC = () => {
                   <Server className="w-3 h-3" />
                   <p className="text-blue-100 font-medium text-xs">Total Hosts</p>
                 </div>
-                <p className="text-xl font-bold mb-1">{stats.totalHosts}</p>
+                <p className="text-lg font-bold mb-1">{stats.totalHosts}</p>
                 <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1">
-                    <div className="w-1 h-1 bg-green-400 rounded-full"></div>
+                    <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
                     <span className="text-xs font-medium">{stats.onlineHosts}</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <div className="w-1 h-1 bg-red-400 rounded-full"></div>
+                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>
                     <span className="text-xs font-medium">{stats.offlineHosts}</span>
                   </div>
                 </div>
@@ -518,7 +600,7 @@ const Dashboard: React.FC = () => {
                   <AlertTriangle className="w-3 h-3" />
                   <p className="text-orange-100 font-medium text-xs">Active Alerts</p>
                 </div>
-                <p className="text-xl font-bold mb-1">{stats.criticalAlerts + stats.warningAlerts}</p>
+                <p className="text-lg font-bold mb-1">{stats.criticalAlerts + stats.warningAlerts}</p>
                 <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1">
                     <div className="w-1 h-1 bg-red-300 rounded-full"></div>
@@ -547,7 +629,9 @@ const Dashboard: React.FC = () => {
                   <Cpu className="w-3 h-3" />
                   <p className="text-purple-100 font-medium text-xs">Avg CPU</p>
                 </div>
-                <p className="text-xl font-bold mb-1">{stats.avgCpuUsage.toFixed(1)}%</p>
+                <p className="text-lg font-bold mb-1">
+                  {stats.avgCpuUsage !== null ? `${stats.avgCpuUsage.toFixed(1)}%` : '—'}
+                </p>
                 <div className="flex items-center space-x-1">
                   {getTrendIcon(stats.avgCpuUsage, 50)}
                   <span className="text-xs font-medium text-purple-100">vs last</span>
@@ -599,7 +683,7 @@ const Dashboard: React.FC = () => {
                         fill="none"
                         stroke="url(#blueGradient)"
                         strokeWidth="2"
-                        strokeDasharray={`${stats.avgCpuUsage}, 100`}
+                        strokeDasharray={`${stats.avgCpuUsage ?? 0}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
                       />
@@ -611,7 +695,9 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-blue-700">{stats.avgCpuUsage.toFixed(1)}%</span>
+                      <span className="text-base font-bold text-blue-700">
+                        {stats.avgCpuUsage !== null ? `${stats.avgCpuUsage.toFixed(1)}%` : '—'}
+                      </span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-blue-700 flex items-center justify-center space-x-1">
@@ -638,7 +724,7 @@ const Dashboard: React.FC = () => {
                         fill="none"
                         stroke="url(#greenGradient)"
                         strokeWidth="2"
-                        strokeDasharray={`${stats.avgMemoryUsage}, 100`}
+                        strokeDasharray={`${stats.avgMemoryUsage ?? 0}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
                       />
@@ -650,7 +736,9 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-green-700">{stats.avgMemoryUsage.toFixed(1)}%</span>
+                      <span className="text-base font-bold text-green-700">
+                        {stats.avgMemoryUsage !== null ? `${stats.avgMemoryUsage.toFixed(1)}%` : '—'}
+                      </span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-green-700 flex items-center justify-center space-x-1">
@@ -677,7 +765,7 @@ const Dashboard: React.FC = () => {
                         fill="none"
                         stroke="url(#orangeGradient)"
                         strokeWidth="2"
-                        strokeDasharray={`${stats.avgDiskUsage}, 100`}
+                        strokeDasharray={`${stats.avgDiskUsage ?? 0}, 100`}
                         strokeLinecap="round"
                         className="transition-all duration-1000 ease-out"
                       />
@@ -689,7 +777,9 @@ const Dashboard: React.FC = () => {
                       </defs>
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-amber-700">{stats.avgDiskUsage.toFixed(1)}%</span>
+                      <span className="text-base font-bold text-amber-700">
+                        {stats.avgDiskUsage !== null ? `${stats.avgDiskUsage.toFixed(1)}%` : '—'}
+                      </span>
                     </div>
                   </div>
                   <p className="text-xs font-semibold text-amber-700 flex items-center justify-center space-x-1">
@@ -956,9 +1046,9 @@ const Dashboard: React.FC = () => {
 
         {/* Recent Alerts */}
         {alerts.length > 0 && (
-          <Card className="p-6">
+          <Card className="p-4">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Recent Alerts</h2>
+              <h2 className="text-lg font-bold text-gray-900">Recent Alerts</h2>
               <Button variant="ghost" size="sm" onClick={() => navigate('/alerts')}>
                 View All <ChevronRight className="w-4 h-4 ml-1" />
               </Button>

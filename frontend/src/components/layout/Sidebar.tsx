@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Server, BarChart3, FileText, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert } from 'lucide-react';
+import { Home, Server, BarChart3, FileText, GitBranch, LogOut, Zap, Globe, Settings, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 const Sidebar: React.FC = () => {
@@ -8,12 +8,10 @@ const Sidebar: React.FC = () => {
   const location = useLocation();
   const { logout } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(true);
 
   const menuItems = [
-    { id: 'dashboard', icon: Home, label: 'Dashboard', path: '/dashboard' },
     { id: 'hosts', icon: Server, label: 'Hosts', path: '/hosts' },
-    { id: 'apm', icon: Zap, label: 'Advanced Performance', path: '/apm' },
-    { id: 'services', icon: Settings, label: 'Services', path: '/services' },
     { id: 'synthetics', icon: Globe, label: 'Synthetics', path: '/synthetics' },
     { id: 'metrics', icon: BarChart3, label: 'Metrics', path: '/metrics' },
     { id: 'logs', icon: FileText, label: 'Logs', path: '/logs' },
@@ -21,10 +19,18 @@ const Sidebar: React.FC = () => {
     { id: 'workflow', icon: GitBranch, label: 'Workflow', path: '/workflow' },
   ];
 
+  const dashboardSubItems = [
+    { id: 'process', icon: Zap, label: 'Process', path: '/process' },
+    { id: 'services', icon: Settings, label: 'Services', path: '/services' },
+  ];
+
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
+
+  const isDashboardActive = location.pathname === '/dashboard' || 
+    dashboardSubItems.some(item => location.pathname === item.path);
 
   return (
     <div
@@ -58,6 +64,77 @@ const Sidebar: React.FC = () => {
       {/* Menu Items */}
       <nav className="flex-1 py-6">
         <ul className="space-y-3 px-3">
+          {/* Dashboard with collapsible submenu */}
+          <li>
+            <button
+              onClick={() => {
+                setIsDashboardOpen(!isDashboardOpen);
+                navigate('/dashboard');
+              }}
+              className={`relative flex items-center w-full px-4 py-3 rounded-2xl transition-all duration-300 group hover:scale-105 ${
+                isDashboardActive
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-xl shadow-purple-500/30'
+                  : 'text-gray-300 hover:bg-white/10 hover:text-white backdrop-blur-sm'
+              }`}
+            >
+              <Home className="w-6 h-6 flex-shrink-0" />
+              <span
+                className={`ml-4 font-semibold transition-all duration-300 whitespace-nowrap flex-1 ${
+                  isExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
+                }`}
+              >
+                Dashboard
+              </span>
+              {isExpanded && (
+                <span className="ml-2">
+                  {isDashboardOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </span>
+              )}
+
+              {/* Glowing dot for active item */}
+              {isDashboardActive && (
+                <div className="absolute -right-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              )}
+
+              {/* Tooltip for collapsed state */}
+              {!isExpanded && (
+                <div className="absolute left-full ml-4 px-4 py-3 bg-gradient-to-r from-gray-900 to-gray-800 text-white text-sm rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 whitespace-nowrap z-50 shadow-xl">
+                  Dashboard
+                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-2 w-3 h-3 bg-gray-900 rotate-45"></div>
+                </div>
+              )}
+            </button>
+
+            {/* Dashboard Sub-items */}
+            {isDashboardOpen && isExpanded && (
+              <ul className="mt-2 ml-6 space-y-2">
+                {dashboardSubItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+
+                  return (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => navigate(item.path)}
+                        className={`relative flex items-center w-full px-3 py-2 rounded-xl transition-all duration-300 text-sm ${
+                          isActive
+                            ? 'bg-white/20 text-white font-semibold'
+                            : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        <span className="ml-3 whitespace-nowrap">
+                          {item.label}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
+
+          {/* Regular menu items */}
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;

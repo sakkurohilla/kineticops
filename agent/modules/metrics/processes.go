@@ -45,7 +45,8 @@ func GetTopProcesses(topN int, sortBy string, logger *utils.Logger) ([]ProcessIn
 			username = "unknown"
 		}
 
-		// Get CPU percent (0.0 to 100.0 per core, so normalize)
+		// Get CPU percent - gopsutil returns per-core % by default
+		// We need total system %, not per-core, so this value is already correct
 		cpuPercent, err := p.CPUPercent()
 		if err != nil {
 			cpuPercent = 0.0

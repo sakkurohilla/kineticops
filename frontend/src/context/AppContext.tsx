@@ -67,7 +67,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     
     const checkInactivity = setInterval(() => {
       const inactiveTime = Date.now() - lastActivity;
-      const INACTIVITY_LIMIT = 10 * 60 * 1000; // 10 minutes
+      const INACTIVITY_LIMIT = 60 * 60 * 1000; // 1 hour (60 minutes)
       
       if (inactiveTime > INACTIVITY_LIMIT) {
         logout();
@@ -80,11 +80,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
   const startSessionTimeout = () => {
     clearSessionTimeout();
-    // Session expires after 10 minutes of inactivity
+    // Session expires after 1 hour of inactivity
     const timeout = setTimeout(() => {
       logout();
       alert('Session expired. Please login again.');
-    }, 10 * 60 * 1000); // 10 minutes
+    }, 60 * 60 * 1000); // 1 hour (60 minutes)
     setSessionTimeout(timeout);
   };
 

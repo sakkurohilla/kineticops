@@ -25,6 +25,11 @@ const LoginForm: React.FC = () => {
 
     try {
       await login(username, password);
+      
+      // Small delay to allow WebSocket manager to detect token change
+      // and establish connection before navigating to dashboard
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Invalid username or password');

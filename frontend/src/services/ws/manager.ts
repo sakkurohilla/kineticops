@@ -10,6 +10,8 @@ let subscribers = new Set<MessageHandler>();
 let connectAttempts = 0;
 let reconnectTimer: number | null = null;
 let visibilityHandler: (() => void) | null = null;
+let currentToken: string | null = null;
+let tokenCheckInterval: number | null = null;
 
 // Handle page visibility changes to reconnect when tab becomes visible
 function setupVisibilityHandler() {
@@ -90,8 +92,17 @@ function scheduleReconnect() {
 
 function connect() {
   if (ws) return; // already connected/connecting
-  connectAttempts += 1;
+  
   const token = authService.getToken();
+  
+  // Don't connect if no token is available - wait for login
+  if (!token) {
+    console.log('[wsManager] No auth token, waiting for login before connecting');
+    return;
+  }
+  
+  connectAttempts += 1;
+  currentToken = token; // Store current token
   const baseWs = deriveBaseWs();
   wsStatus.setWsStatus('connecting', baseWs);
   const url = `${baseWs}`;
@@ -168,18 +179,25 @@ function connect() {
 
 export function subscribe(handler: MessageHandler) {
   subscribers.add(handler);
-  // Setup visibility handler on first subscriber
+  
+  // Setup visibility handler and token checker on first subscriber
   if (subscribers.size === 1) {
     setupVisibilityHandler();
+    setupTokenChecker();
   }
-  // ensure connection exists
-  if (!ws) connect();
+  
+  // ensure connection exists (only if we have a token)
+  if (!ws && authService.getToken()) {
+    connect();
+  }
+  
   return () => {
     subscribers.delete(handler);
     // Keep socket alive even with no subscribers - don't close it
     // The backend sends pings every 30s to keep connection alive
     if (subscribers.size === 0) {
       removeVisibilityHandler();
+      stopTokenChecker();
     }
   };
 }
@@ -195,6 +213,51 @@ export function publish(data: any) {
     return true;
   } catch (e) {
     return false;
+  }
+}
+
+// Setup interval to check if token has changed (e.g., after login)
+function setupTokenChecker() {
+  if (tokenCheckInterval) return; // already setup
+  
+  tokenCheckInterval = window.setInterval(() => {
+    const newToken = authService.getToken();
+    
+    // If we didn't have a token before and now we do (user just logged in)
+    if (!currentToken && newToken) {
+      console.log('[wsManager] Token detected after login, connecting WebSocket');
+      currentToken = newToken;
+      if (!ws) {
+        connect();
+      }
+    }
+    // If token changed (new login or token refresh)
+    else if (currentToken && newToken && currentToken !== newToken) {
+      console.log('[wsManager] Token changed, reconnecting WebSocket');
+      currentToken = newToken;
+      // Close existing connection and reconnect with new token
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      connect();
+    }
+    // If token was removed (logout)
+    else if (currentToken && !newToken) {
+      console.log('[wsManager] Token removed (logout), closing WebSocket');
+      currentToken = null;
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+  }, 1000); // Check every second
+}
+
+function stopTokenChecker() {
+  if (tokenCheckInterval) {
+    window.clearInterval(tokenCheckInterval);
+    tokenCheckInterval = null;
   }
 }
 

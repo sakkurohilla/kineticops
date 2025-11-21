@@ -21,7 +21,8 @@ func CSRFMiddleware(c *fiber.Ctx) error {
 		path == "/api/v1/auth/verify-reset-token" ||
 		path == "/api/v1/metrics/collect" ||
 		path == "/api/v1/logs/collect" ||
-		path == "/api/v1/traces/collect" {
+		path == "/api/v1/traces/collect" ||
+		len(path) >= 21 && path[:21] == "/api/v1/alert-rules" {
 		return c.Next()
 	}
 

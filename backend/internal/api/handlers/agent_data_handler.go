@@ -343,6 +343,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		if total, ok := cpu["total"].(map[string]interface{}); ok {
 			if pct, ok := total["pct"].(float64); ok && pct >= 0 && pct <= 1 {
 				metric.CPUUsage = pct * 100
+				logging.Infof("[METRICS] CPU for host=%d: usage=%.2f%%", hostID, metric.CPUUsage)
 				if err := services.CollectMetric(hostID, tenantID, "cpu_usage", metric.CPUUsage, nil); err != nil {
 					logging.Errorf("CollectMetric(cpu_usage) failed host=%d: %v", hostID, err)
 				}
@@ -448,6 +449,8 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 
 		// Persist memory metrics (usage percentage, total MB, used MB, free MB)
 		if metric.MemoryUsage >= 0 {
+			logging.Infof("[METRICS] Memory for host=%d: usage=%.2f%%, total=%.2fMB, used=%.2fMB, free=%.2fMB",
+				hostID, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed, metric.MemoryFree)
 			if err := services.CollectMetric(hostID, tenantID, "memory_usage", metric.MemoryUsage, nil); err != nil {
 				logging.Errorf("CollectMetric(memory_usage) failed host=%d: %v", hostID, err)
 			}
@@ -698,7 +701,27 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 			logging.Infof("[PROCESSES] Storing %d top CPU processes", len(topCPU))
 			for _, procData := range topCPU {
 				if proc, ok := procData.(map[string]interface{}); ok {
-					pid, _ := proc["pid"].(float64)
+					// Extract PID - handle both int and float64
+					var pid int
+					switch v := proc["pid"].(type) {
+					case float64:
+						pid = int(v)
+					case int:
+						pid = v
+					case int32:
+						pid = int(v)
+					case int64:
+						pid = int(v)
+					default:
+						logging.Errorf("[PROCESSES] Unexpected PID type: %T value: %v", proc["pid"], proc["pid"])
+						continue
+					}
+
+					if pid == 0 {
+						logging.Errorf("[PROCESSES] Got PID=0, skipping. Raw data: %+v", proc)
+						continue
+					}
+
 					name, _ := proc["name"].(string)
 					username, _ := proc["username"].(string)
 					cpuPercent, _ := proc["cpu_percent"].(float64)
@@ -713,7 +736,7 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 						INSERT INTO process_metrics (host_id, tenant_id, pid, name, username, cpu_percent, 
 							memory_percent, memory_rss, status, num_threads, create_time, timestamp)
 						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-					`, hostID, tenantID, int(pid), name, username, cpuPercent, memoryPercent,
+					`, hostID, tenantID, pid, name, username, cpuPercent, memoryPercent,
 						int64(memoryRSS), status, int(numThreads), int64(createTime)).Error
 
 					if err != nil {
@@ -729,69 +752,123 @@ func processSystemMetrics(hostID, tenantID int64, system map[string]interface{},
 		}
 	}
 
-	// Store in host_metrics table with error handling
-	err := postgres.DB.Exec(`
-		INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, memory_free,
+	// Detect and skip placeholder frames (all zero/empty core metrics)
+	isPlaceholder := metric.CPUUsage == 0 && metric.MemoryUsage == 0 && metric.DiskUsage == 0 &&
+		metric.MemoryTotal == 0 && metric.MemoryUsed == 0 && metric.NetworkIn == 0 && metric.NetworkOut == 0 &&
+		(metric.LoadAverage == "" || metric.LoadAverage == "0.00 0.00 0.00") && metric.Uptime == 0
+
+	if isPlaceholder {
+		// Fallback: retrieve last stored metrics for this host to avoid broadcasting zeros
+		var prev models.HostMetric
+		err := postgres.DB.Raw(`SELECT cpu_usage, memory_usage, memory_total, memory_used, memory_free,
 			disk_usage, disk_total, disk_used, disk_read_bytes, disk_write_bytes, disk_read_speed, disk_write_speed,
-			network_in, network_out, uptime, load_average, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-		ON CONFLICT (host_id) DO UPDATE SET
-			cpu_usage = EXCLUDED.cpu_usage,
-			memory_usage = EXCLUDED.memory_usage,
-			memory_total = EXCLUDED.memory_total,
-			memory_used = EXCLUDED.memory_used,
-			memory_free = EXCLUDED.memory_free,
-			disk_usage = EXCLUDED.disk_usage,
-			disk_total = EXCLUDED.disk_total,
-			disk_used = EXCLUDED.disk_used,
-			disk_read_bytes = EXCLUDED.disk_read_bytes,
-			disk_write_bytes = EXCLUDED.disk_write_bytes,
-			disk_read_speed = EXCLUDED.disk_read_speed,
-			disk_write_speed = EXCLUDED.disk_write_speed,
-			network_in = EXCLUDED.network_in,
-			network_out = EXCLUDED.network_out,
-			uptime = EXCLUDED.uptime,
-			load_average = EXCLUDED.load_average,
-			timestamp = EXCLUDED.timestamp
-	`, hostID, metric.CPUUsage, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed, metric.MemoryFree,
-		metric.DiskUsage, metric.DiskTotal, metric.DiskUsed, metric.DiskReadBytes, metric.DiskWriteBytes,
-		metric.DiskReadSpeed, metric.DiskWriteSpeed, metric.NetworkIn, metric.NetworkOut,
-		metric.Uptime, metric.LoadAverage, metric.Timestamp).Error
-
-	if err != nil {
-		logging.Errorf("Failed to store host metrics for host %d: %v", hostID, err)
-	}
-
-	// Broadcast the updated metrics to websocket clients for realtime dashboard updates
-	payload := map[string]interface{}{
-		"type":             "metric",
-		"host_id":          hostID,
-		"seq":              uint64(time.Now().UnixNano()),
-		"cpu_usage":        metric.CPUUsage,
-		"memory_usage":     metric.MemoryUsage,
-		"memory_total":     metric.MemoryTotal,
-		"memory_used":      metric.MemoryUsed,
-		"memory_free":      metric.MemoryFree,
-		"disk_usage":       metric.DiskUsage,
-		"disk_total":       metric.DiskTotal,
-		"disk_used":        metric.DiskUsed,
-		"disk_read_bytes":  metric.DiskReadBytes,
-		"disk_write_bytes": metric.DiskWriteBytes,
-		"disk_read_speed":  metric.DiskReadSpeed,
-		"disk_write_speed": metric.DiskWriteSpeed,
-		"network_in":       metric.NetworkIn,
-		"network_out":      metric.NetworkOut,
-		"uptime":           metric.Uptime,
-		"load_average":     metric.LoadAverage,
-		"timestamp":        metric.Timestamp.UTC().Format(time.RFC3339),
-	}
-	if b, jerr := json.Marshal(payload); jerr == nil {
-		if gh := ws.GetGlobalHub(); gh != nil {
-			gh.RememberMessage(b)
+			network_in, network_out, uptime, load_average, timestamp FROM host_metrics WHERE host_id = ?`, hostID).Scan(&prev).Error
+		if err != nil {
+			logging.Warnf("[METRICS] Placeholder frame host=%d and no previous metrics found (err=%v) - suppress broadcast", hostID, err)
+			return
 		}
-		ws.BroadcastToClients(b)
-		telemetry.IncWSBroadcast(context.Background(), 1)
-	}
+		if prev.Timestamp.IsZero() {
+			logging.Warnf("[METRICS] Placeholder frame host=%d and previous metrics empty - suppress broadcast", hostID)
+			return
+		}
+		logging.Infof("[METRICS] Placeholder frame host=%d - broadcasting last known metrics instead", hostID)
+		payload := map[string]interface{}{
+			"type":             "metric",
+			"host_id":          hostID,
+			"seq":              uint64(time.Now().UnixNano()),
+			"cpu_usage":        prev.CPUUsage,
+			"memory_usage":     prev.MemoryUsage,
+			"memory_total":     prev.MemoryTotal,
+			"memory_used":      prev.MemoryUsed,
+			"memory_free":      prev.MemoryFree,
+			"disk_usage":       prev.DiskUsage,
+			"disk_total":       prev.DiskTotal,
+			"disk_used":        prev.DiskUsed,
+			"disk_read_bytes":  prev.DiskReadBytes,
+			"disk_write_bytes": prev.DiskWriteBytes,
+			"disk_read_speed":  prev.DiskReadSpeed,
+			"disk_write_speed": prev.DiskWriteSpeed,
+			"network_in":       prev.NetworkIn,
+			"network_out":      prev.NetworkOut,
+			"uptime":           prev.Uptime,
+			"load_average":     prev.LoadAverage,
+			"timestamp":        prev.Timestamp.UTC().Format(time.RFC3339),
+			"fallback":         true,
+		}
+		if b, jerr := json.Marshal(payload); jerr == nil {
+			if gh := ws.GetGlobalHub(); gh != nil {
+				gh.RememberMessage(b)
+			}
+			ws.BroadcastToClients(b)
+			telemetry.IncWSBroadcast(context.Background(), 1)
+		}
+		return
+	} else {
+		// Store in host_metrics table with error handling
+		err := postgres.DB.Exec(`
+			INSERT INTO host_metrics (host_id, cpu_usage, memory_usage, memory_total, memory_used, memory_free,
+				disk_usage, disk_total, disk_used, disk_read_bytes, disk_write_bytes, disk_read_speed, disk_write_speed,
+				network_in, network_out, uptime, load_average, timestamp)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			ON CONFLICT (host_id) DO UPDATE SET
+				cpu_usage = EXCLUDED.cpu_usage,
+				memory_usage = EXCLUDED.memory_usage,
+				memory_total = EXCLUDED.memory_total,
+				memory_used = EXCLUDED.memory_used,
+				memory_free = EXCLUDED.memory_free,
+				disk_usage = EXCLUDED.disk_usage,
+				disk_total = EXCLUDED.disk_total,
+				disk_used = EXCLUDED.disk_used,
+				disk_read_bytes = EXCLUDED.disk_read_bytes,
+				disk_write_bytes = EXCLUDED.disk_write_bytes,
+				disk_read_speed = EXCLUDED.disk_read_speed,
+				disk_write_speed = EXCLUDED.disk_write_speed,
+				network_in = EXCLUDED.network_in,
+				network_out = EXCLUDED.network_out,
+				uptime = EXCLUDED.uptime,
+				load_average = EXCLUDED.load_average,
+				timestamp = EXCLUDED.timestamp
+		`, hostID, metric.CPUUsage, metric.MemoryUsage, metric.MemoryTotal, metric.MemoryUsed, metric.MemoryFree,
+			metric.DiskUsage, metric.DiskTotal, metric.DiskUsed, metric.DiskReadBytes, metric.DiskWriteBytes,
+			metric.DiskReadSpeed, metric.DiskWriteSpeed, metric.NetworkIn, metric.NetworkOut,
+			metric.Uptime, metric.LoadAverage, metric.Timestamp).Error
+
+		if err != nil {
+			logging.Errorf("Failed to store host metrics for host %d: %v", hostID, err)
+		}
+
+		// Broadcast the updated metrics to websocket clients for realtime dashboard updates
+		payload := map[string]interface{}{
+			"type":             "metric",
+			"host_id":          hostID,
+			"seq":              uint64(time.Now().UnixNano()),
+			"cpu_usage":        metric.CPUUsage,
+			"memory_usage":     metric.MemoryUsage,
+			"memory_total":     metric.MemoryTotal,
+			"memory_used":      metric.MemoryUsed,
+			"memory_free":      metric.MemoryFree,
+			"disk_usage":       metric.DiskUsage,
+			"disk_total":       metric.DiskTotal,
+			"disk_used":        metric.DiskUsed,
+			"disk_read_bytes":  metric.DiskReadBytes,
+			"disk_write_bytes": metric.DiskWriteBytes,
+			"disk_read_speed":  metric.DiskReadSpeed,
+			"disk_write_speed": metric.DiskWriteSpeed,
+			"network_in":       metric.NetworkIn,
+			"network_out":      metric.NetworkOut,
+			"uptime":           metric.Uptime,
+			"load_average":     metric.LoadAverage,
+			"timestamp":        metric.Timestamp.UTC().Format(time.RFC3339),
+		}
+		if b, jerr := json.Marshal(payload); jerr == nil {
+			if gh := ws.GetGlobalHub(); gh != nil {
+				gh.RememberMessage(b)
+			}
+			ws.BroadcastToClients(b)
+			telemetry.IncWSBroadcast(context.Background(), 1)
+		}
+
+	} // end non-placeholder else block
 
 	// Broadcast process metrics if available
 	if processesData, ok := system["processes"].(map[string]interface{}); ok {

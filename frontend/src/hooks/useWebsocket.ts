@@ -19,6 +19,19 @@ export const useWebsocket = (onMessage: MessageHandler) => {
   useEffect(() => {
     const unsub = manager.subscribe((data: any) => {
       try {
+        // Mark clearly empty metric frames as placeholders to skip average recompute.
+        if (data && data.type === 'metric') {
+          const isPlaceholder = (
+            (data.cpu_usage === 0 || data.cpu_usage === null || data.cpu_usage === undefined) &&
+            (data.memory_usage === null || data.memory_usage === undefined) &&
+            (data.disk_usage === null || data.disk_usage === undefined) &&
+            !data.memory_total && !data.memory_total_bytes &&
+            !data.disk_total && !data.disk_total_bytes
+          );
+          if (isPlaceholder) {
+            data._placeholder = true;
+          }
+        }
         handlerRef.current(data);
       } catch (e) {
         // swallow

@@ -18,7 +18,7 @@ import Metrics from './pages/Metrics/Metrics';
 import Hosts from './pages/Hosts/Hosts';
 import HostDetails from './components/hosts/HostDetails';
 import Workflow from './pages/Workflow/Workflow';
-import APM from './pages/APM/APM';
+import Process from './pages/Process/Process';
 import Services from './pages/Services/Services';
 import Synthetics from './pages/Synthetics/Synthetics';
 import Settings from './pages/Settings/Settings';
@@ -105,10 +105,10 @@ const App: React.FC = () => {
           />
 
           <Route
-            path="/apm"
+            path="/process"
             element={
               <ProtectedRoute>
-                <APM />
+                <Process />
               </ProtectedRoute>
             }
           />

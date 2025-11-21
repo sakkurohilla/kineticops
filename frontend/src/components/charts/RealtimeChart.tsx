@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import useWebsocket from '../../hooks/useWebsocket';
 
@@ -38,7 +38,7 @@ const RealtimeChart: React.FC<RealtimeChartProps> = ({
           value: parseFloat(metric.value) || 0,
         };
 
-        setData((prev) => {
+        setData((prev: MetricDataPoint[]) => {
           const updated = [...prev, newPoint];
           // Keep only the last N data points
           if (updated.length > maxDataPoints) {

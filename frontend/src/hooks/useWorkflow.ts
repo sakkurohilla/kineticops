@@ -2,7 +2,21 @@ import { useState, useEffect, useCallback } from 'react';
 import workflowApi, { WorkflowSessionRequest, WorkflowSessionResponse } from '../services/api/workflowApi';
 
 export const useWorkflowSession = () => {
-  const [session, setSession] = useState<WorkflowSessionResponse | null>(null);
+  const [session, setSession] = useState<WorkflowSessionResponse | null>(() => {
+    const stored = localStorage.getItem('workflow_session');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (new Date(parsed.expires_at) > new Date()) {
+          return parsed;
+        }
+        localStorage.removeItem('workflow_session');
+      } catch {
+        localStorage.removeItem('workflow_session');
+      }
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -12,6 +26,7 @@ export const useWorkflowSession = () => {
     try {
       const response = await workflowApi.createWorkflowSession(data);
       setSession(response);
+      localStorage.setItem('workflow_session', JSON.stringify(response));
       return response;
     } catch (err: any) {
       setError(err.message || 'Failed to create session');
@@ -26,6 +41,7 @@ export const useWorkflowSession = () => {
       try {
         await workflowApi.closeSession(session.session_token);
         setSession(null);
+        localStorage.removeItem('workflow_session');
       } catch (err) {
         console.error('Failed to close session:', err);
       }

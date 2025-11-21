@@ -929,3 +929,36 @@ func CleanupFailedHost(hostname string) {
 		}
 	}
 }
+
+// GetHostProcesses returns process metrics for a specific host
+func GetHostProcesses(c *fiber.Ctx) error {
+hostID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+if err != nil {
+return c.Status(400).JSON(fiber.Map{"error": "Invalid host ID"})
+}
+
+sort := c.Query("sort", "cpu")
+limit, _ := strconv.Atoi(c.Query("limit", "10"))
+
+processes, err := postgres.GetProcessMetricsByHost(postgres.DB, hostID, sort, limit)
+if err != nil {
+return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch processes"})
+}
+
+return c.JSON(fiber.Map{"processes": processes})
+}
+
+// GetAllHostsProcessStats returns aggregated process statistics across all hosts
+func GetAllHostsProcessStats(c *fiber.Ctx) error {
+var tenantID int64 = 0
+if tid := c.Locals("tenant_id"); tid != nil {
+tenantID = tid.(int64)
+}
+
+processes, err := postgres.GetTopProcessesAcrossHosts(postgres.DB, tenantID, 20)
+if err != nil {
+return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch process stats"})
+}
+
+return c.JSON(fiber.Map{"processes": processes})
+}

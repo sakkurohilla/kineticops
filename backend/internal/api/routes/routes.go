@@ -18,7 +18,7 @@ func RegisterAllRoutes(app *fiber.App) {
 	RegisterLogRoutes(app)
 	RegisterAlertRoutes(app)
 	RegisterWorkflowRoutes(app)
-	RegisterAPMRoutes(app)
+	// RegisterProcessRoutes removed - using host process endpoints instead
 	RegisterSyntheticsRoutes(app)
 	RegisterInstallRoutes(app)
 	RegisterInternalRoutes(app)

@@ -5,6 +5,16 @@ module.exports = {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    fontSize: {
+      xs: ['0.7rem', { lineHeight: '1rem' }],
+      sm: ['0.8rem', { lineHeight: '1.2rem' }],
+      base: ['0.85rem', { lineHeight: '1.3rem' }],
+      lg: ['0.95rem', { lineHeight: '1.4rem' }],
+      xl: ['1.1rem', { lineHeight: '1.5rem' }],
+      '2xl': ['1.3rem', { lineHeight: '1.6rem' }],
+      '3xl': ['1.6rem', { lineHeight: '1.8rem' }],
+      '4xl': ['2rem', { lineHeight: '2.2rem' }],
+    },
     extend: {
       colors: {
         primary: {
